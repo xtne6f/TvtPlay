@@ -1,19 +1,25 @@
 ﻿// IBonDriver.h: IBonDriver クラスのインターフェイス
 //
-//////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
 
-#if !defined(_IBONDRIVER_H_)
-#define _IBONDRIVER_H_
-
-#if _MSC_VER > 1000
 #pragma once
-#endif // _MSC_VER > 1000
 
 
-// 凡ドライバインタフェース
+#ifdef BONSDK_IMPLEMENT
+	#define BONAPI	__declspec(dllexport)
+#else
+	#define BONAPI	__declspec(dllimport)
+#endif
+
+
+/////////////////////////////////////////////////////////////////////////////
+// Bonドライバインタフェース
+/////////////////////////////////////////////////////////////////////////////
+
 class IBonDriver
 {
 public:
+// IBonDriver
 	virtual const BOOL OpenTuner(void) = 0;
 	virtual void CloseTuner(void) = 0;
 
@@ -33,7 +39,4 @@ public:
 
 
 // インスタンス生成メソッド
-extern "C" __declspec(dllimport) IBonDriver * CreateBonDriver();
-
-
-#endif // !defined(_IBONDRIVER_H_)
+extern "C" BONAPI IBonDriver * CreateBonDriver(void);

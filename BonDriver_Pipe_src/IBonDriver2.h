@@ -1,22 +1,21 @@
 ﻿// IBonDriver2.h: IBonDriver2 クラスのインターフェイス
 //
-//////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
 
-#if !defined(_IBONDRIVER2_H_)
-#define _IBONDRIVER2_H_
-
-#if _MSC_VER > 1000
 #pragma once
-#endif // _MSC_VER > 1000
 
 
 #include "IBonDriver.h"
 
 
-// 凡ドライバインタフェース2
+/////////////////////////////////////////////////////////////////////////////
+// Bonドライバインタフェース2
+/////////////////////////////////////////////////////////////////////////////
+
 class IBonDriver2 : public IBonDriver
 {
 public:
+// IBonDriver2
 	virtual LPCTSTR GetTunerName(void) = 0;
 
 	virtual const BOOL IsTunerOpening(void) = 0;
@@ -32,5 +31,3 @@ public:
 // IBonDriver
 	virtual void Release(void) = 0;
 };
-
-#endif // !defined(_IBONDRIVER2_H_)

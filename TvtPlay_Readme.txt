@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.1.7 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.1.8 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -24,20 +24,21 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
   「TVTest起動オプションについて」を参照
 ○倍速再生時にしばらくフリーズすることがある
   倍速再生はなるべくBonDriver_Pipeを使ってください。「倍速再生について」を参照
+○しばらく再生していると映像が途切れとぎれになったりする
+  設定キーTsUsePerfCounter/TsEnableUnderrunCtrl を参照
+○シークがおそい
+  TVTest設定の「バッファリングを行う」を使っている場合、かわりに設定キー
+  TsReadBufferSizeKB を使用することをお勧めします
 
 ■以前のバージョンからの移行
 設定ファイルTvtPlay.iniは基本的にそのまま引き継げます。ただし、ボタンのアイコン
 用画像の配置転換などで、設定キーButton02～Button15のデフォルトが一部変更されてい
 ます。ボタンアイコンがおかしくなった場合は、一度これらのキーをメモ帳などを使って
 削除してみてください。
-ver.1.5では、設定キーTsWaitOnStopがTsSupposedDispDelayに変更(吸収)されました。値
-を変更していたときは、後述の「設定ファイルについて」の該当項目を読んで修正してく
-ださい。
-(ver.1.3～ver.1.6からの移行)
-  TvtPlay.tvtpを置きかえてください。
-(ver.1.2r2からの移行)
-  TvtPlay.tvtpとTvtAudioStretchFilter.axとを置きかえてください。
-(ver.1.2以前からの移行)
+(ver.1.3～ver.1.7からの移行)
+  TvtPlay.tvtpとBonDriver_Pipe.dllとを置きかえてください。ver.1.8は
+  BonDriver_Pipe.dllの変更がメインなので必ず置きかえてください。
+(ver.1.2r2以前からの移行)
   TvtPlay.tvtpとBonDriver_Pipe.dllとTvtAudioStretchFilter.axとを置きかえてくださ
   い。
 
@@ -81,6 +82,8 @@ BonDriver_UDPのプロセス間通信方式をパイプに改変したもので�
 導入にはVisual C++ 2005 SP1 再頒布可能パッケージ(x64版はVisual C++ 2010 SP1 再頒
 布可能パッケージ (x64))が必要です。x64版はファイル名を必ず"BonDriver_Pipe.dll"に
 リネームしてください。
+BonDriver_Pipe(simple).dllはver.1.7以前のものと同じ動作をするBonDriver_Pipe.dll
+で、比較検証に利用できます(こちらは今後のver.0.9系に添付する予定です)。
 
 ■TVTest起動オプションについて
 TVTest起動時につぎのようなオプションを追加することで、プラグインの有効・無効の自
@@ -200,6 +203,11 @@ TsStretchNoMuteMax / TsStretchNoMuteMin【ver.0.8～】
     倍速再生の速度が設定値以上/以下なら無音にする
 TsConvTo188【ver.0.9～】
     192ByteTS(Timestamped TS)の場合、188ByteTSに変換して転送する[=1]かどうか
+TsEnableUnderrunCtrl【ver.1.8～】
+    BonDriverのバッファアンダーランを防ぐ[=1]かどうか
+    # 映像が途切れとぎれになる場合に解決策になるかもしれません。ただし、TVTestの
+    #「バッファリングを行う」は使わないでください。
+    # BonDriver_Pipe(simpleじゃないほう)使用時のみ効果があります。
 TsUsePerfCounter【ver.1.3r2～】
     パフォーマンスカウンタをTSデータ送出タイミングの基準とする[=1]かどうか
     # 基本的に[=1]で良いと思います。
@@ -463,6 +471,9 @@ http://2sen.dip.jp/dtv/)のup0598.zip「非公式 TvtPlayシークボタンカ�
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.1.8 (2012-03-29)
+・某機能実装にむけてBonDriver_Pipeの倍速再生への耐性を強化。関連する設定キー
+  TsEnableUnderrunCtrlを追加
 ver.1.7 (2012-03-17)
 ・簡易表示機能(設定キーPopupMax)について、100個をこえるファイルを扱うときの制限
   をとり除いた

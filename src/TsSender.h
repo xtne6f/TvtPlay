@@ -1,6 +1,8 @@
 ﻿#ifndef INCLUDE_TS_SENDER_H
 #define INCLUDE_TS_SENDER_H
 
+#define BON_PIPE_MESSAGE_MAX  128
+
 class CTsTimestampShifter
 {
 public:
@@ -33,7 +35,7 @@ class CTsSender
 public:
     CTsSender();
     ~CTsSender();
-    bool Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, bool fUseQpc, int pcrDisconThresholdMsec);
+    bool Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, bool fUnderrunCtrl, bool fUseQpc, int pcrDisconThresholdMsec);
     void SetupQpc();
     void SetUdpAddress(LPCSTR addr, unsigned short port);
     void SetPipeName(LPCTSTR name);
@@ -66,22 +68,27 @@ private:
     void CloseSocket();
     void OpenPipe();
     void ClosePipe();
+    void CloseCtrlPipe();
     void SendData(BYTE *pData, int dataSize);
+    int TransactMessage(LPCTSTR request, LPTSTR reply = NULL);
     static DWORD DiffPcr(DWORD a, DWORD b) { return ((a-b)&0x80000000) && b-a<PCR_LAP_THRESHOLD ? 0 : a-b; }
 
     CAsyncFileReader m_file;
     BYTE *m_curr, *m_head, *m_tail;
     int m_unitSize;
-    bool m_fTrimPacket, m_fModTimestamp;
+    bool m_fTrimPacket, m_fUnderrunCtrl, m_fModTimestamp;
     DWORD m_pcrDisconThreshold;
     CTsTimestampShifter m_tsShifter;
+
     SOCKET m_sock;
     CHAR m_udpAddr[MAX_URI];
     unsigned short m_udpPort;
-    HANDLE m_hPipe;
+    HANDLE m_hPipe, m_hCtrlPipe;
     TCHAR m_pipeName[MAX_PATH];
+
     DWORD m_baseTick, m_renewSizeTick, m_renewDurTick, m_renewFsrTick;
     DWORD m_pcr, m_basePcr, m_initPcr, m_prevPcr;
+    int m_rateCtrlMsec;
     bool m_fEnPcr, m_fShareWrite, m_fFixed, m_fPause;
     bool m_fForceSyncRead;
     int m_pcrPid, m_pcrPids[PCR_PIDS_MAX];
@@ -96,6 +103,7 @@ private:
     DWORD m_initStore;
     bool m_fSpecialExtending;
     int m_specialExtendInitRate;
+
     int m_adjState;
     DWORD m_adjBaseTick, m_adjHoldTick, m_adjAmount, m_adjDelta;
     LARGE_INTEGER m_liAdjFreq, m_liAdjBase;

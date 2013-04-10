@@ -14,9 +14,9 @@ class CTvtPlay : public TVTest::CTVTestPlugin, public ITvtPlayController
 public:
     // CTVTestPlugin
     CTvtPlay();
-    virtual bool GetPluginInfo(TVTest::PluginInfo *pInfo);
-    virtual bool Initialize();
-    virtual bool Finalize();
+    bool GetPluginInfo(TVTest::PluginInfo *pInfo);
+    bool Initialize();
+    bool Finalize();
     // ITvtPlayController
     bool IsOpen() const { return m_hThread ? true : false; }
     int GetPosition() { CBlockLock lock(&m_tsInfoLock); return m_infoPos; }
@@ -137,7 +137,7 @@ private:
     int m_supposedDispDelay;
     int m_resetMode;
     int m_stretchMode, m_noMuteMax, m_noMuteMin;
-    bool m_fConvTo188, m_fUseQpc, m_fModTimestamp;
+    bool m_fConvTo188, m_fUnderrunCtrl, m_fUseQpc, m_fModTimestamp;
     int m_pcrThresholdMsec;
     int m_salt, m_hashListMax;
     bool m_fUpdateHashList;

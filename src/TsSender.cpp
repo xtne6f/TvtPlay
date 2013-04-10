@@ -136,11 +136,13 @@ CTsSender::CTsSender()
     , m_tail(NULL)
     , m_unitSize(0)
     , m_fTrimPacket(false)
+    , m_fUnderrunCtrl(false)
     , m_fModTimestamp(false)
     , m_pcrDisconThreshold(0xffffffff)
     , m_sock(NULL)
     , m_udpPort(0)
     , m_hPipe(NULL)
+    , m_hCtrlPipe(NULL)
     , m_baseTick(0)
     , m_renewSizeTick(0)
     , m_renewDurTick(0)
@@ -149,6 +151,7 @@ CTsSender::CTsSender()
     , m_basePcr(0)
     , m_initPcr(0)
     , m_prevPcr(0)
+    , m_rateCtrlMsec(0)
     , m_fEnPcr(false)
     , m_fShareWrite(false)
     , m_fFixed(false)
@@ -185,7 +188,7 @@ CTsSender::~CTsSender()
 }
 
 
-bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, bool fUseQpc, int pcrDisconThresholdMsec)
+bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, bool fUnderrunCtrl, bool fUseQpc, int pcrDisconThresholdMsec)
 {
     Close();
 
@@ -211,6 +214,9 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     // 転送時にパケットを188Byteに詰めるかどうか
     // TimestampedTS(192Byte)の場合のみ変換する
     m_fTrimPacket = fConvTo188 && m_unitSize == 192;
+
+    // (可能ならば)受信側バッファのアンダーランを防ぐかどうか
+    m_fUnderrunCtrl = fUnderrunCtrl;
 
     // 識別情報としてファイル先頭の56bitハッシュ値をとる
     m_hash = CalcHash(buf, min(readBytes, 2048), salt);
@@ -323,7 +329,7 @@ void CTsSender::SetUdpAddress(LPCSTR addr, unsigned short port)
     m_pipeName[0] = 0;
 
     if (!addr[0]) CloseSocket();
-    ::lstrcpynA(m_udpAddr, addr, MAX_URI);
+    ::lstrcpynA(m_udpAddr, addr, _countof(m_udpAddr));
     m_udpPort = port;
 }
 
@@ -336,7 +342,7 @@ void CTsSender::SetPipeName(LPCTSTR name)
 
     if (::lstrcmp(m_pipeName, name)) {
         ClosePipe();
-        ::lstrcpyn(m_pipeName, name, MAX_PATH-1);
+        ::lstrcpyn(m_pipeName, name, _countof(m_pipeName));
     }
 }
 
@@ -368,10 +374,25 @@ int CTsSender::Send()
 {
     if (!IsOpen()) return 0;
 
-    int rv = 1;
-    if (m_fPause) ::Sleep(100);
+    TCHAR readyState[BON_PIPE_MESSAGE_MAX];
+    bool fReadToPcr = false;
+    bool fReadToEof = false;
+    if (m_fPause) {
+        readyState[0] = 0;
+        ::Sleep(100);
+    }
     else {
-        if (ReadToPcr(40000, true, m_fForceSyncRead) != 2) rv = 0;
+        // (可能ならば)受信側のバッファ状態を取得しておく
+        TransactMessage(TEXT("GET_READY_STATE"), readyState);
+        if (readyState[0] == TEXT('H') || readyState[0] == TEXT('F')) {
+            // 受信側のストア多->送らない
+            m_rateCtrlMsec += 10;
+            ::Sleep(10);
+        }
+        else {
+            fReadToPcr = ReadToPcr(40000, true, m_fForceSyncRead) == 2;
+            fReadToEof = !fReadToPcr;
+        }
     }
     // 補正により一気に増加する可能性を避けるため定期的に呼ぶ
     DWORD tick = GetAdjTickCount();
@@ -439,7 +460,7 @@ int CTsSender::Send()
         }
     }
 
-    if (!m_fPause && rv) {
+    if (fReadToPcr) {
         // 転送レート制御
         DWORD tickDiff = tick - m_baseTick;
         DWORD pcrDiff = DiffPcr(m_pcr, m_basePcr);
@@ -449,18 +470,30 @@ int CTsSender::Send()
         DWORD prevPcrAbsDiff = MSB(m_pcr-m_prevPcr) ? m_prevPcr-m_pcr : m_pcr-m_prevPcr;
         m_prevPcr = m_pcr;
 
+        if (m_fUnderrunCtrl && readyState[0] == TEXT('E') &&
+            !m_fForceSyncRead/*先読みを禁止しているのだから勝手に進行させない*/ &&
+            msec + (int)((__int64)m_rateCtrlMsec * m_speedDen / m_speedNum) > 0)
+        {
+            // 受信側のストア空->増やす
+            m_rateCtrlMsec -= 10;
+        }
+        msec += (int)((__int64)m_rateCtrlMsec * m_speedDen / m_speedNum);
+
         // 制御しきれない場合は一度リセット
         if (msec < -2000 || 2000 * m_speedDen / m_speedNum < msec ||
             prevPcrAbsDiff > m_pcrDisconThreshold)
         {
+            // 受信側のストアをパージ
+            TransactMessage(TEXT("PURGE"));
             // 基準PCRを設定(受信側のストアを増やすため少し引く)
             m_baseTick = tick - m_initStore;
             m_basePcr = m_pcr;
-            rv = 2;
+            m_rateCtrlMsec = 0;
+            return 2;
         }
-        else if (msec > 0) ::Sleep(msec);
+        if (msec > 0) ::Sleep(msec);
     }
-    return rv;
+    return fReadToEof ? 0 : 1;
 }
 
 
@@ -497,6 +530,8 @@ void CTsSender::SendEmptyPat()
 // ファイルの先頭にシークする
 bool CTsSender::SeekToBegin()
 {
+    // 受信側のストアをパージ
+    if (!m_fPause) TransactMessage(TEXT("PURGE"));
     return Seek(0, FILE_BEGIN);
 }
 
@@ -504,7 +539,11 @@ bool CTsSender::SeekToBegin()
 // ファイルの末尾から約2秒前にシークする
 bool CTsSender::SeekToEnd()
 {
-    return m_fSpecialExtending ? false : Seek(-GetRate()*2, FILE_END);
+    if (m_fSpecialExtending) return false;
+
+    // 受信側のストアをパージ
+    if (!m_fPause) TransactMessage(TEXT("PURGE"));
+    return Seek(-GetRate()*2, FILE_END);
 }
 
 
@@ -515,6 +554,9 @@ bool CTsSender::SeekToEnd()
 bool CTsSender::Seek(int msec)
 {
     if (!m_fEnPcr) return SeekToBegin();
+
+    // 受信側のストアをパージ
+    if (!m_fPause) TransactMessage(TEXT("PURGE"));
 
     __int64 rate = GetRate();
     __int64 size = m_file.GetSize();
@@ -583,6 +625,11 @@ void CTsSender::Pause(bool fPause)
         // 基準PCRを設定(受信側のストアを増やすため少し引く)
         m_baseTick = GetAdjTickCount() - m_initStore;
         m_basePcr = m_pcr;
+        m_rateCtrlMsec = 0;
+    }
+    else if (!m_fPause && fPause) {
+        // 受信側のストアをパージ
+        TransactMessage(TEXT("PURGE"));
     }
     m_fPause = fPause;
 }
@@ -598,6 +645,7 @@ void CTsSender::SetSpeed(int num, int den)
     // 基準PCRを設定
     m_baseTick = GetAdjTickCount();
     m_basePcr = m_pcr;
+    m_rateCtrlMsec = 0;
 }
 
 
@@ -760,6 +808,7 @@ bool CTsSender::ReadPacket(bool fSend, bool fSyncRead, bool *pfPcr)
                     // 基準PCRを設定(受信側のストアを増やすため少し引く)
                     m_baseTick = GetAdjTickCount() - m_initStore;
                     m_basePcr = m_pcr;
+                    m_rateCtrlMsec = 0;
                     m_fEnPcr = true;
                 }
                 *pfPcr = true;
@@ -909,18 +958,47 @@ void CTsSender::OpenPipe()
     ClosePipe();
 
     if (::WaitNamedPipe(m_pipeName, NMPWAIT_USE_DEFAULT_WAIT)) {
+        // TSデータ書き込み用
         m_hPipe = ::CreateFile(m_pipeName, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
         if (m_hPipe == INVALID_HANDLE_VALUE) {
             m_hPipe = NULL;
+        }
+    }
+    if (m_hPipe) {
+        TCHAR name[_countof(m_pipeName) + 4];
+        ::wsprintf(name, TEXT("%sCtrl"), m_pipeName);
+        if (::WaitNamedPipe(name, NMPWAIT_USE_DEFAULT_WAIT)) {
+            // 制御用
+            m_hCtrlPipe = ::CreateFile(name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+            if (m_hCtrlPipe == INVALID_HANDLE_VALUE) {
+                m_hCtrlPipe = NULL;
+            }
+            else {
+                // メッセージストリームにする
+                DWORD dwMode = PIPE_READMODE_MESSAGE;
+                if (!::SetNamedPipeHandleState(m_hCtrlPipe, &dwMode, NULL, NULL)) {
+                    CloseCtrlPipe();
+                }
+            }
         }
     }
 }
 
 void CTsSender::ClosePipe()
 {
+    CloseCtrlPipe();
+
     if (m_hPipe) {
         ::CloseHandle(m_hPipe);
         m_hPipe = NULL;
+    }
+}
+
+void CTsSender::CloseCtrlPipe()
+{
+    if (m_hCtrlPipe) {
+        ::CloseHandle(m_hCtrlPipe);
+        m_hCtrlPipe = NULL;
     }
 }
 
@@ -962,4 +1040,30 @@ void CTsSender::SendData(BYTE *pData, int dataSize)
                                    CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     DWORD written;
     ::WriteFile(hFile, pData, (DWORD)dataSize, &written, NULL);*/
+}
+
+// 受信側に要求を送る
+// 戻り値: 0(失敗)または受け取った応答文字数
+int CTsSender::TransactMessage(LPCTSTR request, LPTSTR reply)
+{
+    if (m_pipeName[0] && m_hCtrlPipe) {
+        TCHAR buf[BON_PIPE_MESSAGE_MAX];
+        DWORD read;
+        BOOL fSuccess = ::TransactNamedPipe(m_hCtrlPipe,
+                                            const_cast<LPTSTR>(request),
+                                            (::lstrlen(request) + 1) * sizeof(TCHAR),
+                                            buf, sizeof(buf), &read, NULL);
+        if (fSuccess && read >= sizeof(TCHAR)) {
+            buf[read / sizeof(TCHAR) - 1] = 0;
+            if (buf[0] == TEXT('A') && buf[1] == TEXT(' ')) {
+                if (reply) ::lstrcpy(reply, buf + 2);
+                return read / sizeof(TCHAR) - 3;
+            }
+        }
+        else {
+            CloseCtrlPipe();
+        }
+    }
+    if (reply) reply[0] = 0;
+    return 0;
 }

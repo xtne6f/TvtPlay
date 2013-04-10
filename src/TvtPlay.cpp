@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2012-03-15
+// 最終更新: 2012-03-28
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -24,8 +24,8 @@
 #include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.7)";
-static const int INFO_VERSION = 20;
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.8)";
+static const int INFO_VERSION = 21;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
 #define WM_QUERY_CLOSE_NEXT (WM_APP + 2)
@@ -162,6 +162,7 @@ CTvtPlay::CTvtPlay()
     , m_noMuteMax(0)
     , m_noMuteMin(0)
     , m_fConvTo188(false)
+    , m_fUnderrunCtrl(false)
     , m_fUseQpc(false)
     , m_fModTimestamp(false)
     , m_pcrThresholdMsec(0)
@@ -335,6 +336,7 @@ void CTvtPlay::LoadSettings()
         m_noMuteMax         = GetBufferedProfileInt(pBuf, TEXT("TsStretchNoMuteMax"), 800);
         m_noMuteMin         = GetBufferedProfileInt(pBuf, TEXT("TsStretchNoMuteMin"), 50);
         m_fConvTo188        = GetBufferedProfileInt(pBuf, TEXT("TsConvTo188"), 1) != 0;
+        m_fUnderrunCtrl     = GetBufferedProfileInt(pBuf, TEXT("TsEnableUnderrunCtrl"), 0) != 0;
         m_fUseQpc           = GetBufferedProfileInt(pBuf, TEXT("TsUsePerfCounter"), 1) != 0;
         m_fModTimestamp     = GetBufferedProfileInt(pBuf, TEXT("TsAvoidWraparound"), 0) != 0;
         m_pcrThresholdMsec  = GetBufferedProfileInt(pBuf, TEXT("TsPcrDiscontinuityThreshold"), 400);
@@ -540,6 +542,7 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
         WritePrivateProfileInt(SETTINGS, TEXT("TsStretchNoMuteMax"), m_noMuteMax, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("TsStretchNoMuteMin"), m_noMuteMin, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("TsConvTo188"), m_fConvTo188, m_szIniFileName);
+        WritePrivateProfileInt(SETTINGS, TEXT("TsEnableUnderrunCtrl"), m_fUnderrunCtrl, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("TsUsePerfCounter"), m_fUseQpc, m_szIniFileName);
     }
     WritePrivateProfileInt(SETTINGS, TEXT("TsAvoidWraparound"), m_fModTimestamp, m_szIniFileName);
@@ -620,10 +623,7 @@ bool CTvtPlay::LoadFileInfoSetting(std::list<HASH_INFO> &hashList) const
 
         ::wsprintf(key, TEXT("Resume%d"), i);
         hashInfo.resumePos = GetBufferedProfileInt(pBuf, key, 0);
-        // 利用されるレジューム情報だけ追加(TODO: 次バージョンあたりまでの時限処置)
-        if (hashInfo.resumePos > 5000) {
-            hashList.push_back(hashInfo);
-        }
+        hashList.push_back(hashInfo);
     }
     delete [] pBuf;
     return true;
@@ -1322,7 +1322,7 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset)
 {
     Close();
 
-    if (!m_tsSender.Open(fileName, m_salt, m_readBufSizeKB*1024, m_fConvTo188, m_fUseQpc, m_pcrThresholdMsec)) return false;
+    if (!m_tsSender.Open(fileName, m_salt, m_readBufSizeKB*1024, m_fConvTo188, m_fUnderrunCtrl, m_fUseQpc, m_pcrThresholdMsec)) return false;
 
     bool fSeeked = false;
     if (offset >= 0) {

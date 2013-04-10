@@ -116,6 +116,7 @@
 			/>
 			<Tool
 				Name="VCCLCompilerTool"
+				Optimization="1"
 				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_USRDLL;BONDRIVER_PIPEVC8_EXPORTS"
 				RuntimeLibrary="2"
 				UsePrecompiledHeader="0"
@@ -177,11 +178,7 @@
 			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 			>
 			<File
-				RelativePath=".\BonDriver.cpp"
-				>
-			</File>
-			<File
-				RelativePath=".\BonTuner.cpp"
+				RelativePath=".\BonDriver_Pipe.cpp"
 				>
 			</File>
 		</Filter>
@@ -191,7 +188,7 @@
 			UniqueIdentifier="{93995380-89BD-4b04-88EB-625FBE52EBFB}"
 			>
 			<File
-				RelativePath=".\BonTuner.h"
+				RelativePath=".\BonDriver_Pipe.h"
 				>
 			</File>
 			<File

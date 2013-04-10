@@ -21,15 +21,12 @@
     <ClInclude Include="IBonDriver2.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="BonTuner.h">
+    <ClInclude Include="BonDriver_Pipe.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="BonTuner.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="BonDriver.cpp">
+    <ClCompile Include="BonDriver_Pipe.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
   </ItemGroup>
