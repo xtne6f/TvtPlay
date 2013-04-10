@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.1.9 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.1.9r2 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -38,7 +38,7 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
 用画像の配置転換などで、設定キーButton02～Button15のデフォルトが一部変更されてい
 ます。ボタンアイコンがおかしくなった場合は、一度これらのキーをメモ帳などを使って
 削除してみてください。
-(ver.1.8～ver.1.8r2からの移行)
+(ver.1.8～ver.1.9からの移行)
   TvtPlay.tvtpを置きかえてください。
 (ver.1.3～ver.1.7からの移行)
   TvtPlay.tvtpとBonDriver_Pipe.dllとを置きかえてください。ver.1.8は
@@ -481,6 +481,10 @@ http://2sen.dip.jp/dtv/)のup0598.zip「非公式 TvtPlayシークボタンカ�
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.1.9r2 (2012-06-19)
+・StretchPopupを左クリックのボタンコマンドにしたときのアイコン画像処理を忘れてい
+  たので修正
+・↑以外の修正はないので、面倒なら1.9→1.9r2には置きかえなくてもいい
 ver.1.9 (2012-06-18)
 ・設定キーSeekModeを追加し、デフォルトでドラッグシークにした
 ・起動時に倍速指定するオプション/tvtpstrを追加
@@ -720,7 +724,7 @@ Button16=;'*'1' '.'0:30~'*'4'.'0:30~'*'0'.'2,StretchD,StretchA
 Button17=;'*'1' '.'0:30~'*'4'.'0:30~'*'2'.'0:30~'*'0'.'5:30~'*'0'.'2,Width=32,StretchPopup,Stretch
 
 【ボタン数を少なく+チャプター機能も使う】
-SeekItemOrder=11
+SeekItemOrder=12
 StatusItemOrder=99
 IconImage=
 SeekA=-60000
@@ -748,10 +752,10 @@ Button06=31-' '1'5-60,Width=12,SeekC,SeekF
 Button07=31-' ' ' ' '5' -60,Width=12,SeekD,SeekE
 Button08=3,Width=12,SeekToEnd,SeekToNext
 Button09='*'1' '.'0:30~'*'1' '.'2:30~'*'1' '.'5:30~'*'2'.'0:30~'*'4'.'0:30~'*'0'.'2:30~'*'0'.'5:30~'*'0'.'7,Width=12,StretchRe,Stretch
-Button10=;6,Width=12,Pause
-Button11=62,Width=12,AddChapter,RepeatChapter
-Button12=64,Width=12,AddChapter,SkipXChapter
-Button13=
+Button10=::::::::,Width=0,StretchZ,StretchPopup
+Button11=;6,Width=12,Pause
+Button12=62,Width=12,AddChapter,RepeatChapter
+Button13=64,Width=12,AddChapter,SkipXChapter
 Button14=
 Button15=
 Button16=

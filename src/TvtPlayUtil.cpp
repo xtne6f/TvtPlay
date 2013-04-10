@@ -409,7 +409,7 @@ void CButtonStatusItem::Draw(HDC hdc, const RECT *pRect)
     else if (cmdID == ID_COMMAND_PAUSE) {
         iconPos = !m_pPlugin->IsOpen() || m_pPlugin->IsPaused() ? 1 : 0;
     }
-    else if (cmdID == ID_COMMAND_STRETCH || cmdID == ID_COMMAND_STRETCH_RE) {
+    else if (cmdID == ID_COMMAND_STRETCH || cmdID == ID_COMMAND_STRETCH_RE || cmdID == ID_COMMAND_STRETCH_POPUP) {
         int stid = m_pPlugin->GetStretchID();
         iconPos = stid < 0 ? 0 : stid + 1;
     }

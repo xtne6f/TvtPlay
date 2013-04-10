@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2012-06-17
+// 最終更新: 2012-06-19
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -32,7 +32,7 @@
 #include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.9)";
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.9r2)";
 static const int INFO_VERSION = 22;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
@@ -821,9 +821,10 @@ bool CTvtPlay::InitializePlugin()
                        (cmdID[0]==ID_COMMAND_OPEN) ? ID_COMMAND_OPEN_POPUP : ID_COMMAND_NOP;
         }
 
-        // StretchとStretchReのみ大きいビットマップを使う
+        // StretchとStretchReとStretchPopupのみ大きいビットマップを使う
         DrawUtil::CBitmap *pIcon = (cmdID[0] == ID_COMMAND_STRETCH ||
-                                    cmdID[0] == ID_COMMAND_STRETCH_RE) ? &iconL : &iconS;
+                                    cmdID[0] == ID_COMMAND_STRETCH_RE ||
+                                    cmdID[0] == ID_COMMAND_STRETCH_POPUP) ? &iconL : &iconS;
         HBITMAP hbmOld = SelectBitmap(hdcMem, pIcon->GetHandle());
 
         RGBQUAD rgbq[2] = {0};
