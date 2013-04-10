@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.0.9 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.0.9r2 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -11,7 +11,10 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
 ・x64版:  Visual C++ 2010 SP1 再頒布可能パッケージ (x64)
           # ↑ver.0.9以降、x64版はSP1の方をインストールする必要があるので注意
 
-■以前のバージョンからの移行
+■ver.0.9からの移行
+・TvtPlay.tvtpまたはTvtPlay(x64).tvtpのみ、置きかえてください。
+
+■以前のバージョン(～ver.0.8r2)からの移行
 ・TvtPlay.tvtpとBonDriver_Pipe.dllを置きかえてください。設定ファイルはそのまま引
   き継げます。
 ・ver.0.9ではBonDriver_Pipe.dllに倍速再生に関する修正があります。必ず置き換えて
@@ -225,8 +228,11 @@ http://www.marumo.ne.jp/junk/tsselect-0.1.8.lzh)よりソースコードを改�
 ます。
 TvtAudioStretchFilterフィルタは、再生レート制御のために、SoundTouchライブラリver
 .1.6.0(http://www.surina.net/soundtouch/)を利用しています。
-また、TVTest ver.0.7.21からソースコードを流用しています。特に以下のファイルはほ
-ぼ改変なしに流用しています(差分は"diff_TVTestStatusView_orig.txt"を参照)
+デフォルトのアイコン画像"Buttons.bmp"は、「HDUS関係ファイル置き場」(
+http://2sen.dip.jp/)のup0598.zip「非公式 TvtPlayシークボタンカスタマイズ用アイコ
+ン 修正2」のデザインをもとに作成しています。
+また、TVTest ver.0.7.22r2からソースコードを流用しています。特に以下のファイルは
+ほぼ改変なしに流用しています(差分は"diff_TVTestStatusView_orig.txt"を参照)
   "Aero.cpp"
   "Aero.h"
   "BasicWindow.cpp"
@@ -235,10 +241,14 @@ TvtAudioStretchFilterフィルタは、再生レート制御のために、Sound
   "ColorScheme.h"
   "DrawUtil.h"
   "DrawUtil.cpp"
+  "IniFile.cpp"
+  "IniFile.h"
   "Settings.cpp"
   "Settings.h"
   "StatusView.cpp"
   "StatusView.h"
+  "StringUtility.cpp"
+  "StringUtility.h"
   "Theme.cpp"
   "Theme.h"
   "WindowUtil.cpp"
@@ -247,6 +257,13 @@ TvtAudioStretchFilterフィルタは、再生レート制御のために、Sound
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.0.9r2 (2011-10-03)
+・ドライバ変更時のチャンネル設定の問題が解決されたので、TVTest ver.0.7.22以降に
+  ついて、ver.0.8r2での仮対応を元にもどした
+・TVTestのINI読み書き方法の変更により、デザインを適用できないことがあるのを修正
+・書き込みを参考に簡易一覧表示のキー割り当てを「ファイルを開く(ポップアップ)」の
+  みにもどした(もう一回押すと閉じる)
+・プラグインの説明(設定->プラグイン->一覧)にバージョンを表記するようにした
 ver.0.9 (2011-10-02)
 ・2sen(hdusup)のup0598を可変ピッチにして流用し、アイコン合成できるようにした
   ・デザインされた方、感謝します

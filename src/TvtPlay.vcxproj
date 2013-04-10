@@ -104,6 +104,7 @@
       <ModuleDefinitionFile>Exports.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent />
+    <PostBuildEvent />
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -143,6 +144,7 @@
       <ModuleDefinitionFile>Exports.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent />
+    <PostBuildEvent />
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -171,9 +173,11 @@
     <ClInclude Include="BasicWindow.h" />
     <ClInclude Include="ColorScheme.h" />
     <ClInclude Include="DrawUtil.h" />
+    <ClInclude Include="IniFile.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="Settings.h" />
     <ClInclude Include="StatusView.h" />
+    <ClInclude Include="StringUtility.h" />
     <ClInclude Include="Theme.h" />
     <ClInclude Include="TsSender.h" />
     <ClInclude Include="TVTestPlugin.h" />
@@ -186,8 +190,10 @@
     <ClCompile Include="BasicWindow.cpp" />
     <ClCompile Include="ColorScheme.cpp" />
     <ClCompile Include="DrawUtil.cpp" />
+    <ClCompile Include="IniFile.cpp" />
     <ClCompile Include="Settings.cpp" />
     <ClCompile Include="StatusView.cpp" />
+    <ClCompile Include="StringUtility.cpp" />
     <ClCompile Include="Theme.cpp" />
     <ClCompile Include="TsSender.cpp" />
     <ClCompile Include="TvtPlay.cpp" />

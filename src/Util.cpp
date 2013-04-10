@@ -345,28 +345,6 @@ COLORREF MixColor(COLORREF Color1,COLORREF Color2,BYTE Ratio)
 }
 
 
-__declspec(restrict) LPWSTR DuplicateString(LPCWSTR pszString)
-{
-	if (pszString==NULL)
-		return NULL;
-
-	const size_t Length=lstrlenW(pszString)+1;
-	LPWSTR pszNewString=new WCHAR[Length];
-	::CopyMemory(pszNewString,pszString,Length*sizeof(WCHAR));
-	return pszNewString;
-}
-
-
-bool ReplaceString(LPWSTR *ppszString,LPCWSTR pszNewString)
-{
-	if (ppszString==NULL)
-		return false;
-	delete [] *ppszString;
-	*ppszString=DuplicateString(pszNewString);
-	return true;
-}
-
-
 CDynamicString::CDynamicString()
 	: m_pszString(NULL)
 {
@@ -552,5 +530,61 @@ bool CompareLogFont(const LOGFONT *pFont1,const LOGFONT *pFont2)
 {
 	return memcmp(pFont1,pFont2,28/*offsetof(LOGFONT,lfFaceName)*/)==0
 		&& lstrcmp(pFont1->lfFaceName,pFont2->lfFaceName)==0;
+}
+
+
+CGlobalLock::CGlobalLock()
+	: m_hMutex(NULL)
+	, m_fOwner(false)
+{
+}
+
+CGlobalLock::~CGlobalLock()
+{
+	Close();
+}
+
+bool CGlobalLock::Create(LPCTSTR pszName)
+{
+	if (m_hMutex!=NULL)
+		return false;
+	SECURITY_DESCRIPTOR sd;
+	SECURITY_ATTRIBUTES sa;
+	::ZeroMemory(&sd,sizeof(sd));
+	::InitializeSecurityDescriptor(&sd,SECURITY_DESCRIPTOR_REVISION);
+	::SetSecurityDescriptorDacl(&sd,TRUE,NULL,FALSE);
+	::ZeroMemory(&sa,sizeof(sa));
+	sa.nLength=sizeof(sa);
+	sa.lpSecurityDescriptor=&sd;
+	m_hMutex=::CreateMutex(&sa,FALSE,pszName);
+	m_fOwner=false;
+	return m_hMutex!=NULL;
+}
+
+bool CGlobalLock::Wait(DWORD Timeout)
+{
+	if (m_hMutex==NULL)
+		return false;
+	if (::WaitForSingleObject(m_hMutex,Timeout)==WAIT_TIMEOUT)
+		return false;
+	m_fOwner=true;
+	return true;
+}
+
+void CGlobalLock::Close()
+{
+	if (m_hMutex!=NULL) {
+		Release();
+		::CloseHandle(m_hMutex);
+		m_hMutex=NULL;
+	}
+}
+
+void CGlobalLock::Release()
+{
+	if (m_hMutex!=NULL && m_fOwner) {
+		::ReleaseMutex(m_hMutex);
+		m_fOwner=false;
+	}
 }
 #endif

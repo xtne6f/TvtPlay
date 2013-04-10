@@ -1,14 +1,18 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-10-01
+// 最終更新: 2011-10-03
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
 #include <Shlwapi.h>
 #include <list>
 #include "Util.h"
+#include "Settings.h"
 #include "ColorScheme.h"
 #include "TvtPlay.h"
 #include "resource.h"
+
+static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.0.9r2)";
 
 #define WM_UPDATE_POSITION  (WM_APP + 1)
 #define WM_UPDATE_TOT_TIME  (WM_APP + 2)
@@ -59,8 +63,6 @@ enum {
 static const TVTest::CommandInfo COMMAND_LIST[] = {
     {ID_COMMAND_OPEN, L"Open", L"ファイルを開く"},
     {ID_COMMAND_OPEN_POPUP, L"OpenPopup", L"ファイルを開く(ポップアップ)"},
-    {ID_COMMAND_SELECT_POPUP, L"SelectPopup", L"選択(ポップアップ)"},
-    {ID_COMMAND_CANCEL_POPUP, L"CancelPopup", L"キャンセル(ポップアップ)"},
     {ID_COMMAND_CLOSE, L"Close", L"ファイルを閉じる"},
     {ID_COMMAND_SEEK_BGN, L"SeekToBgn", L"シーク:先頭"},
     {ID_COMMAND_SEEK_END, L"SeekToEnd", L"シーク:末尾"},
@@ -164,9 +166,9 @@ bool CTvtPlay::GetPluginInfo(TVTest::PluginInfo *pInfo)
     // プラグインの情報を返す
     pInfo->Type           = TVTest::PLUGIN_TYPE_NORMAL;
     pInfo->Flags          = TVTest::PLUGIN_FLAG_DISABLEONSTART;
-    pInfo->pszPluginName  = L"TvtPlay";
+    pInfo->pszPluginName  = INFO_PLUGIN_NAME;
     pInfo->pszCopyright   = L"Public Domain";
-    pInfo->pszDescription = L"ファイル再生機能を追加";
+    pInfo->pszDescription = INFO_DESCRIPTION;
     return true;
 }
 
@@ -311,6 +313,12 @@ void CTvtPlay::LoadSettings()
         m_hashList.push_back(hashInfo);
     }
 
+    m_fSettingsLoaded = true;
+
+    // デフォルトの設定キーを出力するため
+    if (::GetPrivateProfileInt(SETTINGS, TEXT("PopupDesc"), -1, m_szIniFileName) == -1)
+        SaveSettings();
+
     CColorScheme scheme;
     TCHAR val[2];
     ::GetPrivateProfileString(TEXT("ColorScheme"), TEXT("Name"), TEXT("!"), val, ARRAY_SIZE(val), m_szIniFileName);
@@ -331,12 +339,6 @@ void CTvtPlay::LoadSettings()
     scheme.GetStyle(CColorScheme::STYLE_STATUSHIGHLIGHTITEM, &theme.HighlightItemStyle);
     scheme.GetBorderInfo(CColorScheme::BORDER_STATUS, &theme.Border);
     m_statusView.SetTheme(&theme);
-
-    m_fSettingsLoaded = true;
-
-    // デフォルトの設定キーを出力するため
-    if (::GetPrivateProfileInt(SETTINGS, TEXT("PopupDesc"), -1, m_szIniFileName) == -1)
-        SaveSettings();
 }
 
 
@@ -859,24 +861,12 @@ void CTvtPlay::OnCommand(int id)
         break;
     case ID_COMMAND_OPEN_POPUP:
         if (m_fPopuping) {
-            ::PostMessage(m_hwndFrame, WM_KEYDOWN, VK_DOWN, 0);
-            ::PostMessage(m_hwndFrame, WM_KEYUP, VK_DOWN, 0);
+            ::PostMessage(m_hwndFrame, WM_KEYDOWN, VK_ESCAPE, 0);
+            ::PostMessage(m_hwndFrame, WM_KEYUP, VK_ESCAPE, 0);
         }
         else {
             CStatusItem *pItem = m_statusView.GetItemByID(STATUS_ITEM_BUTTON + ID_COMMAND_OPEN);
             if (pItem) pItem->OnRButtonDown(0, 0);
-        }
-        break;
-    case ID_COMMAND_SELECT_POPUP:
-        if (m_fPopuping) {
-            ::PostMessage(m_hwndFrame, WM_KEYDOWN, VK_RETURN, 0);
-            ::PostMessage(m_hwndFrame, WM_KEYUP, VK_RETURN, 0);
-        }
-        break;
-    case ID_COMMAND_CANCEL_POPUP:
-        if (m_fPopuping) {
-            ::PostMessage(m_hwndFrame, WM_KEYDOWN, VK_ESCAPE, 0);
-            ::PostMessage(m_hwndFrame, WM_KEYUP, VK_ESCAPE, 0);
         }
         break;
     case ID_COMMAND_CLOSE:
@@ -938,9 +928,10 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         // ドライバが変更された
         pThis->EnablePluginByDriverName();
 
-        // 複数禁止起動時にチャンネル設定されない場合の対策
-        // TODO: 解決されれば取り除くべき
-        if (pThis->m_fEventExecute) {
+        // 複数禁止起動時にチャンネル設定されない場合の対策(ver.0.7.22未満)
+        if (pThis->m_fEventExecute &&
+            pThis->m_pApp->GetVersion() < TVTest::MakeVersion(0,7,22))
+        {
             TCHAR path[MAX_PATH];
             pThis->m_pApp->GetDriverName(path, ARRAY_SIZE(path));
             LPCTSTR name = ::PathFindFileName(path);
@@ -957,8 +948,8 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
                     }
                 }
             }
-            pThis->m_fEventExecute = false;
         }
+        pThis->m_fEventExecute = false;
 
         // コマンドラインにパスが指定されていれば開く
         if (pThis->m_pApp->IsPluginEnabled() && pThis->m_szSpecFileName[0]) {

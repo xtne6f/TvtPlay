@@ -37,7 +37,6 @@ bool FillInterlacedGradient(HDC hdc,const RECT *pRect,
 							COLORREF Color1,COLORREF Color2,
 							FillDirection Direction=DIRECTION_HORZ,
 							COLORREF LineColor=RGB(0,0,0),int LineOpacity=48);
-
 bool DrawMonoColorDIB(HDC hdcDst,int DstX,int DstY,
 					  HDC hdcSrc,int SrcX,int SrcY,int Width,int Height,COLORREF Color);
 bool DrawMonoColorDIB(HDC hdcDst,int DstX,int DstY,
@@ -121,5 +120,6 @@ public:
 };
 
 }	// namespace DrawUtil
+
 
 #endif

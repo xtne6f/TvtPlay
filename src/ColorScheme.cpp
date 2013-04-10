@@ -1,7 +1,7 @@
 ﻿#include <Windows.h>
 #include "Util.h"
-#include "ColorScheme.h"
 #include "Settings.h"
+#include "ColorScheme.h"
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -231,13 +231,12 @@ bool CColorScheme::SetName(LPCTSTR pszName)
 }
 
 
-bool CColorScheme::Load(LPCTSTR pszFileName)
+bool CColorScheme::Load(CSettings &Settings)
 {
-	CSettings Settings;
 	TCHAR szText[128];
 	int i;
 
-	if (!Settings.Open(pszFileName,TEXT("ColorScheme"),CSettings::OPEN_READ))
+	if (!Settings.SetSection(TEXT("ColorScheme")))
 		return false;
 	if (Settings.Read(TEXT("Name"),szText,lengthof(szText)))
 		SetName(szText);
@@ -304,11 +303,9 @@ bool CColorScheme::Load(LPCTSTR pszFileName)
 		}
 	}
 
-	Settings.Close();
-
 	for (i=0;i<NUM_BORDERS;i++)
 		m_BorderList[i]=m_BorderInfoList[i].DefaultType;
-	if (Settings.Open(pszFileName,TEXT("Style"),CSettings::OPEN_READ)) {
+	if (Settings.SetSection(TEXT("Style"))) {
 		for (i=0;i<NUM_BORDERS;i++) {
 			if (Settings.Read(m_BorderInfoList[i].pszText,szText,lengthof(szText))) {
 				if (::lstrcmpi(szText,TEXT("none"))==0) {
@@ -322,10 +319,24 @@ bool CColorScheme::Load(LPCTSTR pszFileName)
 					m_BorderList[i]=Theme::BORDER_RAISED;
 			}
 		}
-		Settings.Close();
 	}
 
+	return true;
+}
+
+
+bool CColorScheme::Load(LPCTSTR pszFileName)
+{
+	CSettings Settings;
+
+	if (!Settings.Open(pszFileName,CSettings::OPEN_READ))
+		return false;
+
+	if (!Load(Settings))
+		return false;
+
 	SetFileName(pszFileName);
+
 	return true;
 }
 

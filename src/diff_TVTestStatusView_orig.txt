@@ -149,17 +149,20 @@ diff TVTestStatusView_orig/BasicWindow.cpp ./BasicWindow.cpp
 > #include <WindowsX.h>
 > #include "Util.h"
 diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
-1,3c1,2
+1,4c1,2
 < #include "stdafx.h"
 < #include "TVTest.h"
 < #include "AppMain.h"
+< #include "ColorScheme.h"
 ---
 > #include <Windows.h>
 > #include "Util.h"
-6,8d4
+6,8c4
 < #include "DialogUtil.h"
 < #include "DrawUtil.h"
 < #include "resource.h"
+---
+> #include "ColorScheme.h"
 15a12,13
 > #define lengthof _countof
 > 
@@ -475,11 +478,11 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 		COLOR_CONTROLPANELTEXT},
 < 	{GRADIENT_CONTROLPANELHIGHLIGHTBACK,		BORDER_CONTROLPANELHIGHLIGHTITEM,
 < 		COLOR_CONTROLPANELHIGHLIGHTTEXT},
-572,574d262
+571,573d261
 < 		} else if (i==COLOR_SPLITTER) {
 < 			m_ColorList[i]=::GetSysColor(COLOR_3DFACE);
 < 			SetLoadedFlag(i);
-584,637d271
+583,636d270
 < 				{COLOR_PROGRAMLISTPANEL_CUREVENTBACK1,		COLOR_PROGRAMLISTPANEL_EVENTBACK1},
 < 				{COLOR_PROGRAMLISTPANEL_CUREVENTBACK2,		COLOR_PROGRAMLISTPANEL_EVENTBACK2},
 < 				{COLOR_PROGRAMLISTPANEL_CUREVENTTEXT,		COLOR_PROGRAMLISTPANEL_EVENTTEXT},
@@ -534,7 +537,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 				{COLOR_PROGRAMGUIDECURCHANNELBACK2,			COLOR_PROGRAMGUIDECHANNELBACK2},
 < 				{COLOR_PROGRAMGUIDECURCHANNELTEXT,			COLOR_PROGRAMGUIDECHANNELTEXT},
 < 				{COLOR_PROGRAMGUIDETIMELINE,				COLOR_PROGRAMGUIDETIMETEXT},
-658,666d291
+657,665d290
 < 		} else {
 < 			switch (i) {
 < 			case GRADIENT_TITLEBARICON:
@@ -544,7 +547,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 				m_GradientList[i].Type=m_GradientList[GRADIENT_SIDEBARBACK].Type;
 < 				break;
 < 			}
-679,687d303
+678,686d302
 < 		} else {
 < 			switch (i) {
 < 			case GRADIENT_TITLEBARICON:
@@ -554,13 +557,12 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 				m_GradientList[i].Direction=m_GradientList[GRADIENT_SIDEBARBACK].Direction;
 < 				break;
 < 			}
-717,751d332
-< bool CColorScheme::Save(LPCTSTR pszFileName) const
+712,744d327
+< bool CColorScheme::Save(CSettings &Settings) const
 < {
-< 	CSettings Settings;
 < 	int i;
 < 
-< 	if (!Settings.Open(pszFileName,TEXT("ColorScheme"),CSettings::OPEN_WRITE))
+< 	if (!Settings.SetSection(TEXT("ColorScheme")))
 < 		return false;
 < 	Settings.Write(TEXT("Name"),m_Name.GetSafe());
 < 	for (i=0;i<NUM_COLORS;i++)
@@ -575,22 +577,33 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 		::wsprintf(szName,TEXT("%sDirection"),m_GradientInfoList[i].pszText);
 < 		Settings.Write(szName,GradientDirectionList[m_GradientList[i].Direction]);
 < 	}
-< 	Settings.Close();
 < 
-< 	if (Settings.Open(pszFileName,TEXT("Style"),CSettings::OPEN_WRITE)) {
+< 	if (Settings.SetSection(TEXT("Style"))) {
 < 		static const LPCTSTR pszTypeName[] = {
 < 			TEXT("none"),	TEXT("solid"),	TEXT("sunken"),	TEXT("raised")
 < 		};
 < 
 < 		for (i=0;i<NUM_BORDERS;i++)
 < 			Settings.Write(m_BorderInfoList[i].pszText,pszTypeName[m_BorderList[i]]);
-< 		Settings.Close();
 < 	}
+< 
 < 	return true;
 < }
 < 
 < 
-867,1661d447
+761,771d343
+< bool CColorScheme::Save(LPCTSTR pszFileName) const
+< {
+< 	CSettings Settings;
+< 
+< 	if (!Settings.Open(pszFileName,CSettings::OPEN_WRITE))
+< 		return false;
+< 
+< 	return Save(Settings);
+< }
+< 
+< 
+887,1675d458
 < }
 < 
 < 
@@ -694,21 +707,15 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < }
 < 
 < 
-< bool CColorSchemeOptions::LoadSettings(CSettingsFile &File)
+< bool CColorSchemeOptions::LoadSettings(CSettings &Settings)
 < {
-< 	TCHAR szFileName[MAX_PATH];
-< 	if (!File.GetFileName(szFileName,lengthof(szFileName)))
-< 		return false;
-< 	return m_pColorScheme->Load(szFileName);
+< 	return m_pColorScheme->Load(Settings);
 < }
 < 
 < 
-< bool CColorSchemeOptions::SaveSettings(CSettingsFile &File)
+< bool CColorSchemeOptions::SaveSettings(CSettings &Settings)
 < {
-< 	TCHAR szFileName[MAX_PATH];
-< 	if (!File.GetFileName(szFileName,lengthof(szFileName)))
-< 		return false;
-< 	return m_pColorScheme->Save(szFileName);
+< 	return m_pColorScheme->Save(Settings);
 < }
 < 
 < 
@@ -1627,8 +1634,11 @@ diff TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
 < 		STYLE_CONTROLPANELITEM,
 < 		STYLE_CONTROLPANELHIGHLIGHTITEM,
 305d74
+< 	bool Save(CSettings &Settings) const;
+307d75
 < 	bool Save(LPCTSTR pszFileName) const;
-358,412d126
+359,412d126
+< };
 < 
 < class CColorSchemeList
 < {
@@ -1654,8 +1664,8 @@ diff TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
 < 	CColorSchemeOptions();
 < 	~CColorSchemeOptions();
 < // COptions
-< 	bool LoadSettings(CSettingsFile &File) override;
-< 	bool SaveSettings(CSettingsFile &File) override;
+< 	bool LoadSettings(CSettings &Settings) override;
+< 	bool SaveSettings(CSettings &Settings) override;
 < // CBasicDialog
 < 	bool Create(HWND hwndOwner) override;
 < // CColorSchemeOptions
@@ -1682,8 +1692,6 @@ diff TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
 < 	bool Apply(const CColorScheme *pColorScheme) const;
 < 	void GetCurrentSettings(CColorScheme *pColorScheme);
 < 	static const LPCTSTR m_pszExtension;
-< };
-< 
 diff TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
 1c1,2
 < #include "stdafx.h"
@@ -2678,26 +2686,26 @@ diff TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
 < 	return ::GetThemePartSize(m_hTheme,hdc,PartID,StateID,NULL,TS_TRUE,pSize)==S_OK;
 < }
 diff TVTestStatusView_orig/DrawUtil.h ./DrawUtil.h
-40,44d39
+40,47d39
 < bool GlossOverlay(HDC hdc,const RECT *pRect,
 < 				  int Highlight1=192,int Highlight2=32,
 < 				  int Shadow1=32,int Shadow2=0);
 < bool ColorOverlay(HDC hdc,const RECT *pRect,COLORREF Color,BYTE Opacity=128);
 < bool FillBorder(HDC hdc,const RECT *pBorderRect,const RECT *pEmptyRect,const RECT *pPaintRect,HBRUSH hbr);
-46,47d40
+< 
 < bool DrawBitmap(HDC hdc,int DstX,int DstY,int DstWidth,int DstHeight,
 < 				HBITMAP hbm,const RECT *pSrcRect=NULL,BYTE Opacity=255);
-53,56d45
+53,56d44
 < HBITMAP ResizeBitmap(HBITMAP hbmSrc,int Width,int Height,int BitCount=24,int StretchMode=STRETCH_HALFTONE);
 < 
 < int CalcWrapTextLines(HDC hdc,LPCTSTR pszText,int Width);
 < bool DrawWrapText(HDC hdc,LPCTSTR pszText,const RECT *pRect,int LineHeight);
-68,71d56
+68,71d55
 < bool GetDefaultUIFont(LOGFONT *pFont);
 < bool IsFontAvailable(const LOGFONT &Font,HDC hdc=NULL);
 < bool IsFontSmoothingEnabled();
 < bool IsClearTypeEnabled();
-94,110d78
+94,110d77
 < bool DrawText(HDC hdc,LPCTSTR pszText,const RECT &Rect,UINT Format,
 < 			  const CFont *pFont=NULL,COLORREF Color=CLR_INVALID);
 < 
@@ -2715,14 +2723,14 @@ diff TVTestStatusView_orig/DrawUtil.h ./DrawUtil.h
 < 	HBRUSH GetHandle() const { return m_hbr; }
 < };
 < 
-135,140d102
+135,140d101
 < inline HBRUSH SelectObject(HDC hdc,const CBrush &Brush) {
 < 	return static_cast<HBRUSH>(::SelectObject(hdc,Brush.GetHandle()));
 < }
 < inline HBITMAP SelectObject(HDC hdc,const CBitmap &Bitmap) {
 < 	return static_cast<HBITMAP>(::SelectObject(hdc,Bitmap.GetHandle()));
 < }
-162,271d123
+162,270d122
 < 
 < 
 < namespace Gdiplus {
@@ -2832,7 +2840,95 @@ diff TVTestStatusView_orig/DrawUtil.h ./DrawUtil.h
 < 	bool GetInt(int PartID,int StateID,int PropID,int *pValue);
 < 	bool GetPartSize(HDC hdc,int PartID,int StateID,SIZE *pSize);
 < };
-< 
+diff TVTestStatusView_orig/IniFile.cpp ./IniFile.cpp
+1,2c1,2
+< #include "stdafx.h"
+< #include "TVTest.h"
+---
+> #include <Windows.h>
+> #include "Util.h"
+4a5
+> #if 0
+9a11,15
+> #endif
+> 
+> #if _MSC_VER < 1600
+>     #define nullptr NULL
+> #endif
+10a17
+> #define INI_MUTEX_NAME_W	L"TVTest"
+36c43
+< 		MutexName=APP_NAME_W L"_Ini_Mutex_";
+---
+> 		MutexName=INI_MUTEX_NAME_W L"_Ini_Mutex_";
+125c132
+< 			for (auto itrSection=m_SectionList.begin();itrSection!=m_SectionList.end();itrSection++) {
+---
+> 			for (std::list<CSectionData>::const_iterator itrSection=m_SectionList.begin();itrSection!=m_SectionList.end();itrSection++) {
+132c139
+< 				for (auto itrValue=itrSection->Entries.begin();itrValue!=itrSection->Entries.end();itrValue++) {
+---
+> 				for (std::list<CEntry>::const_iterator itrValue=itrSection->Entries.begin();itrValue!=itrSection->Entries.end();itrValue++) {
+185c192
+< 		auto i=FindSection(pszSection);
+---
+> 		std::list<CSectionData>::iterator i=FindSection(pszSection);
+215c222
+< 		auto i=FindSection(pszSection);
+---
+> 		std::list<CSectionData>::iterator i=FindSection(pszSection);
+231c238
+< 		auto i=FindSection(pszSection);
+---
+> 		std::list<CSectionData>::iterator i=FindSection(pszSection);
+264c271
+< 		auto itrValue=FindValue(pSection->Entries,pszName);
+---
+> 		std::list<CEntry>::iterator itrValue=FindValue(pSection->Entries,pszName);
+292c299
+< 		auto itrValue=FindValue(pSection->Entries,pszName);
+---
+> 		std::list<CEntry>::iterator itrValue=FindValue(pSection->Entries,pszName);
+296c303
+< 			for (auto i=pSection->Entries.rbegin();i!=pSection->Entries.rend();i++) {
+---
+> 			for (std::list<CEntry>::reverse_iterator i=pSection->Entries.rbegin();i!=pSection->Entries.rend();i++) {
+325c332
+< 		auto itrValue=FindValue(pSection->Entries,pszName);
+---
+> 		std::list<CEntry>::const_iterator itrValue=FindValue(pSection->Entries,pszName);
+340c347
+< 		auto itrValue=FindValue(pSection->Entries,pszName);
+---
+> 		std::list<CEntry>::iterator itrValue=FindValue(pSection->Entries,pszName);
+360c367
+< 		auto itrSection=FindSection(pszSection);
+---
+> 		std::list<CSectionData>::iterator itrSection=FindSection(pszSection);
+364c371
+< 		for (auto i=itrSection->Entries.begin();i!=itrSection->Entries.end();i++) {
+---
+> 		for (std::list<CEntry>::iterator i=itrSection->Entries.begin();i!=itrSection->Entries.end();i++) {
+420c427
+< 		for (auto i=m_SectionList.begin();i!=m_SectionList.end();i++) {
+---
+> 		for (std::list<CSectionData>::iterator i=m_SectionList.begin();i!=m_SectionList.end();i++) {
+433c440
+< 		for (auto i=m_SectionList.begin();i!=m_SectionList.end();i++) {
+---
+> 		for (std::list<CSectionData>::const_iterator i=m_SectionList.begin();i!=m_SectionList.end();i++) {
+443c450
+< 		for (auto i=Entries.begin();i!=Entries.end();i++) {
+---
+> 		for (std::list<CEntry>::iterator i=Entries.begin();i!=Entries.end();i++) {
+453c460
+< 		for (auto i=Entries.begin();i!=Entries.end();i++) {
+---
+> 		for (std::list<CEntry>::const_iterator i=Entries.begin();i!=Entries.end();i++) {
+476c483
+< 			auto itrSection=FindSection(m_Section.c_str());
+---
+> 			std::list<CSectionData>::iterator itrSection=FindSection(m_Section.c_str());
 diff TVTestStatusView_orig/Settings.cpp ./Settings.cpp
 1,2c1,3
 < #include "stdafx.h"
@@ -2843,14 +2939,13 @@ diff TVTestStatusView_orig/Settings.cpp ./Settings.cpp
 > #include "Util.h"
 4a6
 > #if 0
-9a12,13
+9a12,18
 > #endif
 > 
-10a15,17
 > #ifndef _T
 > #define _T(x) TEXT(x)
 > #endif
-11a19
+> 
 > #define lengthof _countof
 diff TVTestStatusView_orig/StatusView.cpp ./StatusView.cpp
 1,2c1,3

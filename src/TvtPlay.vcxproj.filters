@@ -60,6 +60,12 @@
     <ClInclude Include="WindowUtil.h">
       <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
     </ClInclude>
+    <ClInclude Include="IniFile.h">
+      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
+    </ClInclude>
+    <ClInclude Include="StringUtility.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="TvtPlay.cpp">
@@ -94,6 +100,12 @@
     </ClCompile>
     <ClCompile Include="WindowUtil.cpp">
       <Filter>ソース ファイル\TVTestStatusView</Filter>
+    </ClCompile>
+    <ClCompile Include="IniFile.cpp">
+      <Filter>ソース ファイル\TVTestStatusView</Filter>
+    </ClCompile>
+    <ClCompile Include="StringUtility.cpp">
+      <Filter>ソース ファイル</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
