@@ -260,18 +260,6 @@ bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTST
 }
 
 
-int CompareTStrI(const void *str1, const void *str2)
-{
-    return ::lstrcmpi(*(LPCTSTR*)str1, *(LPCTSTR*)str2);
-}
-
-
-int CompareTStrIX(const void *str1, const void *str2)
-{
-    return ::lstrcmpi(*(LPCTSTR*)str2, *(LPCTSTR*)str1);
-}
-
-
 BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPCTSTR lpFileName)
 {
     TCHAR szValue[32];

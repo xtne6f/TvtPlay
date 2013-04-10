@@ -41,7 +41,7 @@ CChapterMap::~CChapterMap()
 
 // pathに対応する.chapterファイルを読み込む
 // .chapterファイルが存在すれば変更監視を開始する
-bool CChapterMap::Open(LPCTSTR path)
+bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
 {
     Close();
 
@@ -51,32 +51,55 @@ bool CChapterMap::Open(LPCTSTR path)
     if (!rv || rv >= _countof(fullPath)) return false;
 
     // 長い名前に変換
-    TCHAR tmpPath[MAX_PATH];
-    rv = ::GetLongPathName(fullPath, tmpPath, _countof(tmpPath));
-    if (!rv || rv >= _countof(tmpPath) - 12/* 拡張子付加の余裕分 */) return false;
+    TCHAR pathWoExt[MAX_PATH];
+    rv = ::GetLongPathName(fullPath, pathWoExt, _countof(pathWoExt));
+    if (!rv || rv >= _countof(pathWoExt)) return false;
 
     // 動画ファイルの存在確認
-    if (!::PathFileExists(tmpPath)) return false;
+    if (!::PathFileExists(pathWoExt)) return false;
 
-    // .chapterファイルのパスを生成
-    ::PathRemoveExtension(tmpPath);
-    if (!::lstrcpyn(m_path, tmpPath, _countof(m_path) - 8) ||
-        !::lstrcat(m_path, TEXT(".chapter"))/* 念のため戻値確認 */)
-    {
-        m_path[0] = 0;
+    // 拡張子除去
+    ::PathRemoveExtension(pathWoExt);
+
+    // 動画ファイルと同じ階層の.chapter[.txt]へのパスを生成
+    TCHAR chPath[MAX_PATH], ogmPath[MAX_PATH];
+    chPath[0] = ogmPath[0] = 0;
+    int len = ::lstrlen(pathWoExt);
+    if (len < _countof(chPath) - 8) {
+        // PathAddExtension()を使ってはいけない!
+        len = ::wsprintf(chPath, TEXT("%s.chapter"), pathWoExt);
+        if (len <= _countof(ogmPath) - 4) ::wsprintf(ogmPath, TEXT("%s.txt"), chPath);
+    }
+    else {
+        // 少なくとも.chapterへのパスは生成できなければならない
         return false;
     }
-    // OGMスタイルチャプターのパスを生成
-    TCHAR ogmStylePath[MAX_PATH];
-    ::lstrcpyn(ogmStylePath, tmpPath, _countof(ogmStylePath) - 12);
-    ::lstrcat(ogmStylePath, TEXT(".chapter.txt"));
 
-    // .chapterファイルが存在するときは、中身がチャプターコマンド
-    // 仕様に従っている場合のみ書き込み可能(m_fWritable)
-    if (::PathFileExists(m_path)) {
-        // .chapterファイルからロード
+    // ディレクトリが存在すれば、chapters階層の.chapter[.txt]へのパスを生成
+    TCHAR subChPath[MAX_PATH], subOgmPath[MAX_PATH];
+    subChPath[0] = subOgmPath[0] = 0;
+    if (subDirName[0]) {
+        TCHAR subPathWoExt[MAX_PATH];
+        ::lstrcpy(subPathWoExt, pathWoExt);
+        if (::PathRemoveFileSpec(subPathWoExt) &&
+            ::PathAppend(subPathWoExt, subDirName) &&
+            ::PathIsDirectory(subPathWoExt) &&
+            ::PathAppend(subPathWoExt, ::PathFindFileName(pathWoExt)))
+        {
+            len = ::lstrlen(subPathWoExt);
+            if (len < _countof(subChPath) - 8) {
+                len = ::wsprintf(subChPath, TEXT("%s.chapter"), subPathWoExt);
+                if (len <= _countof(subOgmPath) - 4) ::wsprintf(subOgmPath, TEXT("%s.txt"), subChPath);
+            }
+        }
+    }
+
+    LPCTSTR chReadPath = subChPath[0] && ::PathFileExists(subChPath) ? subChPath :
+                         ::PathFileExists(chPath) ? chPath : NULL;
+    if (chReadPath) {
+        // 中身がチャプターコマンド仕様に従っている場合のみ書き込み可能(m_fWritable)
         for (int i = 0; i < RETRY_LIMIT; ++i) {
-            TCHAR *pCmd = NewReadUtfFileToEnd(m_path, FILE_SHARE_READ);
+            TCHAR *pCmd = NewReadUtfFileToEnd(chReadPath, FILE_SHARE_READ);
             if (pCmd) {
                 m_fWritable = InsertCommand(pCmd);
                 delete [] pCmd;
@@ -84,8 +107,10 @@ bool CChapterMap::Open(LPCTSTR path)
             }
             ::Sleep(200);
         }
+        ::lstrcpy(m_path, chReadPath);
 
         // ReadDirectoryChangesW()のために長短ファイル名を用意
+        TCHAR tmpPath[MAX_PATH];
         rv = ::GetShortPathName(m_path, tmpPath, _countof(tmpPath));
         if (rv && rv < _countof(tmpPath)) {
             ::lstrcpy(m_shortName, ::PathFindFileName(tmpPath));
@@ -103,20 +128,25 @@ bool CChapterMap::Open(LPCTSTR path)
             Sync();
         }
     }
-    else if (::PathFileExists(ogmStylePath)) {
-        m_fWritable = true;
-        // BOMがなければANSIコードページで読む
-        TCHAR *pCmd = NewReadUtfFileToEnd(ogmStylePath, FILE_SHARE_READ, true);
-        if (pCmd) {
-            InsertOgmStyleCommand(pCmd);
-            delete [] pCmd;
-        }
-    }
     else {
         m_fWritable = true;
-        // もしあればファイル名からロード
-        TCHAR *pCmd = ::StrStrI(::PathFindFileName(m_path), TEXT("c-"));
-        if (pCmd) InsertCommand(pCmd);
+        ::lstrcpy(m_path, subChPath[0] ? subChPath : chPath);
+
+        LPCTSTR ogmReadPath = subOgmPath[0] && ::PathFileExists(subOgmPath) ? subOgmPath :
+                              ogmPath[0] && ::PathFileExists(ogmPath) ? ogmPath : NULL;
+        if (ogmReadPath) {
+            // BOMがなければANSIコードページで読む
+            TCHAR *pCmd = NewReadUtfFileToEnd(ogmReadPath, FILE_SHARE_READ, true);
+            if (pCmd) {
+                InsertOgmStyleCommand(pCmd);
+                delete [] pCmd;
+            }
+        }
+        else {
+            // もしあればファイル名からロード
+            TCHAR *pCmd = ::StrStrI(::PathFindFileName(m_path), TEXT("c-"));
+            if (pCmd) InsertCommand(pCmd);
+        }
     }
     return true;
 }

@@ -7,10 +7,10 @@ class CTvtPlay : public TVTest::CTVTestPlugin, public ITvtPlayController
     static const int BUTTON_MAX = 18;
     static const int BUTTON_TEXT_MAX = 192;
     static const int TIMER_AUTO_HIDE_INTERVAL = 100;
+    static const int TIMER_UPDATE_HASH_LIST_INTERVAL = 5000;
     static const int TIMER_SYNC_CHAPTER_INTERVAL = 1000;
     static const int TIMER_WATCH_POS_GT_INTERVAL = 1000;
-    static const int HASH_LIST_MAX_MAX = 10000;
-    static const int POPUP_MAX_MAX = 100;
+    static const int POPUP_MAX_MAX = 10000;
 public:
     // CTVTestPlugin
     CTvtPlay();
@@ -41,10 +41,18 @@ public:
     void SeekAbsolute(int msec);
     void OnCommand(int id, const POINT *pPt = NULL, UINT flags = 0);
 private:
+    // ファイルごとの固有情報
+    struct HASH_INFO {
+        LONGLONG hash; // 56bitハッシュ値
+        int resumePos; // レジューム位置(msec)
+    };
     void AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst);
     void LoadSettings();
     void LoadTVTestSettings();
     void SaveSettings(bool fWriteDefault = false) const;
+    bool LoadFileInfoSetting(std::list<HASH_INFO> &hashList) const;
+    void SaveFileInfoSetting(const std::list<HASH_INFO> &hashList) const;
+    void UpdateFileInfoSetting(const HASH_INFO &hashInfo) const;
     bool InitializePlugin();
     bool EnablePlugin(bool fEnable);
     bool IsAppMaximized() { return (::GetWindowLong(m_pApp->GetAppWindow(), GWL_STYLE) & WS_MAXIMIZE) != 0; }
@@ -131,18 +139,14 @@ private:
     int m_stretchMode, m_noMuteMax, m_noMuteMin;
     bool m_fConvTo188, m_fUseQpc, m_fModTimestamp;
     int m_pcrThresholdMsec;
-
-    // ファイルごとの固有情報
     int m_salt, m_hashListMax;
-    struct HASH_INFO {
-        LONGLONG hash; // 56bitハッシュ値
-        int resumePos; // レジューム位置(msec)
-    };
-    std::list<HASH_INFO> m_hashList;
+    bool m_fUpdateHashList;
+
     // 再生リスト
     CPlaylist m_playlist;
     // 現在再生中のチャプター
     CChapterMap m_chapter;
+    TCHAR m_szChaptersDirName[MAX_PATH];
 };
 
 #endif // INCLUDE_TVT_PLAY_H

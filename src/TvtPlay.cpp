@@ -1,9 +1,10 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2012-02-18
+// 最終更新: 2012-03-15
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
 #include <Shlwapi.h>
+#include <algorithm>
 #include <list>
 #include <vector>
 #include <map>
@@ -23,8 +24,8 @@
 #include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.6)";
-static const int INFO_VERSION = 19;
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.7)";
+static const int INFO_VERSION = 20;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
 #define WM_QUERY_CLOSE_NEXT (WM_APP + 2)
@@ -51,6 +52,7 @@ static LPCTSTR PIPE_NAME = TEXT("\\\\.\\pipe\\BonDriver_Pipe%02d");
 enum {
     TIMER_ID_AUTO_HIDE = 1,
     TIMER_ID_RESET_DROP,
+    TIMER_ID_UPDATE_HASH_LIST,
     TIMER_ID_SYNC_CHAPTER,
     TIMER_ID_WATCH_POS_GT,
 };
@@ -165,11 +167,13 @@ CTvtPlay::CTvtPlay()
     , m_pcrThresholdMsec(0)
     , m_salt(0)
     , m_hashListMax(0)
+    , m_fUpdateHashList(false)
 {
     m_szIniFileName[0] = 0;
     m_szSpecFileName[0] = 0;
     m_szIconFileName[0] = 0;
     m_szPopupPattern[0] = 0;
+    m_szChaptersDirName[0] = 0;
     m_lastCurPos.x = m_lastCurPos.y = 0;
     m_idleCurPos.x = m_idleCurPos.y = 0;
     CStatusView::Initialize(g_hinstDLL);
@@ -348,11 +352,11 @@ void CTvtPlay::LoadSettings()
         m_timeoutOnMove     = GetBufferedProfileInt(pBuf, TEXT("TimeoutOnMouseMove"), 0);
         m_salt              = GetBufferedProfileInt(pBuf, TEXT("Salt"), (::GetTickCount()>>16)^(::GetTickCount()&0xffff));
         m_hashListMax       = GetBufferedProfileInt(pBuf, TEXT("FileInfoMax"), 0);
-        m_hashListMax       = min(m_hashListMax, HASH_LIST_MAX_MAX);
+        m_fUpdateHashList   = GetBufferedProfileInt(pBuf, TEXT("FileInfoAutoUpdate"), 0) != 0;
         m_popupMax          = GetBufferedProfileInt(pBuf, TEXT("PopupMax"), 30);
-        m_popupMax          = min(m_popupMax, POPUP_MAX_MAX);
         m_fPopupDesc        = GetBufferedProfileInt(pBuf, TEXT("PopupDesc"), 0) != 0;
         GetBufferedProfileString(pBuf, TEXT("PopupPattern"), TEXT("%RecordFolder%*.ts"), m_szPopupPattern, _countof(m_szPopupPattern));
+        GetBufferedProfileString(pBuf, TEXT("ChaptersFolderName"), TEXT("chapters"), m_szChaptersDirName, _countof(m_szChaptersDirName));
         m_seekItemOrder     = GetBufferedProfileInt(pBuf, TEXT("SeekItemOrder"), 99);
         m_posItemOrder      = GetBufferedProfileInt(pBuf, TEXT("StatusItemOrder"), 99);
         GetBufferedProfileString(pBuf, TEXT("IconImage"), TEXT(""), m_szIconFileName, _countof(m_szIconFileName));
@@ -386,32 +390,6 @@ void CTvtPlay::LoadSettings()
         delete [] pBuf;
     }
 
-    // ファイル固有のレジューム情報などを取得
-    // キー番号が小さいものほど新しい
-    m_hashList.clear();
-    if (m_hashListMax > 0) {
-        TCHAR *pBuf = NULL;
-        for (int bufSize = m_hashListMax * 96; bufSize < 1024*1024; bufSize *= 2) {
-            delete [] pBuf;
-            pBuf = new TCHAR[bufSize];
-            if ((int)::GetPrivateProfileSection(TEXT("FileInfo"), pBuf, bufSize, m_szIniFileName) < bufSize - 2) break;
-            pBuf[0] = 0;
-        }
-        for (int i = 0; i < m_hashListMax; ++i) {
-            HASH_INFO hashInfo;
-            TCHAR key[32], val[64];
-            ::wsprintf(key, TEXT("Hash%d"), i);
-            GetBufferedProfileString(pBuf, key, TEXT(""), val, _countof(val));
-            if (!val[0]) break;
-            if (!::StrToInt64Ex(val, STIF_SUPPORT_HEX, &hashInfo.hash)) continue;
-
-            ::wsprintf(key, TEXT("Resume%d"), i);
-            hashInfo.resumePos = GetBufferedProfileInt(pBuf, key, 0);
-            m_hashList.push_back(hashInfo);
-        }
-        delete [] pBuf;
-    }
-
     m_fSettingsLoaded = true;
 
     if (iniVer < 10) {
@@ -429,6 +407,10 @@ void CTvtPlay::LoadSettings()
     if (iniVer < INFO_VERSION) {
         // デフォルトの設定キーを出力するため
         SaveSettings(true);
+    }
+    // もしなければFileInfoの有効/無効キーをつくる
+    if (GetPrivateProfileSignedInt(TEXT("FileInfo"), TEXT("Enabled"), -1, m_szIniFileName) < 0) {
+        WritePrivateProfileInt(TEXT("FileInfo"), TEXT("Enabled"), 1, m_szIniFileName);
     }
 
     LoadTVTestSettings();
@@ -581,9 +563,11 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
         WritePrivateProfileInt(SETTINGS, TEXT("TimeoutOnMouseMove"), m_timeoutOnMove, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("Salt"), m_salt, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("FileInfoMax"), m_hashListMax, m_szIniFileName);
+        WritePrivateProfileInt(SETTINGS, TEXT("FileInfoAutoUpdate"), m_fUpdateHashList, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("PopupMax"), m_popupMax, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("PopupDesc"), m_fPopupDesc, m_szIniFileName);
         ::WritePrivateProfileString(SETTINGS, TEXT("PopupPattern"), m_szPopupPattern, m_szIniFileName);
+        ::WritePrivateProfileString(SETTINGS, TEXT("ChaptersFolderName"), m_szChaptersDirName, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("SeekItemOrder"), m_seekItemOrder, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("StatusItemOrder"), m_posItemOrder, m_szIniFileName);
         ::WritePrivateProfileString(SETTINGS, TEXT("IconImage"), m_szIconFileName, m_szIniFileName);
@@ -604,20 +588,85 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
             ::WritePrivateProfileString(SETTINGS, key, m_buttonList[i], m_szIniFileName);
         }
     }
+}
 
-    // FileInfoセクションは一気に書き込む
-    {
-        TCHAR *pBuf = new TCHAR[2 + m_hashList.size() * 96];
-        TCHAR *p = pBuf;
-        p[0] = p[1] = 0;
-        std::list<HASH_INFO>::const_iterator it = m_hashList.begin();
-        for (int i = 0; it != m_hashList.end(); ++i, ++it) {
-            p += ::wsprintf(p, TEXT("Hash%d=0x%06x%08x"), i, (DWORD)(it->hash>>32), (DWORD)(it->hash)) + 1;
-            p += ::wsprintf(p, TEXT("Resume%d=%d"), i, it->resumePos) + 1;
-        }
-        p[0] = 0;
-        ::WritePrivateProfileSection(TEXT("FileInfo"), pBuf, m_szIniFileName);
+
+// ファイル固有情報のリストを読み込む
+// 読み込みに失敗した場合はリストをクリアした上でfalseを返す
+bool CTvtPlay::LoadFileInfoSetting(std::list<HASH_INFO> &hashList) const
+{
+    hashList.clear();
+    if (!m_fSettingsLoaded || m_hashListMax <= 0) return false;
+
+    TCHAR *pBuf = NULL;
+    for (int bufSize = 4096; bufSize < 1024*1024; bufSize *= 2) {
         delete [] pBuf;
+        pBuf = new TCHAR[bufSize];
+        if ((int)::GetPrivateProfileSection(TEXT("FileInfo"), pBuf, bufSize, m_szIniFileName) < bufSize - 2) break;
+        pBuf[0] = 0;
+    }
+    if (!GetBufferedProfileInt(pBuf, TEXT("Enabled"), 0)) {
+        delete [] pBuf;
+        return false;
+    }
+    for (int i = 0; i < m_hashListMax; ++i) {
+        // キー番号が小さいものほど新しい
+        HASH_INFO hashInfo;
+        TCHAR key[32], val[64];
+        ::wsprintf(key, TEXT("Hash%d"), i);
+        GetBufferedProfileString(pBuf, key, TEXT(""), val, _countof(val));
+        if (!val[0]) break;
+        if (!::StrToInt64Ex(val, STIF_SUPPORT_HEX, &hashInfo.hash)) continue;
+
+        ::wsprintf(key, TEXT("Resume%d"), i);
+        hashInfo.resumePos = GetBufferedProfileInt(pBuf, key, 0);
+        // 利用されるレジューム情報だけ追加(TODO: 次バージョンあたりまでの時限処置)
+        if (hashInfo.resumePos > 5000) {
+            hashList.push_back(hashInfo);
+        }
+    }
+    delete [] pBuf;
+    return true;
+}
+
+// ファイル固有情報のリストを保存する
+void CTvtPlay::SaveFileInfoSetting(const std::list<HASH_INFO> &hashList) const
+{
+    if (!m_fSettingsLoaded || m_hashListMax <= 0) return;
+
+    // 不整合を防ぐため一度に書き込む
+    TCHAR *pBuf = new TCHAR[32 + hashList.size() * 96];
+    TCHAR *p = pBuf;
+    p += ::wsprintf(p, TEXT("Enabled=1")) + 1;
+    std::list<HASH_INFO>::const_iterator it = hashList.begin();
+    for (int i = 0; i < m_hashListMax && it != hashList.end(); ++i, ++it) {
+        p += ::wsprintf(p, TEXT("Hash%d=0x%06x%08x"), i, (DWORD)(it->hash>>32), (DWORD)(it->hash)) + 1;
+        p += ::wsprintf(p, TEXT("Resume%d=%d"), i, it->resumePos) + 1;
+    }
+    p[0] = 0;
+    ::WritePrivateProfileSection(TEXT("FileInfo"), pBuf, m_szIniFileName);
+    delete [] pBuf;
+}
+
+// ファイル固有情報を更新する
+void CTvtPlay::UpdateFileInfoSetting(const HASH_INFO &hashInfo) const
+{
+    std::list<HASH_INFO> hashList;
+    if (LoadFileInfoSetting(hashList)) {
+        // リストから削除
+        std::list<HASH_INFO>::iterator it = hashList.begin();
+        for (; it != hashList.end(); ++it) {
+            if (it->hash == hashInfo.hash) {
+                hashList.erase(it);
+                break;
+            }
+        }
+        // レジューム情報が有効なときだけ追加(TODO: HASH_INFOを拡張するときはこの部分の再考が必要)
+        if (hashInfo.resumePos >= 0) {
+            // リストの最も新しい位置に追加する
+            hashList.push_front(hashInfo);
+        }
+        SaveFileInfoSetting(hashList);
     }
 }
 
@@ -903,6 +952,10 @@ bool CTvtPlay::OpenWithDialog()
 }
 
 
+static inline bool CompareAsc(LPCTSTR& l, LPCTSTR& r) { return ::lstrcmpi(l, r) < 0; }
+
+static inline bool CompareDesc(LPCTSTR& l, LPCTSTR& r) { return ::lstrcmpi(l, r) > 0; }
+
 // ポップアップメニュー選択でファイルを開く
 bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
 {
@@ -919,32 +972,39 @@ bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
     }
 
     // ファイルリスト取得
-    WIN32_FIND_DATA *findList = new WIN32_FIND_DATA[POPUP_MAX_MAX];
-    int count = 0;
-    HANDLE hFind = ::FindFirstFile(pattern, &findList[count]);
+    std::vector<WIN32_FIND_DATA> findList;
+    WIN32_FIND_DATA findData;
+    HANDLE hFind = ::FindFirstFile(pattern, &findData);
     if (hFind != INVALID_HANDLE_VALUE) {
-        for (count++; count < POPUP_MAX_MAX; count++) {
-            if (!::FindNextFile(hFind, &findList[count])) break;
+        findList.push_back(findData);
+        for (int i = 0; i < POPUP_MAX_MAX; ++i) {
+            if (!::FindNextFile(hFind, &findData)) break;
+             findList.push_back(findData);
         }
         ::FindClose(hFind);
     }
+    int listSize = static_cast<int>(findList.size());
 
     // ファイル名を昇順or降順ソート
-    LPCTSTR nameList[POPUP_MAX_MAX];
-    for (int i = 0; i < count; i++) nameList[i] = findList[i].cFileName;
-    qsort(nameList, count, sizeof(nameList[0]), m_fPopupDesc ? CompareTStrIX : CompareTStrI);
+    std::vector<LPCTSTR> nameList;
+    nameList.resize(listSize);
+    for (int i = 0; i < listSize; ++i) nameList[i] = findList[i].cFileName;
+    std::sort(nameList.begin(), nameList.end(), m_fPopupDesc ? CompareDesc : CompareAsc);
+
+    // ポップアップしない部分をとばす
+    int skipSize = max(listSize - m_popupMax, 0);
 
     // メニュー生成
     int selID = 0;
     HMENU hmenu = ::CreatePopupMenu();
     if (hmenu) {
-        if (count == 0) {
+        if (listSize <= 0) {
             ::AppendMenu(hmenu, MF_STRING | MF_GRAYED, 0, TEXT("(なし)"));
         }
         else {
-            for (int i = max(count - m_popupMax, 0); i < count; i++) {
+            for (int i = 0; skipSize+i < listSize; ++i) {
                 TCHAR str[64];
-                ::lstrcpyn(str, nameList[i], 64);
+                ::lstrcpyn(str, nameList[skipSize+i], 64);
                 if (::lstrlen(str) == 63) ::lstrcpy(&str[60], TEXT("..."));
                 // プレフィクス対策
                 for (LPTSTR p = str; *p; p++)
@@ -957,17 +1017,13 @@ bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
     }
 
     TCHAR fileName[MAX_PATH];
-    if (selID == 0 || selID - 1 >= count ||
-        !::PathRemoveFileSpec(pattern) ||
-        !::PathCombine(fileName, pattern, nameList[selID - 1]))
+    if (selID > 0 && skipSize+selID-1 < listSize &&
+        ::PathRemoveFileSpec(pattern) &&
+        ::PathCombine(fileName, pattern, nameList[skipSize+selID-1]))
     {
-        fileName[0] = 0;
+        return m_playlist.PushBackListOrFile(fileName, true) >= 0 ? OpenCurrent() : false;
     }
-
-    delete [] findList;
-    if (!fileName[0]) return false;
-
-    return m_playlist.PushBackListOrFile(fileName, true) >= 0 ? OpenCurrent() : false;
+    return false;
 }
 
 
@@ -1092,7 +1148,7 @@ static INT_PTR CALLBACK EditChapterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, 
             ::SetDlgItemInt(hDlg, IDC_EDIT_MIN, 59, FALSE);
             ::SetDlgItemInt(hDlg, IDC_EDIT_SEC, 59, FALSE);
             ::SetDlgItemInt(hDlg, IDC_EDIT_MSEC, 999, FALSE);
-            return TRUE;
+            break;
         case IDOK:
             if (!::GetDlgItemText(hDlg, IDC_EDIT_NAME, pch->second.val, _countof(pch->second.val))) {
                 pch->second.val[0] = 0;
@@ -1105,7 +1161,7 @@ static INT_PTR CALLBACK EditChapterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, 
             // FALL THROUGH!
         case IDCANCEL:
             ::EndDialog(hDlg, LOWORD(wParam));
-            return TRUE;
+            break;
         }
         break;
     }
@@ -1215,16 +1271,24 @@ void CTvtPlay::EditAllChaptersWithPopup(const POINT &pt, UINT flags)
     }
     if (!selID || !m_chapter.IsOpen()) return;
 
-    // チャプターマップを一時避難させて順次挿入
-    std::map<int, CHAPTER_NAME> tmpMap = m_chapter;
-    std::map<int, CHAPTER_NAME>::const_iterator it = tmpMap.begin();
-    m_chapter.clear();
-    for (; it != tmpMap.end(); ++it) {
-        CHAPTER ch = *it;
-        if (0 < ch.first && ch.first < CHAPTER_POS_MAX) {
-            ch.first = selID==1 ? max(ch.first-200, 0) : min(ch.first+200, CHAPTER_POS_MAX);
+    if (selID == 1) {
+        CChapterMap::iterator it = m_chapter.begin();
+        while (it != m_chapter.end()) {
+            CHAPTER ch = *it;
+            m_chapter.erase(it);
+            if (ch.first < CHAPTER_POS_MAX) ch.first = max(ch.first - 200, 0);
+            it = m_chapter.insert(ch).first;
+            ++it;
         }
-        m_chapter.insert(ch);
+    }
+    else {
+        CChapterMap::iterator it = m_chapter.end();
+        while (it != m_chapter.begin()) {
+            CHAPTER ch = *(--it);
+            m_chapter.erase(it);
+            if (ch.first > 0) ch.first = min(ch.first + 200, CHAPTER_POS_MAX);
+            it = m_chapter.insert(ch).first;
+        }
     }
     m_chapter.Save();
     BeginWatchingNextChapter(false);
@@ -1270,9 +1334,11 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset)
     }
     else {
         // レジューム情報があればその地点までシーク
+        std::list<HASH_INFO> hashList;
+        LoadFileInfoSetting(hashList);
         LONGLONG hash = m_tsSender.GetFileHash();
-        std::list<HASH_INFO>::const_iterator it = m_hashList.begin();
-        for (; it != m_hashList.end(); ++it) {
+        std::list<HASH_INFO>::const_iterator it = hashList.begin();
+        for (; it != hashList.end(); ++it) {
             if ((*it).hash == hash) {
                 // 先頭or終端から5秒の範囲はレジュームしない
                 if (5000 < (*it).resumePos && (*it).resumePos < m_tsSender.GetDuration() - 5000) {
@@ -1285,7 +1351,7 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset)
     }
 
     // チャプターを読み込む
-    m_chapter.Open(fileName);
+    m_chapter.Open(fileName, m_szChaptersDirName);
     if (!fSeeked && m_fSkipXChapter && m_chapter.IsOpen()) {
         // 先頭から1秒未満のスキップ開始チャプターを解釈
         CChapterMap::const_iterator it = m_chapter.begin();
@@ -1332,6 +1398,9 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset)
     // PCR/PTS/DTSを変更するかどうか設定
     SetModTimestamp(m_fModTimestamp);
 
+    if (m_hashListMax > 0 && m_fUpdateHashList) {
+        ::SetTimer(m_hwndFrame, TIMER_ID_UPDATE_HASH_LIST, TIMER_UPDATE_HASH_LIST_INTERVAL, NULL);
+    }
     if (m_chapter.NeedToSync()) {
         ::SetTimer(m_hwndFrame, TIMER_ID_SYNC_CHAPTER, TIMER_SYNC_CHAPTER_INTERVAL, NULL);
     }
@@ -1352,28 +1421,14 @@ void CTvtPlay::Close()
         ::CloseHandle(m_hThreadEvent);
         m_hThreadEvent = NULL;
 
-        // 固有情報リストを検索
         HASH_INFO hashInfo = {0};
         hashInfo.hash = m_tsSender.GetFileHash();
-        std::list<HASH_INFO>::iterator it = m_hashList.begin();
-        for (; it != m_hashList.end(); ++it) {
-            if ((*it).hash == hashInfo.hash) {
-                hashInfo = *it;
-                m_hashList.erase(it);
-                break;
-            }
-        }
-        hashInfo.resumePos = m_tsSender.GetPosition();
+        int pos = m_tsSender.GetPosition();
+        // 先頭or終端から5秒の範囲はレジューム情報を記録しない
+        hashInfo.resumePos = pos <= 5000 || m_tsSender.IsFixed() && m_tsSender.GetDuration()-5000 <= pos ? -1 : pos;
+        UpdateFileInfoSetting(hashInfo);
 
-        // 固有情報リストの最も新しい位置に追加する
-        if (!m_hashList.empty() && (int)m_hashList.size() >= m_hashListMax) {
-            m_hashList.pop_back();
-        }
-        if (m_hashListMax > 0) {
-            m_hashList.push_front(hashInfo);
-            SaveSettings();
-        }
-
+        ::KillTimer(m_hwndFrame, TIMER_ID_UPDATE_HASH_LIST);
         ::KillTimer(m_hwndFrame, TIMER_ID_SYNC_CHAPTER);
         ::KillTimer(m_hwndFrame, TIMER_ID_WATCH_POS_GT);
         m_chapter.Close();
@@ -1891,7 +1946,7 @@ void CTvtPlay::OnCommand(int id, const POINT *pPt, UINT flags)
 // 何かイベントが起きると呼ばれる
 LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lParam2, void *pClientData)
 {
-    CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(pClientData);
+    CTvtPlay *pThis = static_cast<CTvtPlay*>(pClientData);
 
     switch (Event) {
     case TVTest::EVENT_PLUGINENABLE:
@@ -2083,6 +2138,16 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
                     ::KillTimer(hwnd, TIMER_ID_RESET_DROP);
                 }
                 pThis->m_lastDropCount = si.DropPacketCount;
+            }
+            break;
+        case TIMER_ID_UPDATE_HASH_LIST:
+            if (pThis->IsOpen()) {
+                HASH_INFO hashInfo = {0};
+                hashInfo.hash = pThis->m_tsSender.GetFileHash();
+                int pos = pThis->GetPosition();
+                // 先頭or終端から5秒の範囲はレジューム情報を記録しない
+                hashInfo.resumePos = pos <= 5000 || !pThis->IsExtending() && pThis->GetDuration()-5000 <= pos ? -1 : pos;
+                pThis->UpdateFileInfoSetting(hashInfo);
             }
             break;
         case TIMER_ID_SYNC_CHAPTER:

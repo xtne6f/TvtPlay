@@ -154,7 +154,7 @@ CTsSender::CTsSender()
     , m_fFixed(false)
     , m_fPause(false)
     , m_fForceSyncRead(false)
-    , m_pcrPid(0)
+    , m_pcrPid(-1)
     , m_pcrPidsLen(0)
     , m_fileSize(0)
     , m_duration(0)
@@ -229,7 +229,8 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     }
 
     // PCR参照PIDをクリア
-    m_pcrPid = m_pcrPidsLen = 0;
+    m_pcrPid = -1;
+    m_pcrPidsLen = 0;
 
     // TOT-PCR対応情報をクリア
     m_totBase = -1;
@@ -734,12 +735,13 @@ bool CTsSender::ReadPacket(bool fSend, bool fSyncRead, bool *pfPcr)
 
         if (adapt.pcr_flag) {
             // 参照PIDが決まっていないとき、最初に3回PCRが出現したPIDを参照PIDとする
-            // 参照PIDのPCRが現れることなく3回別のPCRが出現すれば、参照PIDを変更する
+            // 参照PIDのPCRが現れることなく5回別のPCRが出現すれば、参照PIDを変更する
             if (header.pid != m_pcrPid) {
                 bool fFound = false;
                 for (int i = 0; i < m_pcrPidsLen; i++) {
                     if (m_pcrPids[i] == header.pid) {
-                        if (++m_pcrPidCounts[i] >= 3) m_pcrPid = header.pid;
+                        ++m_pcrPidCounts[i];
+                        if (m_pcrPid < 0 && m_pcrPidCounts[i] >= 3 || m_pcrPidCounts[i] >= 5) m_pcrPid = header.pid;
                         fFound = true;
                         break;
                     }

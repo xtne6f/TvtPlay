@@ -20,7 +20,7 @@ class CChapterMap : public std::map<int, CHAPTER_NAME>
 public:
     CChapterMap();
     ~CChapterMap();
-    bool Open(LPCTSTR path);
+    bool Open(LPCTSTR path, LPCTSTR subDirName);
     void Close();
     bool Sync();
     bool Save() const;

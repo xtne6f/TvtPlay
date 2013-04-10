@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.1.6 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.1.7 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -12,6 +12,19 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
 ・通常版: Visual C++ 2005 SP1 再頒布可能パッケージ(TVTestが起動するなら入ってる)
 ・x64版:  Visual C++ 2010 SP1 再頒布可能パッケージ (x64)
 
+■初期導入FAQ
+○このReadme長いんだけど？
+  とりあえず「使い方」の項目まで読むと良いとおもいます。あと、サクラエディタの
+  F11キー等でいい感じにアウトラインが出るようです。
+○再生26時間に1回ぐらい映像が乱れるのがイヤ
+  「設定ファイルについて」→設定キーTsAvoidWraparound を参照
+○TVTest起動時にたまにフリーズする
+  「設定ファイルについて」→設定キーRaiseMainThreadPriority を参照
+○BonDriver_UDP(Pipe)切り替え時に自動でプラグインを有効にしてほしい
+  「TVTest起動オプションについて」を参照
+○倍速再生時にしばらくフリーズすることがある
+  倍速再生はなるべくBonDriver_Pipeを使ってください。「倍速再生について」を参照
+
 ■以前のバージョンからの移行
 設定ファイルTvtPlay.iniは基本的にそのまま引き継げます。ただし、ボタンのアイコン
 用画像の配置転換などで、設定キーButton02～Button15のデフォルトが一部変更されてい
@@ -20,7 +33,7 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
 ver.1.5では、設定キーTsWaitOnStopがTsSupposedDispDelayに変更(吸収)されました。値
 を変更していたときは、後述の「設定ファイルについて」の該当項目を読んで修正してく
 ださい。
-(ver.1.3～ver.1.5r3からの移行)
+(ver.1.3～ver.1.6からの移行)
   TvtPlay.tvtpを置きかえてください。
 (ver.1.2r2からの移行)
   TvtPlay.tvtpとTvtAudioStretchFilter.axとを置きかえてください。
@@ -233,8 +246,7 @@ DispTotOnStatus【ver.0.5～】
 SeekItemMinWidth【ver.1.6～】
     シークバーの最小ピクセル幅
 StatusItemWidth【ver.0.5～】
-    再生位置の表示部分のピクセル幅
-    # 何も指定しないかキーを削除すると自動調整します【ver.1.2～】。
+    再生位置の表示部分のピクセル幅、または自動調整する[=-1]
 TimeoutOnCommand / TimeoutOnMouseMove
     キーコマンド/マウス操作をおこなった後にコントロールを表示する時間をミリ秒で
     指定、または表示しない[=0]
@@ -244,10 +256,11 @@ Salt【ver.0.7～】
 FileInfoMax【ver.0.7～】
     レジューム情報を記録する最大数、または記録しない[=0]
     # 扱うTSファイルの数より大きくしておけば忘れられることはないでしょう
+FileInfoAutoUpdate【ver.1.7～】
+    再生中、定期的(5秒間隔)にレジューム情報を書き出す[=1]かどうか
 PopupMax【ver.0.8～】
     フォルダの簡易表示機能でファイルを一覧表示する最大数、またはこの機能を使わな
     い[=0]
-    # 最大値は[=100]です。
 PopupDesc【ver.0.9～】
     簡易表示機能でファイルを降順表示する[=1]かどうか
 PopupPattern【ver.0.8～】
@@ -255,6 +268,11 @@ PopupPattern【ver.0.8～】
     # たとえば[=D:\media\*.ts]とすれば"D:\media"フォルダにある.tsファイルが名前
     # 順にポップアップ表示されます。
     # %RecordFolder% はTVTestの録画フォルダに置き換わります。
+ChaptersFolderName【ver.1.7～】
+    TSファイルのある場所にこの名前のフォルダがあれば、チャプターファイルをここか
+    ら読み書きする
+    # 指定しなければこの機能を無効にします。
+    # 任意の名前にできますが、[=chapters]以外は非推奨です。
 SeekItemOrder / StatusItemOrder【ver.1.6～】
     シークバー / 再生位置の表示部分 のButton[00-17]に対する順序
     # たとえば[=3]とすればButton03の左隣、[=0]とすれば左端に配置されます。
@@ -295,6 +313,8 @@ Button[00-17]
     #   [ 35%] '3'5'%:30~'3'5'%
     #   [x1.0:x4.0:x2.0:x0.5:x0.2]
     #          '*'1' '.'0:30~'*'4'.'0:30~'*'2'.'0:30~'*'0'.'5:30~'*'0'.'2
+    #   ※後述「ボタンカスタマイズ例」も参照。ほかに「TvtPlayBtn.bmp」(後述「ソ
+    #     ースについて」参照)の説明がわかりやすいです。
 
 [FileInfo]セクション【ver.0.7～】
     レジューム情報のリスト
@@ -342,13 +362,29 @@ PCでは、たとえば時計が一日に数秒～数分単位で遅れるor進�
 と映像のずれが次第に激しくなる、といった現象もみられるかもしれません。
 
 ■チャプター機能について(テスト実装中)
+[ver.1.6からの変更点]
+・chaptersフォルダがあれば利用するようになりました:
+  <チャプターを読みこむ優先順位>
+    1. chaptersフォルダの.chapter
+    2. TSファイルのあるフォルダの.chapter
+    3. chaptersフォルダの.chapter.txt
+    4. TSファイルのあるフォルダの.chapter.txt
+    5. TSファイル名に含まれるチャプター
+  <.chapterファイルを書きこむ優先順位>
+    1. 読みこんだ.chapter
+    2. chaptersフォルダの.chapter
+    3. TSファイルのあるフォルダの.chapter
+  ※必須ではないですが、外部プログラム開発者は、もし対象のTSファイルのある場所に
+    "chapters"という名前のフォルダがあれば、そこでチャプターファイルを読み書きす
+    るようにすると便利だと思います
+
 [ver.1.5からの変更点]
 ・チャプターのルールが少し変わりました:
   <旧>名前が"ix"と"ox"のときだけスキップチャプターになる
   <新>名前が"ix"と"ox"で始まるときスキップチャプターになる
   <旧>"i"と"o"で始まる同名のチャプター(例:"iTest"-"oTest")のみが、開始/終了チャ
       プターの対になる
-  <新>"i"と"o"で始まれば開始/終了チャプターの対になる(例:"iTest1"-"iTest2")
+  <新>"i"と"o"で始まれば開始/終了チャプターの対になる(例:"iTest1"-"oTest2")
   # おおざっぱにいうと、開始/終了チャプターの入れ子は使い道がなさそうなのでルー
   # ルからとりのぞいた感じです
 
@@ -401,8 +437,10 @@ http://www.marumo.ne.jp/junk/tsselect-0.1.8.lzh)よりソースコードを改�
 TvtAudioStretchFilterフィルタは、再生レート制御のために、SoundTouchライブラリver
 .1.6.0(http://www.surina.net/soundtouch/)を利用しています。
 デフォルトのアイコン画像"Buttons.bmp"は、「HDUS関係ファイル置き場」(
-http://2sen.dip.jp/)のup0598.zip「非公式 TvtPlayシークボタンカスタマイズ用アイコ
-ン 修正2」のデザインをもとに作成しています。
+http://2sen.dip.jp/dtv/)のup0598.zip「非公式 TvtPlayシークボタンカスタマイズ用ア
+イコン 修正2」のデザインをもとに作成しています。61～65番のアイコンはup0635.zip
+「TvtPlayBtn.bmp - 標準のボタン・文字を小さめに書き換えてシーク・倍速再生・チャ
+プター関係のボタンを追加したアイコン画像 (txt加筆修正)」を使用しています。
 また、おもにTVTest ver.0.7.23からソースコードを流用しています。特に以下のファイ
 ルはほぼ改変なしに流用しています(差分は"diff_TVTestStatusView_orig.txt"を参照)
   "Aero.cpp"
@@ -425,6 +463,15 @@ http://2sen.dip.jp/)のup0598.zip「非公式 TvtPlayシークボタンカスタ
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.1.7 (2012-03-17)
+・簡易表示機能(設定キーPopupMax)について、100個をこえるファイルを扱うときの制限
+  をとり除いた
+・必要のないレジューム情報を記録しないようにした
+・レジューム情報を定期的に書き出せるようにした(設定キーFileInfoAutoUpdate)
+・"chapters"フォルダにチャプターファイルをまとめられるようにした
+・再生中に参照するPCRが入れ替わる可能性を下げた
+・up0635.zip「TvtPlayBtn.bmp」よりチャプターリピート/スキップアイコンを流用させ
+  てもらった
 ver.1.6 (2012-02-18)
 ・設定キーTsReadBufferSizeKBでファイル読み込みバッファ量を指定できるようにした
   ・思ったより効果的だったのでデフォルトで2048KBとした
@@ -603,3 +650,78 @@ ver.0.2 (2011-08-15)
 ・マルチディスプレイに対応したかもしれない(環境が無いので…)
 ver.0.1 (2011-08-13)
 ・初版
+
+■ボタンカスタマイズ例
+※設定ファイルの該当部分にコピペして利用してください
+【ver.1.7のデフォルト】
+SeekItemOrder=99
+StatusItemOrder=99
+IconImage=
+SeekA=-60000
+SeekB=-30000
+SeekC=-15000
+SeekD=-5000
+SeekE=4000
+SeekF=14000
+SeekG=29000
+SeekH=59000
+StretchA=400
+StretchB=200
+StretchC=50
+StretchD=25
+Button00=0,Open
+Button01=;1,Close
+Button02=4:5:14,Loop
+Button03=;9,Prev  2,SeekToBgn
+Button04='-'6'0,SeekA
+Button05=;'-'3'0,SeekB
+Button06='-'1'5,SeekC
+Button07='-' '5,SeekD
+Button08=6,Pause
+Button09='+' '5,SeekE
+Button10='+'1'5,SeekF
+Button11=;'+'3'0,SeekG
+Button12='+'6'0,SeekH
+Button13=3,SeekToEnd
+Button14='*'2'.'0:30~'*'2'.'0,StretchB
+Button15='*'0'.'5:30~'*'0'.'5,StretchC
+Button16=;'*'1' '.'0:30~'*'4'.'0:30~'*'0'.'2,StretchD,StretchA
+Button17=;'*'1' '.'0:30~'*'4'.'0:30~'*'2'.'0:30~'*'0'.'5:30~'*'0'.'2,Width=32,StretchZ,Stretch
+
+【ボタン数を少なく+チャプター機能も使う】
+SeekItemOrder=11
+StatusItemOrder=99
+IconImage=
+SeekA=-60000
+SeekB=-30000
+SeekC=-15000
+SeekD=-5000
+SeekE=4000
+SeekF=14000
+SeekG=29000
+SeekH=59000
+StretchA=125
+StretchB=150
+StretchC=200
+StretchD=400
+StretchE=25
+StretchF=50
+StretchG=75
+Button00=0,Width=12,Open
+Button01=;1,Width=12,Close
+Button02=4:5:14,Width=12,ListPopup,Loop
+Button03=9,Width=12,Prev,SeekToPrev
+Button04=31-' '6-20-60,Width=12,SeekA,SeekH
+Button05=;31-' '3-20-60,Width=12,SeekB,SeekG
+Button06=31-' '1'5-60,Width=12,SeekC,SeekF
+Button07=31-' ' ' ' '5' -60,Width=12,SeekD,SeekE
+Button08=3,Width=12,SeekToEnd,SeekToNext
+Button09='*'1' '.'0:30~'*'1' '.'2:30~'*'1' '.'5:30~'*'2'.'0:30~'*'4'.'0:30~'*'0'.'2:30~'*'0'.'5:30~'*'0'.'7,Width=12,StretchRe,Stretch
+Button10=;6,Width=12,Pause
+Button11=62,Width=12,AddChapter,RepeatChapter
+Button12=64,Width=12,AddChapter,SkipXChapter
+Button13=
+Button14=
+Button15=
+Button16=
+Button17=

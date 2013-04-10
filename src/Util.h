@@ -20,8 +20,6 @@ int GetPrivateProfileSignedInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int nDefaul
 WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, bool fNoBomUseAcp = false);
 bool WriteUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, const WCHAR *pStr);
 bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTSTR pIdxList);
-int CompareTStrI(const void *str1, const void *str2);
-int CompareTStrIX(const void *str1, const void *str2);
 BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPCTSTR lpFileName);
 LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt);
 
