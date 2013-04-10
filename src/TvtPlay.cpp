@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-09-15
+// 最終更新: 2011-09-20
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -33,6 +33,7 @@
 
 enum {
     ID_COMMAND_OPEN,
+    ID_COMMAND_OPEN_POPUP,
     ID_COMMAND_CLOSE,
     ID_COMMAND_SEEK_BGN,
     ID_COMMAND_SEEK_END,
@@ -55,6 +56,7 @@ enum {
 
 static const TVTest::CommandInfo COMMAND_LIST[] = {
     {ID_COMMAND_OPEN, L"Open", L"ファイルを開く"},
+    {ID_COMMAND_OPEN_POPUP, L"OpenPopup", L"ファイルを開く(ポップアップ)"},
     {ID_COMMAND_CLOSE, L"Close", L"ファイルを閉じる"},
     {ID_COMMAND_SEEK_BGN, L"SeekToBgn", L"シーク:先頭"},
     {ID_COMMAND_SEEK_END, L"SeekToEnd", L"シーク:末尾"},
@@ -102,6 +104,7 @@ CTvtPlay::CTvtPlay()
     , m_fIgnoreExt(false)
     , m_fAutoEnUdp(false)
     , m_fAutoEnPipe(false)
+    , m_fEventExecute(false)
     , m_hwndFrame(NULL)
     , m_fFullScreen(false)
     , m_fHide(false)
@@ -126,6 +129,7 @@ CTvtPlay::CTvtPlay()
     , m_totTime(-1)
     , m_speed(100)
     , m_fFixed(false)
+    , m_fSpecialExt(false)
     , m_fPaused(false)
     , m_fHalt(false)
     , m_fAutoClose(false)
@@ -488,10 +492,10 @@ bool CTvtPlay::Open(HWND hwndOwner)
 }
 
 
-// ポップアップメニュー選択でファイルを開く
-bool CTvtPlay::Open(HWND hwndOwner, const POINT &pt, UINT flags)
+// コントロールからのポップアップメニュー選択でファイルを開く
+bool CTvtPlay::Open(const POINT &pt, UINT flags)
 {
-    if (m_popupMax <= 0) return false;
+    if (m_popupMax <= 0 || m_fPopuping) return false;
 
     // 特定指示子をTVTestの保存先フォルダに置換する(手抜き)
     TCHAR pattern[MAX_PATH];
@@ -539,8 +543,12 @@ bool CTvtPlay::Open(HWND hwndOwner, const POINT &pt, UINT flags)
         }
 
         m_fPopuping = true;
+        // まずコントロールを表示させておく
+        if (m_pApp->GetFullscreen()) {
+            ::SendMessage(m_hwndFrame, WM_TIMER, TIMER_ID_FULL_SCREEN, 0);
+        }
         selID = (int)::TrackPopupMenu(hmenu, flags | TPM_NONOTIFY | TPM_RETURNCMD,
-                                      pt.x, pt.y, 0, hwndOwner, NULL);
+                                      pt.x, pt.y, 0, m_hwndFrame, NULL);
         ::DestroyMenu(hmenu);
         m_fPopuping = false;
     }
@@ -743,7 +751,8 @@ void CTvtPlay::Stretch(int stretchID)
 void CTvtPlay::Resize()
 {
     if (m_pApp->GetFullscreen()) {
-        HMONITOR hMon = ::MonitorFromWindow(m_hwndFrame, MONITOR_DEFAULTTOPRIMARY);
+        // 切り替え時にバーが画面外にいることもある
+        HMONITOR hMon = ::MonitorFromWindow(m_hwndFrame, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi;
         mi.cbSize = sizeof(MONITORINFO);
 
@@ -753,6 +762,7 @@ void CTvtPlay::Resize()
                            mi.rcMonitor.right - mi.rcMonitor.left, STATUS_HEIGHT, SWP_NOZORDER | SWP_NOACTIVATE);
         }
         if (!m_fFullScreen) {
+            // フルスクリーン表示への遷移
             m_fHide = false;
             m_dispCount = 0;
             ::GetCursorPos(&m_lastCurPos);
@@ -769,6 +779,7 @@ void CTvtPlay::Resize()
                            rect.right - rect.left, STATUS_HEIGHT + m_statusMargin, SWP_NOZORDER | SWP_NOACTIVATE);
         }
         if (m_fFullScreen) {
+            // 通常表示への遷移
             ::KillTimer(m_hwndFrame, TIMER_ID_FULL_SCREEN);
             ::SetWindowPos(m_hwndFrame, m_pApp->GetAlwaysOnTop() ? HWND_TOPMOST : HWND_NOTOPMOST,
                            0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE);
@@ -800,6 +811,12 @@ void CTvtPlay::OnCommand(int id)
     switch (id) {
     case ID_COMMAND_OPEN:
         Open(m_hwndFrame);
+        break;
+    case ID_COMMAND_OPEN_POPUP:
+        {
+            CStatusItem *pItem = m_statusView.GetItemByID(STATUS_ITEM_BUTTON + ID_COMMAND_OPEN);
+            if (pItem) pItem->OnRButtonDown(0, 0);
+        }
         break;
     case ID_COMMAND_CLOSE:
         Close();
@@ -859,7 +876,35 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
     case TVTest::EVENT_DRIVERCHANGE:
         // ドライバが変更された
         pThis->EnablePluginByDriverName();
-        // FALL THROUGH!
+
+        // 複数禁止起動時にチャンネル設定されない場合の対策
+        // TODO: 解決されれば取り除くべき
+        if (pThis->m_fEventExecute) {
+            TCHAR path[MAX_PATH];
+            pThis->m_pApp->GetDriverName(path, ARRAY_SIZE(path));
+            LPCTSTR name = ::PathFindFileName(path);
+
+            if (pThis->m_pApp->IsPluginEnabled() &&
+                (!::lstrcmpi(name, TEXT("BonDriver_UDP.dll")) ||
+                !::lstrcmpi(name, TEXT("BonDriver_Pipe.dll"))))
+            {
+                TVTest::ChannelInfo chInfo;
+                if (!pThis->m_pApp->GetCurrentChannelInfo(&chInfo)) {
+                    pThis->m_pApp->AddLog(L"SetChannel");
+                    for (int ch=0; ch < 10; ch++) {
+                        if (pThis->m_pApp->SetChannel(0, ch)) break;
+                    }
+                }
+            }
+            pThis->m_fEventExecute = false;
+        }
+
+        // コマンドラインにパスが指定されていれば開く
+        if (pThis->m_pApp->IsPluginEnabled() && pThis->m_szSpecFileName[0]) {
+            pThis->Open(pThis->m_szSpecFileName);
+            pThis->m_szSpecFileName[0] = 0;
+        }
+        break;
     case TVTest::EVENT_CHANNELCHANGE:
         // チャンネルが変更された
         if (pThis->m_pApp->IsPluginEnabled())
@@ -872,7 +917,9 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         return TRUE;
     case TVTest::EVENT_EXECUTE:
         // 複数起動禁止時に複数起動された
+        // ドライバ変更前に呼ばれるので、このあとEVENT_DRIVERCHANGEが呼ばれるかもしれない
         pThis->AnalyzeCommandLine(reinterpret_cast<LPCWSTR>(lParam1));
+        pThis->m_fEventExecute = true;
         // FALL THROUGH!
     case TVTest::EVENT_STARTUPDONE:
         // 起動時の処理が終わった
@@ -937,13 +984,15 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
         break;
     case WM_TIMER:
         if (wParam == TIMER_ID_FULL_SCREEN) {
-            RECT rect;
+            HMONITOR hMonApp = ::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
             POINT curPos;
+            MONITORINFO mi;
+            mi.cbSize = sizeof(MONITORINFO);
 
-            if (::GetWindowRect(::GetDesktopWindow(), &rect) && ::GetCursorPos(&curPos)) {
-                HMONITOR hMonApp = ::MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
-                HMONITOR hMonCur = ::MonitorFromPoint(curPos, MONITOR_DEFAULTTOPRIMARY);
-                bool isHoverd = hMonApp == hMonCur && rect.bottom -
+            if (::GetCursorPos(&curPos) && ::GetMonitorInfo(hMonApp, &mi)) {
+                HMONITOR hMonCur = ::MonitorFromPoint(curPos, MONITOR_DEFAULTTONULL);
+                // mi.rcMonitorとcurPosはともに仮想スクリーン座標系
+                bool isHoverd = hMonApp == hMonCur && mi.rcMonitor.bottom -
                                 (pThis->m_fToBottom ? STATUS_HEIGHT : STATUS_HEIGHT*2) < curPos.y;
 
                 // カーソルが移動したときに表示する
@@ -996,10 +1045,12 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
         break;
     case WM_UPDATE_POSITION:
         {
-            pThis->m_position = static_cast<int>(wParam);
-            int dur = static_cast<int>(lParam);
-            pThis->m_duration = dur < 0 ? -dur : dur;
-            pThis->m_fFixed = dur < 0;
+            DWORD pos = static_cast<DWORD>(wParam);
+            DWORD dur = static_cast<DWORD>(lParam);
+            pThis->m_position = pos & 0x7fffffff;
+            pThis->m_duration = dur & 0x7fffffff;
+            pThis->m_fSpecialExt = (pos&0x80000000) != 0;
+            pThis->m_fFixed = (dur&0x80000000) != 0;
             pThis->m_statusView.UpdateItem(STATUS_ITEM_SEEK);
             pThis->m_statusView.UpdateItem(STATUS_ITEM_POSITION);
         }
@@ -1084,16 +1135,16 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                 ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, msg.wParam, 0);
                 break;
             case WM_TS_SEEK_BGN:
-                pThis->m_tsSender.SeekToBegin();
-                resetCount = 5;
+                if (pThis->m_tsSender.SeekToBegin())
+                    resetCount = 5;
                 break;
             case WM_TS_SEEK_END:
-                pThis->m_tsSender.SeekToEnd();
-                resetCount = 5;
+                if (pThis->m_tsSender.SeekToEnd())
+                    resetCount = 5;
                 break;
             case WM_TS_SEEK:
-                pThis->m_tsSender.Seek(static_cast<int>(msg.lParam));
-                resetCount = 5;
+                if (pThis->m_tsSender.Seek(static_cast<int>(msg.lParam)))
+                    resetCount = 5;
                 break;
             case WM_TS_SET_SPEED:
                 {
@@ -1150,11 +1201,14 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
         int pos = pThis->m_tsSender.GetPosition();
         int dur = pThis->m_tsSender.GetDuration();
         int tot = pThis->m_tsSender.GetBroadcastTime();
-        bool fFixed = pThis->m_tsSender.IsFixed();
+        bool fSpecialExt;
+        bool fFixed = pThis->m_tsSender.IsFixed(&fSpecialExt);
 
         // 再生位置の更新を伝える
         if (posSec != pos / 1000 || durSec != dur / 1000 || fPrevFixed != fFixed) {
-            ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_POSITION, pos, fFixed ? -dur : dur);
+            ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_POSITION,
+                          fSpecialExt ? 0x80000000|(DWORD)pos : pos,
+                          fFixed ? 0x80000000|(DWORD)dur : dur);
             posSec = pos / 1000;
             durSec = dur / 1000;
             fPrevFixed = fFixed;
@@ -1365,6 +1419,7 @@ void CPositionStatusItem::Draw(HDC hdc, const RECT *pRect)
     TCHAR szTotText[128];
     int posSec = m_pPlugin->GetPosition() / 1000;
     int durSec = m_pPlugin->GetDuration() / 1000;
+    bool fSpecialExt;
     
     szTotText[0] = 0;
     if (m_fDrawTot) {
@@ -1378,13 +1433,15 @@ void CPositionStatusItem::Draw(HDC hdc, const RECT *pRect)
         ::wsprintf(szText, TEXT("%02d:%02d/%02d:%02d%s%s"),
                    posSec / 60 % 60, posSec % 60,
                    durSec / 60 % 60, durSec % 60,
-                   m_pPlugin->IsFixed() ? TEXT("") : TEXT("+"), szTotText);
+                   m_pPlugin->IsFixed(&fSpecialExt) ? TEXT("") : fSpecialExt ? TEXT("*") : TEXT("+"),
+                   szTotText);
     }
     else {
         ::wsprintf(szText, TEXT("%d:%02d:%02d/%d:%02d:%02d%s%s"),
                    posSec / 60 / 60, posSec / 60 % 60, posSec % 60,
                    durSec / 60 / 60, durSec / 60 % 60, durSec % 60,
-                   m_pPlugin->IsFixed() ? TEXT("") : TEXT("+"), szTotText);
+                   m_pPlugin->IsFixed(&fSpecialExt) ? TEXT("") : fSpecialExt ? TEXT("*") : TEXT("+"),
+                   szTotText);
     }
     DrawText(hdc, pRect, szText);
 }
@@ -1431,7 +1488,7 @@ void CButtonStatusItem::OnRButtonDown(int x, int y)
         POINT pt;
         UINT flags;
         if (GetMenuPos(&pt, &flags)) {
-            m_pPlugin->Open(m_pStatus->GetHandle(), pt, flags);
+            m_pPlugin->Open(pt, flags);
         }
     }
 }

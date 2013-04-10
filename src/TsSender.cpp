@@ -22,6 +22,7 @@ CTsSender::CTsSender()
     , m_basePcr(0)
     , m_initPcr(0)
     , m_fPcr(false)
+    , m_fShareWrite(false)
     , m_fFixed(false)
     , m_fPause(false)
     , m_pcrPid(0)
@@ -33,6 +34,8 @@ CTsSender::CTsSender()
     , m_hash(0)
     , m_speedNum(100)
     , m_speedDen(100)
+    , m_fSpecialExtending(false)
+    , m_specialExtendInitRate(0)
 {
     m_udpAddr[0] = 0;
     m_pipeName[0] = 0;
@@ -48,12 +51,22 @@ CTsSender::~CTsSender()
 bool CTsSender::Open(LPCTSTR name, DWORD salt)
 {
     Close();
-    
-    m_hFile = ::CreateFile(name, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+
+    // まず読み込み共有で開いてみる
+    m_fShareWrite = false;
+    m_fFixed = true;
+    m_hFile = ::CreateFile(name, GENERIC_READ, FILE_SHARE_READ,
                            0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (m_hFile == INVALID_HANDLE_VALUE) {
-        m_hFile = NULL;
-        return false;
+        // 録画中かもしれない。書き込み共有で開く
+        m_fShareWrite = true;
+        m_fFixed = false;
+        m_hFile = ::CreateFile(name, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                               0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (m_hFile == INVALID_HANDLE_VALUE) {
+            m_hFile = NULL;
+            return false;
+        }
     }
 
     // TSパケットの単位を決定
@@ -62,7 +75,7 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt)
     if (!::ReadFile(m_hFile, buf, sizeof(buf), &readBytes, NULL)) goto ERROR_EXIT;
     m_unitSize = select_unit_size(buf, buf + readBytes);
     if (m_unitSize < 188) goto ERROR_EXIT;
-    
+
     // 識別情報としてファイル先頭のハッシュ値をとる
     m_hash = CalcHash(buf, min(readBytes, 2048), salt);
     if (m_hash < 0) goto ERROR_EXIT;
@@ -70,21 +83,19 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt)
     // バッファ確保
     m_pBuf = new BYTE[m_unitSize * BUFFER_LEN];
 
-    // ファイルサイズは拡大中であると仮定
-    m_fFixed = false;
-
-    // 定期的にファイルサイズの更新状況を取得するため
-    m_renewSizeTick = ::GetTickCount();
-    if ((m_fileSize = GetFileSize()) < 0) goto ERROR_EXIT;
-    
     // PCR参照PIDをクリア
     m_pcrPid = m_pcrPidsLen = 0;
 
     // TOT-PCR対応情報をクリア
     m_totBase = -1;
 
+    long long fileSize = GetFileSize();
+    if (fileSize < 0) goto ERROR_EXIT;
+
     // ファイル先頭のPCRと動画の長さを取得
+    m_fSpecialExtending = false;
     if (Seek(-TS_SUPPOSED_RATE * 2, FILE_END) && m_pcrCount) {
+        // ファイル末尾が正常である場合
         DWORD finPcr = m_pcr;
 
         if (!SeekToBegin() || !m_pcrCount) goto ERROR_EXIT;
@@ -93,10 +104,34 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt)
         m_duration = (int)((finPcr - m_initPcr) / PCR_PER_MSEC) +
                      (int)((long long)TS_SUPPOSED_RATE * 2000 / GetRate());
     }
+    else if (m_fShareWrite &&
+             SeekToBoundary(fileSize / 2, fileSize, buf, sizeof(buf) / 2) &&
+             Seek(-TS_SUPPOSED_RATE * 2, FILE_CURRENT) && m_pcrCount)
+    {
+        // 書き込み共有かつファイル末尾が正常でない場合
+        long long filePos = GetFilePosition();
+        DWORD finPcr = m_pcr;
+
+        if (!SeekToBegin() || !m_pcrCount) goto ERROR_EXIT;
+        m_initPcr = m_pcr;
+        m_duration = (int)((finPcr - m_initPcr) / PCR_PER_MSEC) + 2000;
+
+        // ファイルサイズからレートを計算できないため
+        m_specialExtendInitRate = filePos < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
+                                  static_cast<int>((filePos + TS_SUPPOSED_RATE * 2) * 1000 / m_duration);
+        m_fSpecialExtending = true;
+    }
     else {
+        // 最低限、再生はできる場合
         if (!SeekToBegin() || !m_pcrCount) goto ERROR_EXIT;
         m_initPcr = m_pcr;
         m_duration = 0;
+    }
+
+    // 定期的にファイルサイズの更新状況を取得するため
+    if (m_fShareWrite) {
+        m_renewSizeTick = ::GetTickCount();
+        m_fileSize = fileSize;
     }
 
     return true;
@@ -154,21 +189,28 @@ void CTsSender::Close()
 bool CTsSender::Send()
 {
     // 動画の長さ情報を更新
-    DWORD tick = ::GetTickCount();
-    DWORD diff = tick - m_renewSizeTick;
-    if (2000 <= diff) {
-        long long fileSize;
-        if ((fileSize = GetFileSize()) >= 0) {
-            if (fileSize == m_fileSize) {
-                m_fFixed = true;
-            }
-            else {
-                m_fFixed = false;
+    if (m_fShareWrite) {
+        DWORD tick = ::GetTickCount();
+        DWORD diff = tick - m_renewSizeTick;
+        if (2000 <= diff) {
+            long long fileSize = GetFileSize();
+            if (fileSize >= 0) {
+                if (m_fSpecialExtending && fileSize < m_fileSize) {
+                    // 容量確保領域が録画終了によって削除されたと仮定する
+                    m_fFixed = true;
+                    m_fSpecialExtending = false;
+                }
+                else if (!m_fSpecialExtending && fileSize == m_fileSize) {
+                    m_fFixed = true;
+                }
+                else {
+                    m_fFixed = false;
+                    m_duration += diff;
+                }
                 m_fileSize = fileSize;
-                m_duration += diff;
             }
+            m_renewSizeTick = tick;
         }
-        m_renewSizeTick = tick;
     }
 
     if (m_fPause) return true;
@@ -214,20 +256,23 @@ bool CTsSender::SeekToBegin()
 // ファイルの末尾から約2秒前にシークする
 bool CTsSender::SeekToEnd()
 {
-    return Seek(-GetRate()*2, FILE_END);
+    return m_fSpecialExtending ? false : Seek(-GetRate()*2, FILE_END);
 }
 
 
 // 現在の再生位置からmsecだけシークする
+// 現在の再生位置が不明の場合はSeekToBegin()
 // シーク可能範囲を超えるor下回る場合は先頭or末尾の約2秒前までシークする
 // シークできなかったorシークが打ち切られたときはfalseを返す
 bool CTsSender::Seek(int msec)
 {
+    if (!m_pcrCount) return SeekToBegin();
+
     long long rate = (long long)GetRate();
     long long size = GetFileSize();
     long long pos;
 
-    if (!m_pcrCount || size < 0) return false;
+    if (size < 0) return false;
 
     // -5000<=msec<=5000になるまで動画レートから概算シーク
     // 5ループまでに収束しなければ失敗
@@ -360,11 +405,15 @@ int CTsSender::GetBroadcastTime() const
 // 極端な値は抑制される
 int CTsSender::GetRate() const
 {
-    long long fileSize = GetFileSize();
-
-    int rate = fileSize < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
+    int rate;
+    if (m_fSpecialExtending) {
+        rate = m_specialExtendInitRate;
+    }
+    else {
+        long long fileSize = GetFileSize();
+        rate = fileSize < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
                static_cast<int>(fileSize * 1000 / m_duration);
-
+    }
     return rate < TS_SUPPOSED_RATE/128 ? TS_SUPPOSED_RATE/128 :
            rate > TS_SUPPOSED_RATE*4 ? TS_SUPPOSED_RATE*4 : rate;
 }
@@ -378,9 +427,9 @@ long long CTsSender::GetFileHash() const
 
 
 // TSパケットを1つ読む
-bool CTsSender::ReadPacket()
+bool CTsSender::ReadPacket(int count)
 {
-    if (!m_hFile || !m_pBuf) return false;
+    if (!m_hFile || !m_pBuf || count <= 0) return false;
 
     if (m_curr + m_unitSize >= m_tail) {
         int n = static_cast<int>(m_pBuf + m_unitSize * BUFFER_LEN - m_tail);
@@ -398,10 +447,11 @@ bool CTsSender::ReadPacket()
         BYTE *p = resync(m_curr, m_tail, m_unitSize);
         if (!p) {
             m_curr = m_tail = m_pBuf;
-            return ReadPacket();
+            // 不正なパケットが続けばカウントは減っていく
+            return ReadPacket(count - 1);
         }
         m_curr = p;
-        if (m_curr + m_unitSize > m_tail) return ReadPacket();
+        if (m_curr + m_unitSize > m_tail) return ReadPacket(count - 1);
     }
     
     m_fPcr = false;
@@ -533,6 +583,27 @@ bool CTsSender::Seek(long long distanceToMove, DWORD dwMoveMethod)
     }
 
     return true;
+}
+
+
+// ファイル中にTSデータが存在する境目までシークする
+// log2(ファイルサイズ/TS_SUPPOSED_RATE)回ぐらい再帰する
+bool CTsSender::SeekToBoundary(long long predicted, long long range, LPBYTE pWork, int workSize)
+{
+    if (!m_hFile) return false;
+
+    LARGE_INTEGER lDistanceToMove;
+    lDistanceToMove.QuadPart = predicted;
+    if (!::SetFilePointerEx(m_hFile, lDistanceToMove, NULL, FILE_BEGIN)) return false;
+
+    if (range < TS_SUPPOSED_RATE) return true;
+
+    DWORD readBytes;
+    if (!::ReadFile(m_hFile, pWork, workSize, &readBytes, NULL)) return false;
+    int unitSize = select_unit_size(pWork, pWork + readBytes);
+
+    ::Sleep(20); // ディスクへの思いやり
+    return SeekToBoundary(predicted + (unitSize < 188 ? -range/4 : range/4), range/2, pWork, workSize);
 }
 
 

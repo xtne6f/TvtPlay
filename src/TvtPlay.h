@@ -30,6 +30,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     bool m_fSettingsLoaded;
     bool m_fForceEnable, m_fIgnoreExt;
     bool m_fAutoEnUdp, m_fAutoEnPipe;
+    bool m_fEventExecute;
     TCHAR m_szIniFileName[MAX_PATH];
     TCHAR m_szSpecFileName[MAX_PATH];
 
@@ -65,7 +66,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     int m_duration;
     int m_totTime;
     int m_speed;
-    bool m_fFixed, m_fPaused;
+    bool m_fFixed, m_fSpecialExt, m_fPaused;
     bool m_fHalt, m_fAutoClose, m_fAutoLoop;
     bool m_fResetAllOnSeek;
     int m_stretchMode, m_noMuteMax, m_noMuteMin;
@@ -104,11 +105,11 @@ public:
     int GetPosition() const { return m_position; }
     int GetDuration() const { return m_duration; }
     int GetTotTime() const { return m_totTime; }
-    bool IsFixed() const { return m_fFixed; }
+    bool IsFixed(bool *pfSpecialExt = NULL) const { if (pfSpecialExt) *pfSpecialExt=m_fSpecialExt; return m_fFixed; }
     bool IsPaused() const { return m_fPaused; }
     bool IsAutoLoop() const { return m_fAutoLoop; }
     
-    bool Open(HWND hwndOwner, const POINT &pt, UINT flags);
+    bool Open(const POINT &pt, UINT flags);
     void Pause(bool fPause);
     void SeekToBegin();
     void SeekToEnd();

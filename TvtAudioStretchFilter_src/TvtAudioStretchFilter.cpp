@@ -4,8 +4,9 @@
 // このソースのビルドにはSoundTouchライブラリ(http://www.surina.net/soundtouch/)が必要。
 // このライブラリのソースを入手し、"STTypes.h"で SOUNDTOUCH_INTEGER_SAMPLES を定義して
 // ライブラリをビルドし、このプロジェクトにリンクする。
-// さらに、Platform SDKのDirectShow BaseClassesも必要。適当にググってビルドし、strmbase.lib
-// とwinmm.libとを、このプロジェクトにリンクする。
+// 64bitビルドについては #undef SOUNDTOUCH_ALLOW_MMX も必要。_M_X64 で場合分けする。
+// さらに、Platform SDKのDirectShow BaseClassesも必要。適当にググってビルドし、
+// strmbase.libとwinmm.libとを、このプロジェクトにリンクする。
 
 #if 0 // 同一プロセスからTvtAudioStretchFilterへのメッセージ送信コード
 #define ASFLT_FILTER_NAME   TEXT("TvtAudioStretchFilter")

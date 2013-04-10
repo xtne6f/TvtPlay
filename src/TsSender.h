@@ -10,6 +10,7 @@ class CTsSender {
     static const int BASE_DIFF_MSEC = 300;
     static const int TS_SUPPOSED_RATE = 2 * 1024 * 1024;
     static const int PCR_PIDS_MAX = 8;
+    static const int RESYNC_FAILURE_LIMIT = 5;
 public:
     CTsSender();
     ~CTsSender();
@@ -24,7 +25,7 @@ public:
     void Pause(bool fPause);
     void SetSpeed(int num, int den);
     bool IsPaused() const { return m_fPause; }
-    bool IsFixed() const { return m_fFixed; }
+    bool IsFixed(bool *pfSpecialExt = NULL) const { if (pfSpecialExt) *pfSpecialExt=m_fSpecialExtending; return m_fFixed; }
     void GetSpeed(int *pNum, int *pDen) const { *pNum=m_speedNum; *pDen=m_speedDen; }
 
     long long GetFileSize() const;
@@ -35,9 +36,10 @@ public:
     int GetBroadcastTime() const;
     long long GetFileHash() const;
 private:
-    bool ReadPacket();
+    bool ReadPacket(int count = RESYNC_FAILURE_LIMIT);
     void ConsumeBuffer(bool fSend);
     bool Seek(long long distanceToMove, DWORD dwMoveMethod);
+    bool SeekToBoundary(long long predicted, long long range, LPBYTE pWork, int workSize);
     void OpenSocket();
     void CloseSocket();
     void OpenPipe();
@@ -54,7 +56,7 @@ private:
     DWORD m_baseTick, m_renewSizeTick;
     DWORD m_pcrCount;
     DWORD m_pcr, m_basePcr, m_initPcr;
-    bool m_fPcr, m_fFixed, m_fPause;
+    bool m_fPcr, m_fShareWrite, m_fFixed, m_fPause;
     int m_pcrPid, m_pcrPids[PCR_PIDS_MAX];
     int m_pcrPidCounts[PCR_PIDS_MAX];
     int m_pcrPidsLen;
@@ -64,6 +66,8 @@ private:
     DWORD m_totBasePcr;
     long long m_hash;
     int m_speedNum, m_speedDen;
+    bool m_fSpecialExtending;
+    int m_specialExtendInitRate;
 };
 
 #endif // INCLUDE_TS_SENDER_H
