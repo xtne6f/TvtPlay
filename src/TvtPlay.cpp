@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-08-27
+// 最終更新: 2011-08-29
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -15,7 +15,7 @@
 #define WM_UPDATE_F_PAUSED  (WM_APP + 3)
 #define WM_QUERY_CLOSE      (WM_APP + 4)
 #define WM_QUERY_SEEK_BGN   (WM_APP + 5)
-#define WM_QUERY_RESET_DROP (WM_APP + 6)
+#define WM_QUERY_RESET      (WM_APP + 6)
 
 #define WM_TS_SET_UDP       (WM_APP + 1)
 #define WM_TS_SET_PIPE      (WM_APP + 2)
@@ -87,6 +87,7 @@ CTvtPlay::CTvtPlay()
     , m_fFullScreen(false)
     , m_fHide(false)
     , m_fToBottom(false)
+    , m_statusMargin(0)
     , m_fSeekDrawTot(false)
     , m_fPosDrawTot(false)
     , m_posItemWidth(0)
@@ -196,17 +197,21 @@ void CTvtPlay::LoadSettings()
     
     if (!::GetModuleFileName(g_hinstDLL, m_szIniFileName, ARRAY_SIZE(m_szIniFileName)) ||
         !::PathRenameExtension(m_szIniFileName, TEXT(".ini"))) m_szIniFileName[0] = 0;
+    
+    int defMargin = m_pApp->GetVersion() >= TVTest::MakeVersion(0,7,21) ? 1 : 2; // 0.7.21以降は細くなった
 
     m_fAutoClose = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsAutoClose"), 0, m_szIniFileName) != 0;
     m_fAutoLoop = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsAutoLoop"), 0, m_szIniFileName) != 0;
     m_fResetAllOnSeek = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsResetAllOnSeek"), 0, m_szIniFileName) != 0;
     m_resetDropInterval = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsResetDropInterval"), 1000, m_szIniFileName);
     m_fToBottom = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("ToBottom"), 1, m_szIniFileName) != 0;
+    m_statusMargin = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("Margin"), defMargin, m_szIniFileName);
     m_fSeekDrawTot = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("DispTot"), 0, m_szIniFileName) != 0;
     m_fPosDrawTot = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("DispTotOnStatus"), 0, m_szIniFileName) != 0;
     m_posItemWidth = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("StatusItemWidth"), 112, m_szIniFileName);
     m_timeoutOnCmd = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnCommand"), 2000, m_szIniFileName);
     m_timeoutOnMove = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnMouseMove"), 0, m_szIniFileName);
+
     ::GetPrivateProfileString(TEXT("Settings"), TEXT("IconImage"), TEXT(""),
                               m_szIconFileName, ARRAY_SIZE(m_szIconFileName), m_szIniFileName);
 
@@ -241,7 +246,7 @@ void CTvtPlay::LoadSettings()
     m_fSettingsLoaded = true;
 
     // デフォルトの設定キーを出力するため
-    if (::GetPrivateProfileInt(TEXT("Settings"), TEXT("DispTot"), -1, m_szIniFileName) == -1)
+    if (::GetPrivateProfileInt(TEXT("Settings"), TEXT("Margin"), -10, m_szIniFileName) == -10)
         SaveSettings();
 }
 
@@ -256,6 +261,7 @@ void CTvtPlay::SaveSettings() const
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TsResetAllOnSeek"), m_fResetAllOnSeek, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TsResetDropInterval"), m_resetDropInterval, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("ToBottom"), m_fToBottom, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("Margin"), m_statusMargin, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("DispTot"), m_fSeekDrawTot, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("DispTotOnStatus"), m_fPosDrawTot, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("StatusItemWidth"), m_posItemWidth, m_szIniFileName);
@@ -403,7 +409,8 @@ bool CTvtPlay::Open(LPCTSTR fileName)
     
     if (!m_tsSender.Open(fileName)) return false;
 
-    m_pApp->Reset(TVTest::RESET_VIEWER);
+    if (m_pApp->GetVersion() < TVTest::MakeVersion(0,7,21))
+        m_pApp->Reset(TVTest::RESET_VIEWER);
 
     m_hThreadEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
     if (!m_hThreadEvent) {
@@ -474,8 +481,10 @@ void CTvtPlay::ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool
         m_fHalt = true;
         ::WaitForSingleObject(m_hThreadEvent, 1000);
 
-        // RESET_VIEWERのデッドロック対策のため先にリセットする
-        m_pApp->Reset(fResetAll ? TVTest::RESET_ALL : TVTest::RESET_VIEWER);
+        if (m_pApp->GetVersion() < TVTest::MakeVersion(0,7,21)) {
+            // RESET_VIEWERのデッドロック対策のため先にリセットする
+            m_pApp->Reset(fResetAll ? TVTest::RESET_ALL : TVTest::RESET_VIEWER);
+        }
         ::PostThreadMessage(m_threadID, Msg, wParam, lParam);
         m_fHalt = false;
     }
@@ -533,7 +542,7 @@ void CTvtPlay::Resize()
         RECT rect;
         if (::GetWindowRect(m_pApp->GetAppWindow(), &rect)) {
             ::SetWindowPos(m_hwndFrame, NULL, rect.left, rect.bottom,
-                           rect.right - rect.left, STATUS_HEIGHT + STATUS_MARGIN, SWP_NOZORDER);
+                           rect.right - rect.left, STATUS_HEIGHT + m_statusMargin, SWP_NOZORDER);
         }
         if (m_fFullScreen) {
             ::KillTimer(m_hwndFrame, TIMER_ID_FULL_SCREEN);
@@ -724,7 +733,7 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
     case WM_SIZE:
         {
             bool fFull = pThis->m_pApp->GetFullscreen();
-            int margin = fFull ? 0 : STATUS_MARGIN;
+            int margin = fFull ? 0 : pThis->m_statusMargin;
             
             // シークバーをリサイズする
             CStatusItem *pItem = pThis->m_statusView.GetItemByID(STATUS_ITEM_SEEK);
@@ -758,8 +767,11 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
     case WM_QUERY_SEEK_BGN:
         pThis->SeekToBegin();
         break;
-    case WM_QUERY_RESET_DROP:
-        if (pThis->m_resetDropInterval > 0) {
+    case WM_QUERY_RESET:
+        if (pThis->m_pApp->GetVersion() >= TVTest::MakeVersion(0,7,21)) {
+            pThis->m_pApp->Reset((wParam && pThis->m_fResetAllOnSeek) ? TVTest::RESET_ALL : TVTest::RESET_VIEWER);
+        }
+        if (wParam && pThis->m_resetDropInterval > 0) {
             pThis->m_lastDropCount = 0;
             ::SetTimer(hwnd, TIMER_ID_RESET_DROP, pThis->m_resetDropInterval, NULL);
         }
@@ -776,11 +788,11 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
     CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(pParam);
     int posSec = -1, durSec = -1, totSec = -1;
     bool fPrevFixed = false;
+    int resetCount = 5;
     
     // コントロールの表示をリセット
     pThis->m_tsSender.Pause(false);
     ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, 0, 0);
-    ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET_DROP, 0, 0);
 
     for (;;) {
         BOOL rv = ::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE);
@@ -807,19 +819,20 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                 break;
             case WM_TS_PAUSE:
                 pThis->m_tsSender.Pause(msg.wParam ? true : false);
+                ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET, 0, 0);
                 ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, msg.wParam, 0);
                 break;
             case WM_TS_SEEK_BGN:
                 pThis->m_tsSender.SeekToBegin();
-                ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET_DROP, 0, 0);
+                resetCount = 5;
                 break;
             case WM_TS_SEEK_END:
                 pThis->m_tsSender.SeekToEnd();
-                ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET_DROP, 0, 0);
+                resetCount = 5;
                 break;
             case WM_TS_SEEK:
                 pThis->m_tsSender.Seek(msg.lParam);
-                ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET_DROP, 0, 0);
+                resetCount = 5;
                 break;
             }
             ::TranslateMessage(&msg);
@@ -837,7 +850,14 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                     else if (pThis->m_fAutoClose) ::PostMessage(pThis->m_hwndFrame, WM_QUERY_CLOSE, 0, 0);
                 }
             }
-            if (!fRead || pThis->m_tsSender.IsPaused()) ::Sleep(100);
+            if (!fRead || pThis->m_tsSender.IsPaused()) {
+                resetCount = 0;
+                ::Sleep(100);
+            }
+            else if (resetCount > 0 && --resetCount == 0) {
+                // シーク後のリセットはある程度転送してから行う
+                ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET, 1, 0);
+            }
         }
 
         int pos = pThis->m_tsSender.GetPosition();

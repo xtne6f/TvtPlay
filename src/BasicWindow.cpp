@@ -425,7 +425,7 @@ LRESULT CALLBACK CCustomWindow::WndProc(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM
 {
 	CCustomWindow *pThis;
 
-	if (uMsg==WM_CREATE) {
+	if (uMsg==WM_NCCREATE) {
 		pThis=static_cast<CCustomWindow*>(OnCreate(hwnd,lParam));
 	} else {
 		pThis=static_cast<CCustomWindow*>(GetBasicWindow(hwnd));

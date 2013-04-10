@@ -590,7 +590,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < }
 < 
 < 
-867,1654d447
+867,1661d447
 < }
 < 
 < 
@@ -694,15 +694,21 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < }
 < 
 < 
-< bool CColorSchemeOptions::Load(LPCTSTR pszFileName)
+< bool CColorSchemeOptions::LoadSettings(CSettingsFile &File)
 < {
-< 	return m_pColorScheme->Load(pszFileName);
+< 	TCHAR szFileName[MAX_PATH];
+< 	if (!File.GetFileName(szFileName,lengthof(szFileName)))
+< 		return false;
+< 	return m_pColorScheme->Load(szFileName);
 < }
 < 
 < 
-< bool CColorSchemeOptions::Save(LPCTSTR pszFileName) const
+< bool CColorSchemeOptions::SaveSettings(CSettingsFile &File)
 < {
-< 	return m_pColorScheme->Save(pszFileName);
+< 	TCHAR szFileName[MAX_PATH];
+< 	if (!File.GetFileName(szFileName,lengthof(szFileName)))
+< 		return false;
+< 	return m_pColorScheme->Save(szFileName);
 < }
 < 
 < 
@@ -1363,6 +1369,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 		case PSN_APPLY:
 < 			GetCurrentSettings(m_pColorScheme);
 < 			Apply(m_pColorScheme);
+< 			m_fChanged=true;
 < 			break;
 < 
 < 		case PSN_RESET:
@@ -1647,10 +1654,10 @@ diff TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
 < 	CColorSchemeOptions();
 < 	~CColorSchemeOptions();
 < // COptions
-< 	bool Load(LPCTSTR pszFileName);
-< 	bool Save(LPCTSTR pszFileName) const;
+< 	bool LoadSettings(CSettingsFile &File) override;
+< 	bool SaveSettings(CSettingsFile &File) override;
 < // CBasicDialog
-< 	bool Create(HWND hwndOwner);
+< 	bool Create(HWND hwndOwner) override;
 < // CColorSchemeOptions
 < 	bool SetApplyCallback(ApplyFunc pCallback);
 < 	bool ApplyColorScheme() const;
@@ -1670,7 +1677,7 @@ diff TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
 < 	CColorPalette m_ColorPalette;
 < 
 < // CBasicDialog
-< 	INT_PTR DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam);
+< 	INT_PTR DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam) override;
 < 
 < 	bool Apply(const CColorScheme *pColorScheme) const;
 < 	void GetCurrentSettings(CColorScheme *pColorScheme);
@@ -1730,8 +1737,8 @@ diff TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
 < 	}
 < 	HBITMAP hbmOld=SelectBitmap(hdcMemory,hbm);
 < 	BLENDFUNCTION bf={AC_SRC_OVER,0,255,AC_SRC_ALPHA};
-< 	::AlphaBlend(hdc,pRect->left,pRect->top,Width,Height,
-< 				 hdcMemory,0,0,Width,Height,bf);
+< 	::GdiAlphaBlend(hdc,pRect->left,pRect->top,Width,Height,
+< 					hdcMemory,0,0,Width,Height,bf);
 < 	::SelectObject(hdcMemory,hbmOld);
 < 	::DeleteDC(hdcMemory);
 < 	::DeleteObject(hbm);
@@ -1773,8 +1780,8 @@ diff TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
 < 	}
 < 	HBITMAP hbmOld=SelectBitmap(hdcMemory,hbm);
 < 	BLENDFUNCTION bf={AC_SRC_OVER,0,Opacity,0};
-< 	::AlphaBlend(hdc,pRect->left,pRect->top,Width,Height,
-< 				 hdcMemory,0,0,Width,Height,bf);
+< 	::GdiAlphaBlend(hdc,pRect->left,pRect->top,Width,Height,
+< 					hdcMemory,0,0,Width,Height,bf);
 < 	::SelectObject(hdcMemory,hbmOld);
 < 	::DeleteDC(hdcMemory);
 < 	::DeleteObject(hbm);
@@ -1854,8 +1861,8 @@ diff TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
 < 		}
 < 	} else {
 < 		BLENDFUNCTION bf={AC_SRC_OVER,0,Opacity,0};
-< 		::AlphaBlend(hdc,DstX,DstY,DstWidth,DstHeight,
-< 					 hdcMemory,SrcX,SrcY,SrcWidth,SrcHeight,bf);
+< 		::GdiAlphaBlend(hdc,DstX,DstY,DstWidth,DstHeight,
+< 						hdcMemory,SrcX,SrcY,SrcWidth,SrcHeight,bf);
 < 	}
 < 
 < 	::SelectObject(hdcMemory,hbmOld);
@@ -2827,19 +2834,24 @@ diff TVTestStatusView_orig/DrawUtil.h ./DrawUtil.h
 < };
 < 
 diff TVTestStatusView_orig/Settings.cpp ./Settings.cpp
-1c1,2
+1,2c1,3
 < #include "stdafx.h"
+< #include "TVTest.h"
 ---
 > #include <Windows.h>
 > #include <Shlwapi.h>
-3a5
+> #include "Util.h"
+4a6
 > #if 0
-8a11
+9a12,13
 > #endif
-10a14,16
+> 
+10a15,17
 > #ifndef _T
 > #define _T(x) TEXT(x)
 > #endif
+11a19
+> #define lengthof _countof
 diff TVTestStatusView_orig/StatusView.cpp ./StatusView.cpp
 1,2c1,3
 < #include "stdafx.h"
@@ -2848,12 +2860,12 @@ diff TVTestStatusView_orig/StatusView.cpp ./StatusView.cpp
 > #include <Windows.h>
 > #include <WindowsX.h>
 > #include "Util.h"
-357a359,362
+356a358,361
 > 			if (GetItemRectByIndex(m_HotItem,&rc)) {
 > 				m_ItemList[m_HotItem]->OnMouseMove(x-rc.left,y);
 > 			}
-> 			
-359,361c364,366
+> 
+358,360c363,365
 < 				GetItemRectByIndex(m_HotItem,&rc);
 < 				x-=rc.left;
 < 				m_ItemList[m_HotItem]->OnMouseMove(x,y);
@@ -2861,10 +2873,6 @@ diff TVTestStatusView_orig/StatusView.cpp ./StatusView.cpp
 > 				//GetItemRectByIndex(m_HotItem,&rc);
 > 				//x-=rc.left;
 > 				//m_ItemList[m_HotItem]->OnMouseMove(x,y);
-871c876
-< 		if (MaxWidth>m_Offscreen.GetWidth()
----
-> 		if (MaxWidth+ITEM_MARGIN*2>m_Offscreen.GetWidth()
 diff TVTestStatusView_orig/StatusView.h ./StatusView.h
 7d6
 < #include "TsUtilClass.h"
@@ -2873,3 +2881,9 @@ diff TVTestStatusView_orig/Theme.cpp ./Theme.cpp
 < #include "stdafx.h"
 ---
 > #include <Windows.h>
+diff TVTestStatusView_orig/WindowUtil.cpp ./WindowUtil.cpp
+1c1,2
+< #include "stdafx.h"
+---
+> #include <Windows.h>
+> #include <WindowsX.h>

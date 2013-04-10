@@ -57,6 +57,9 @@
     <ClInclude Include="Aero.h">
       <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
     </ClInclude>
+    <ClInclude Include="WindowUtil.h">
+      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="TvtPlay.cpp">
@@ -87,6 +90,9 @@
       <Filter>ソース ファイル\TVTestStatusView</Filter>
     </ClCompile>
     <ClCompile Include="Aero.cpp">
+      <Filter>ソース ファイル\TVTestStatusView</Filter>
+    </ClCompile>
+    <ClCompile Include="WindowUtil.cpp">
       <Filter>ソース ファイル\TVTestStatusView</Filter>
     </ClCompile>
   </ItemGroup>

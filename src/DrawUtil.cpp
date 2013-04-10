@@ -76,7 +76,7 @@ bool FillGradient(HDC hdc,const RECT *pRect,COLORREF Color1,COLORREF Color2,
 	vert[1].Green=GetGValue(Color2)<<8;
 	vert[1].Blue=GetBValue(Color2)<<8;
 	vert[1].Alpha=0x0000;
-	return ::GradientFill(hdc,vert,2,&rect,1,
+	return ::GdiGradientFill(hdc,vert,2,&rect,1,
 		Direction==DIRECTION_HORZ?GRADIENT_FILL_RECT_H:GRADIENT_FILL_RECT_V)!=FALSE;
 }
 
@@ -129,9 +129,9 @@ bool FillGradient(HDC hdc,const RECT *pRect,const RGBA &Color1,const RGBA &Color
 			BlendFunc.SourceConstantAlpha=
 				(BYTE)(((Width-1-x)*Color1.Alpha+x*Color2.Alpha)/(Width-1));
 			if (BlendFunc.SourceConstantAlpha!=0) {
-				::AlphaBlend(hdc,x+pRect->left,pRect->top,1,Height,
-							 hdcMem,x,0,1,Height,
-							 BlendFunc);
+				::GdiAlphaBlend(hdc,x+pRect->left,pRect->top,1,Height,
+								hdcMem,x,0,1,Height,
+								BlendFunc);
 			}
 		}
 	} else {
@@ -139,9 +139,9 @@ bool FillGradient(HDC hdc,const RECT *pRect,const RGBA &Color1,const RGBA &Color
 			BlendFunc.SourceConstantAlpha=
 				(BYTE)(((Height-1-y)*Color1.Alpha+y*Color2.Alpha)/(Height-1));
 			if (BlendFunc.SourceConstantAlpha!=0) {
-				::AlphaBlend(hdc,pRect->left,y+pRect->top,Width,1,
-							 hdcMem,0,y,Width,1,
-							 BlendFunc);
+				::GdiAlphaBlend(hdc,pRect->left,y+pRect->top,Width,1,
+								hdcMem,0,y,Width,1,
+								BlendFunc);
 			}
 		}
 	}
@@ -275,8 +275,8 @@ bool DrawMonoColorDIB(HDC hdcDst,int DstX,int DstY,
 	Palette[1].rgbRed=GetRValue(TransColor);
 	Palette[1].rgbReserved=0;
 	::SetDIBColorTable(hdcSrc,0,2,Palette);
-	::TransparentBlt(hdcDst,DstX,DstY,Width,Height,
-					 hdcSrc,SrcX,SrcY,Width,Height,TransColor);
+	::GdiTransparentBlt(hdcDst,DstX,DstY,Width,Height,
+						hdcSrc,SrcX,SrcY,Width,Height,TransColor);
 	return true;
 }
 

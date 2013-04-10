@@ -6,6 +6,7 @@
 #include "BasicWindow.h"
 #include "Theme.h"
 #include "DrawUtil.h"
+#include "WindowUtil.h"
 #include "Aero.h"
 
 
@@ -136,7 +137,7 @@ private:
 	bool m_fSingleMode;
 	CDynamicString m_SingleText;
 	int m_HotItem;
-	bool m_fTrackMouseEvent;
+	CMouseLeaveTrack m_MouseLeaveTrack;
 	bool m_fOnButtonDown;
 	CEventHandler *m_pEventHandler;
 	DrawUtil::COffscreen m_Offscreen;

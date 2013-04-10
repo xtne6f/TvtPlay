@@ -1,5 +1,6 @@
 ﻿#include <Windows.h>
 #include <Shlwapi.h>
+#include "Util.h"
 #include "Settings.h"
 
 #if 0
@@ -14,6 +15,8 @@ static char THIS_FILE[]=__FILE__;
 #ifndef _T
 #define _T(x) TEXT(x)
 #endif
+
+#define lengthof _countof
 
 
 static unsigned int StrToUInt(LPCTSTR pszValue)
@@ -57,8 +60,9 @@ CSettings::~CSettings()
 
 bool CSettings::Open(LPCTSTR pszFileName,LPCTSTR pszSection,unsigned int Flags)
 {
-	if (pszFileName==NULL || ::lstrlen(pszFileName)>=MAX_PATH
-			|| pszSection==NULL || pszSection[0]==_T('\0')
+	Close();
+	if (IsStringEmpty(pszFileName) || ::lstrlen(pszFileName)>=MAX_PATH
+			|| IsStringEmpty(pszSection)
 			|| Flags==0)
 		return false;
 	lstrcpy(m_szFileName,pszFileName);
@@ -70,8 +74,6 @@ bool CSettings::Open(LPCTSTR pszFileName,LPCTSTR pszSection,unsigned int Flags)
 
 void CSettings::Close()
 {
-	if ((m_OpenFlags&OPEN_WRITE)!=0)
-		WritePrivateProfileString(NULL,NULL,NULL,m_szFileName);	// Flush
 	m_OpenFlags=0;
 }
 
@@ -85,11 +87,18 @@ bool CSettings::Clear()
 }
 
 
+void CSettings::Flush()
+{
+	if ((m_OpenFlags&OPEN_WRITE)!=0)
+		WritePrivateProfileString(NULL,NULL,NULL,m_szFileName);
+}
+
+
 bool CSettings::Read(LPCTSTR pszValueName,int *pData)
 {
 	TCHAR szValue[16];
 
-	if (!Read(pszValueName,szValue,16) || szValue[0]=='\0')
+	if (!Read(pszValueName,szValue,lengthof(szValue)) || szValue[0]==_T('\0'))
 		return false;
 	*pData=::StrToInt(szValue);
 	return true;
@@ -109,7 +118,7 @@ bool CSettings::Read(LPCTSTR pszValueName,unsigned int *pData)
 {
 	TCHAR szValue[16];
 
-	if (!Read(pszValueName,szValue,16) || szValue[0]=='\0')
+	if (!Read(pszValueName,szValue,16) || szValue[0]==_T('\0'))
 		return false;
 	*pData=StrToUInt(szValue);
 	return true;
@@ -137,9 +146,8 @@ bool CSettings::Read(LPCTSTR pszValueName,LPTSTR pszData,unsigned int Max)
 	cBack[0]=pszData[0];
 	if (Max>1)
 		cBack[1]=pszData[1];
-	GetPrivateProfileString(m_szSection,pszValueName,TEXT("\x1A"),pszData,Max,
-																m_szFileName);
-	if (pszData[0]=='\x1A') {
+	GetPrivateProfileString(m_szSection,pszValueName,TEXT("\x1A"),pszData,Max,m_szFileName);
+	if (pszData[0]==_T('\x1A')) {
 		pszData[0]=cBack[0];
 		if (Max>1)
 			pszData[1]=cBack[1];
@@ -158,14 +166,14 @@ bool CSettings::Write(LPCTSTR pszValueName,LPCTSTR pszData)
 		return false;
 	// 文字列が ' か " で囲まれていると読み込み時に除去されてしまうので、
 	// 余分に " で囲っておく。
-	if (pszData[0]=='"' || pszData[0]=='\'') {
+	if (pszData[0]==_T('"') || pszData[0]==_T('\'')) {
 		LPCTSTR p;
 		TCHAR Quote;
 
 		p=pszData;
 		Quote=*p++;
-		while (*p!='\0') {
-			if (*p==Quote && *(p+1)=='\0')
+		while (*p!=_T('\0')) {
+			if (*p==Quote && *(p+1)==_T('\0'))
 				break;
 #ifndef UNICODE
 			if (IsDBCSLeadByteEx(CP_ACP,*p))
@@ -174,10 +182,13 @@ bool CSettings::Write(LPCTSTR pszValueName,LPCTSTR pszData)
 			p++;
 		}
 		if (*p==Quote) {
-			LPTSTR pszBuff;
+			size_t Length=::lstrlen(pszData);
+			LPTSTR pszBuff=new TCHAR[Length+3];
 
-			pszBuff=new TCHAR[::lstrlen(pszData)+3];
-			::wsprintf(pszBuff,TEXT("\"%s\""),pszData);
+			pszBuff[0]=_T('\"');
+			::CopyMemory(&pszBuff[1],pszData,Length*sizeof(TCHAR));
+			pszBuff[Length+1]=_T('\"');
+			pszBuff[Length+2]=_T('\0');
 			bool fOK=WritePrivateProfileString(m_szSection,pszValueName,
 											   pszBuff,m_szFileName)!=0;
 			delete [] pszBuff;
@@ -190,9 +201,9 @@ bool CSettings::Write(LPCTSTR pszValueName,LPCTSTR pszData)
 
 bool CSettings::Read(LPCTSTR pszValueName,bool *pfData)
 {
-	TCHAR szData[5];
+	TCHAR szData[8];
 
-	if (!Read(pszValueName,szData,5))
+	if (!Read(pszValueName,szData,lengthof(szData)))
 		return false;
 	if (lstrcmpi(szData,TEXT("yes"))==0 || lstrcmpi(szData,TEXT("true"))==0)
 		*pfData=true;
@@ -216,7 +227,7 @@ bool CSettings::ReadColor(LPCTSTR pszValueName,COLORREF *pcrData)
 {
 	TCHAR szText[8];
 
-	if (!Read(pszValueName,szText,8) || szText[0]!='#' || lstrlen(szText)!=7)
+	if (!Read(pszValueName,szText,lengthof(szText)) || szText[0]!=_T('#') || lstrlen(szText)!=7)
 		return false;
 	*pcrData=RGB((HexToNum(szText[1])<<4) | HexToNum(szText[2]),
 				 (HexToNum(szText[3])<<4) | HexToNum(szText[4]),
@@ -247,15 +258,15 @@ bool CSettings::Read(LPCTSTR pszValueName,LOGFONT *pFont)
 		return false;
 
 	LPTSTR p=szData,q;
-	for (int i=0;*p!='\0';i++) {
-		while (*p==' ')
+	for (int i=0;*p!=_T('\0');i++) {
+		while (*p==_T(' '))
 			p++;
 		q=p;
-		while (*p!='\0' && *p!=',')
+		while (*p!=_T('\0') && *p!=_T(','))
 			p++;
-		if (*p!='\0')
-			*p++='\0';
-		if (*q!='\0') {
+		if (*p!=_T('\0'))
+			*p++=_T('\0');
+		if (*q!=_T('\0')) {
 			switch (i) {
 			case 0:
 				::lstrcpyn(pFont->lfFaceName,q,LF_FACESIZE);
@@ -309,4 +320,151 @@ bool CSettings::Write(LPCTSTR pszValueName,const LOGFONT *pFont)
 	::wsprintf(szData,TEXT("%s,%d,%d,%u"),
 			   pFont->lfFaceName,pFont->lfHeight,pFont->lfWeight,Flags);
 	return Write(pszValueName,szData);
+}
+
+
+
+
+CSettingsFile::CSettingsFile()
+	: m_OpenFlags(0)
+	, m_LastError(ERROR_SUCCESS)
+{
+	m_szFileName[0]=_T('\0');
+}
+
+
+CSettingsFile::~CSettingsFile()
+{
+	//Close();
+}
+
+
+bool CSettingsFile::Open(LPCTSTR pszFileName,unsigned int Flags)
+{
+	Close();
+
+	if (IsStringEmpty(pszFileName) || ::lstrlen(pszFileName)>=MAX_PATH
+			|| Flags==0) {
+		m_LastError=ERROR_INVALID_PARAMETER;
+		return false;
+	}
+
+	::lstrcpy(m_szFileName,pszFileName);
+	m_OpenFlags=Flags;
+	m_LastError=ERROR_SUCCESS;
+
+#ifdef UNICODE
+	if ((m_OpenFlags&OPEN_WRITE)!=0 && !::PathFileExists(pszFileName)) {
+		HANDLE hFile=::CreateFile(pszFileName,GENERIC_WRITE,0,NULL,
+								  CREATE_NEW,FILE_ATTRIBUTE_NORMAL,NULL);
+		if (hFile!=INVALID_HANDLE_VALUE) {
+			// Unicode(UTF-16 LE)のiniファイルになるようにBOMを書き出す
+			static const WORD BOM=0xFEFF;
+			DWORD Write;
+			::WriteFile(hFile,&BOM,2,&Write,NULL);
+			::FlushFileBuffers(hFile);
+			::CloseHandle(hFile);
+		} else {
+			DWORD Error=::GetLastError();
+			if (Error!=ERROR_ALREADY_EXISTS) {
+				m_LastError=Error;
+			}
+		}
+	}
+#endif
+
+	return true;
+}
+
+
+void CSettingsFile::Close()
+{
+	m_szFileName[0]=_T('\0');
+	m_OpenFlags=0;
+	m_LastError=ERROR_SUCCESS;
+}
+
+
+void CSettingsFile::Flush()
+{
+	if ((m_OpenFlags&OPEN_WRITE)!=0)
+		::WritePrivateProfileString(NULL,NULL,NULL,m_szFileName);
+}
+
+
+bool CSettingsFile::OpenSection(CSettings *pSettings,LPCTSTR pszSection)
+{
+	if (m_OpenFlags==0 || pSettings==NULL)
+		return false;
+	return pSettings->Open(m_szFileName,pszSection,m_OpenFlags);
+}
+
+
+bool CSettingsFile::GetFileName(LPTSTR pszFileName,int MaxLength) const
+{
+	if (pszFileName==NULL || MaxLength<=::lstrlen(m_szFileName))
+		return false;
+	::lstrcpy(pszFileName,m_szFileName);
+	return true;
+}
+
+
+
+
+CSettingsBase::CSettingsBase()
+	: m_pszSection(TEXT("Settings"))
+	, m_fChanged(false)
+{
+}
+
+
+CSettingsBase::CSettingsBase(LPCTSTR pszSection)
+	: m_pszSection(pszSection)
+	, m_fChanged(false)
+{
+}
+
+
+CSettingsBase::~CSettingsBase()
+{
+}
+
+
+bool CSettingsBase::LoadSettings(CSettingsFile &File)
+{
+	CSettings Settings;
+
+	if (!File.OpenSection(&Settings,m_pszSection))
+		return false;
+	return ReadSettings(Settings);
+}
+
+
+bool CSettingsBase::SaveSettings(CSettingsFile &File)
+{
+	CSettings Settings;
+
+	if (!File.OpenSection(&Settings,m_pszSection))
+		return false;
+	return WriteSettings(Settings);
+}
+
+
+bool CSettingsBase::LoadSettings(LPCTSTR pszFileName)
+{
+	CSettingsFile File;
+
+	if (!File.Open(pszFileName,CSettingsFile::OPEN_READ))
+		return false;
+	return LoadSettings(File);
+}
+
+
+bool CSettingsBase::SaveSettings(LPCTSTR pszFileName)
+{
+	CSettingsFile File;
+
+	if (!File.Open(pszFileName,CSettingsFile::OPEN_WRITE))
+		return false;
+	return LoadSettings(File);
 }

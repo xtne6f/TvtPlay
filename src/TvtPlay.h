@@ -20,7 +20,6 @@ public:
 class CTvtPlay : public TVTest::CTVTestPlugin
 {
     static const int STATUS_HEIGHT = 22;
-    static const int STATUS_MARGIN = 2;
     static const int TIMER_ID_FULL_SCREEN = 1;
     static const int TIMER_ID_RESET_DROP = 2;
     static const int TIMER_FULL_SCREEN_INTERVAL = 100;
@@ -33,6 +32,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     // コントロール
     HWND m_hwndFrame;
     bool m_fFullScreen, m_fHide, m_fToBottom;
+    int m_statusMargin;
     bool m_fSeekDrawTot, m_fPosDrawTot;
     int m_posItemWidth;
     int m_timeoutOnCmd, m_timeoutOnMove;
