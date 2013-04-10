@@ -65,6 +65,7 @@ private:
     bool OpenWithPopup(const POINT &pt, UINT flags);
     bool OpenWithPlayListPopup(const POINT &pt, UINT flags);
     void StretchWithPopup(const POINT &pt, UINT flags);
+    void SeekChapterWithPopup(const POINT &pt, UINT flags);
     int TrackPopup(HMENU hmenu, const POINT &pt, UINT flags);
     bool OpenCurrent(int offset = -1, int stretchID = -1);
     bool Open(LPCTSTR fileName, int offset, int stretchID);

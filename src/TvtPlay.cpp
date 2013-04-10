@@ -80,6 +80,7 @@ static const TVTest::CommandInfo COMMAND_LIST[] = {
     {ID_COMMAND_ADD_CHAPTER, L"AddChapter", L"チャプターを追加"},
     {ID_COMMAND_REPEAT_CHAPTER, L"RepeatChapter", L"チャプターリピート/しない"},
     {ID_COMMAND_SKIP_X_CHAPTER, L"SkipXChapter", L"チャプタースキップ/しない"},
+    {ID_COMMAND_CHAPTER_POPUP, L"ChapterPopup", L"チャプターを選択:ポップアップ"},
     {ID_COMMAND_LOOP, L"Loop", L"全体/シングル/リピートしない"},
     {ID_COMMAND_PAUSE, L"Pause", L"一時停止/再生"},
     {ID_COMMAND_NOP, L"Nop", L"何もしない"},
@@ -1292,6 +1293,42 @@ void CTvtPlay::StretchWithPopup(const POINT &pt, UINT flags)
 }
 
 
+void CTvtPlay::SeekChapterWithPopup(const POINT &pt, UINT flags)
+{
+    if (!m_chapter.IsOpen() || m_chapter.empty()) return;
+
+    HMENU hmenu = ::CreatePopupMenu();
+    if (hmenu) {
+        int i = 0;
+        int selID = 0;
+        CChapterMap::iterator it;
+
+        for (i = 0, it = m_chapter.begin(); it != m_chapter.end(); i++, it++)
+        {
+            TCHAR str[128];
+            ::wsprintf(str, TEXT("%d:%02d:%02d.%03d %s"),
+                       it->first/3600000, it->first/60000%60, it->first/1000%60, it->first%1000,
+                       it->second.val);
+            ::AppendMenu(hmenu, MF_STRING, 1 + i, str);
+        }
+        selID = TrackPopup(hmenu, pt, flags);
+        ::DestroyMenu(hmenu);
+
+        if (0 <= selID - 1 && selID - 1 < (int)m_chapter.size())
+        {
+            for (i = 0, it = m_chapter.begin(); it != m_chapter.end(); i++, it++)
+            {
+                if (i == selID - 1)
+                {
+                    SeekAbsolute(it->first);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+
 static INT_PTR CALLBACK EditChapterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     // WM_INITDIALOGのとき不定
@@ -2006,6 +2043,7 @@ void CTvtPlay::OnCommand(int id, const POINT *pPt, UINT flags)
     case ID_COMMAND_OPEN_POPUP:
     case ID_COMMAND_LIST_POPUP:
     case ID_COMMAND_STRETCH_POPUP:
+    case ID_COMMAND_CHAPTER_POPUP:
         if (m_fPopuping) {
             ::PostMessage(m_hwndFrame, WM_KEYDOWN, VK_ESCAPE, 0);
             ::PostMessage(m_hwndFrame, WM_KEYUP, VK_ESCAPE, 0);
@@ -2035,6 +2073,9 @@ void CTvtPlay::OnCommand(int id, const POINT *pPt, UINT flags)
         }
         else if (id == ID_COMMAND_STRETCH_POPUP) {
             StretchWithPopup(*pPt, flags);
+        }
+        else if (id == ID_COMMAND_CHAPTER_POPUP) {
+            SeekChapterWithPopup(*pPt, flags);
         }
         break;
     case ID_COMMAND_CLOSE:
