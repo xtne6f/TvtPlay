@@ -2861,6 +2861,10 @@ diff TVTestStatusView_orig/StatusView.cpp ./StatusView.cpp
 > 				//GetItemRectByIndex(m_HotItem,&rc);
 > 				//x-=rc.left;
 > 				//m_ItemList[m_HotItem]->OnMouseMove(x,y);
+871c876
+< 		if (MaxWidth>m_Offscreen.GetWidth()
+---
+> 		if (MaxWidth+ITEM_MARGIN*2>m_Offscreen.GetWidth()
 diff TVTestStatusView_orig/StatusView.h ./StatusView.h
 7d6
 < #include "TsUtilClass.h"

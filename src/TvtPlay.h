@@ -17,6 +17,8 @@ class CTvtPlay : public TVTest::CTVTestPlugin
 {
     static const int STATUS_HEIGHT = 22;
     static const int STATUS_MARGIN = 2;
+    static const int STATUS_TIMER_INTERVAL = 100;
+    static const int STATUS_HIDE_TIMEOUT = 30;
     bool m_fInitialized;
     bool m_fSettingsLoaded;
     bool m_fForceEnable;
@@ -31,12 +33,17 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     int m_duration;
     bool m_fPaused;
     bool m_fFullScreen, m_fHide;
+    int m_hideCount;
+    bool m_fHalt;
     
     void LoadSettings();
     bool InitializePlugin();
     bool EnablePlugin(bool fEnable);
     unsigned short GetCurrentPort();
+    void ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam);
     void Resize();
+    void OnCommand(int id);
+    void OnStartUpDone();
     static LRESULT CALLBACK EventCallback(UINT Event, LPARAM lParam1, LPARAM lParam2, void *pClientData);
     static BOOL CALLBACK WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pResult, void *pUserData);
     static LRESULT CALLBACK FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -46,6 +53,7 @@ public:
     virtual bool GetPluginInfo(TVTest::PluginInfo *pInfo);
     virtual bool Initialize();
     virtual bool Finalize();
+    bool Open(HWND hwndOwner);
     bool Open(LPCTSTR fileName);
     void Close();
     int GetPosition() const;
@@ -83,11 +91,11 @@ public:
     void OnLButtonDown(int x, int y);
     void OnRButtonDown(int x, int y);
     void OnMouseMove(int x, int y);
-    void SetDrawSeekingPos(bool fDraw, int pos);
+    void SetDrawSeekPos(bool fDraw, int pos);
 private:
     CTvtPlay *m_pPlugin;
-    bool m_fDrawSeekingPos;
-    int m_seekingPos;
+    bool m_fDrawSeekPos, m_fDrawLeft;
+    int m_seekPos;
 };
 
 class CPositionStatusItem : public CStatusItem

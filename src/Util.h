@@ -35,7 +35,7 @@ void extract_adaptation_field(ADAPTATION_FIELD *dst, const unsigned char *data);
 #define ABSTRACT_DECL			__declspec(novtable)
 #define ABSTRACT_CLASS(name)	ABSTRACT_DECL name abstract
 
-#define APP_NAME TEXT("SliderTest")
+#define APP_NAME TEXT("TvtPlay")
 
 namespace StdUtil {
 int vsnprintf(wchar_t *s,size_t n,const wchar_t *format,va_list args);

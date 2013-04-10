@@ -873,7 +873,7 @@ void CStatusView::Draw(HDC hdc,const RECT *pPaintRect)
 			if (pItem->GetVisible() && pItem->GetWidth()>MaxWidth)
 				MaxWidth=pItem->GetWidth();
 		}
-		if (MaxWidth>m_Offscreen.GetWidth()
+		if (MaxWidth+ITEM_MARGIN*2>m_Offscreen.GetWidth()
 				|| ItemHeight>m_Offscreen.GetHeight())
 			m_Offscreen.Create(MaxWidth+ITEM_MARGIN*2,ItemHeight);
 		hdcDst=m_Offscreen.GetDC();
