@@ -61,7 +61,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalOptions="/PDBALTPATH:%_PDB%"
+				AdditionalOptions="/PDBALTPATH:%_PDB% /OPT:NOWIN98"
 				AdditionalDependencies="..\soundtouch\lib\SoundTouchD.lib winmm.lib &quot;C:\Program Files\Microsoft SDKs\Windows\v7.1\Samples\multimedia\directshow\baseclasses\Debug\strmbasd.lib&quot;"
 				OutputFile="$(OutDir)\$(ProjectName).ax"
 				LinkIncremental="2"
@@ -139,7 +139,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalOptions="/PDBALTPATH:%_PDB%"
+				AdditionalOptions="/PDBALTPATH:%_PDB% /OPT:NOWIN98"
 				AdditionalDependencies="..\soundtouch\lib\SoundTouch.lib winmm.lib &quot;C:\Program Files\Microsoft SDKs\Windows\v7.1\Samples\multimedia\directshow\baseclasses\Release\strmbase.lib&quot;"
 				OutputFile="$(OutDir)\$(ProjectName).ax"
 				LinkIncremental="1"

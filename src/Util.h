@@ -1,6 +1,12 @@
 ﻿#ifndef INCLUDE_UTIL_H
 #define INCLUDE_UTIL_H
 
+#ifdef _DEBUG
+#define DEBUG_OUT(x) ::OutputDebugString(x)
+#else
+#define DEBUG_OUT(x)
+#endif
+
 #define WM_ASFLT_STRETCH    (WM_APP + 1)
 LRESULT ASFilterSendMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
@@ -8,7 +14,8 @@ BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 #define READ_FILE_MAX_SIZE (256 * 1024)
 #define ICON_SIZE 16
 
-WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName);
+WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode);
+bool WriteUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, const WCHAR *pStr);
 bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTSTR pIdxList);
 int CompareTStrI(const void *str1, const void *str2);
 int CompareTStrIX(const void *str1, const void *str2);
@@ -110,6 +117,37 @@ namespace StdUtil {
 int vsnprintf(wchar_t *s,size_t n,const wchar_t *format,va_list args);
 inline size_t strnlen(const wchar_t *s,size_t n) { return ::wcsnlen(s,n); }
 }
+
+/////////////////////////////////////////////////////////////////////////////
+// クリティカルセクションラッパークラス
+/////////////////////////////////////////////////////////////////////////////
+
+class CCriticalLock
+{
+public:
+	CCriticalLock();
+	virtual ~CCriticalLock();
+
+	void Lock(void);
+	void Unlock(void);
+	//bool TryLock(DWORD TimeOut=0);
+private:
+	CRITICAL_SECTION m_CriticalSection;
+};
+
+/////////////////////////////////////////////////////////////////////////////
+// ブロックスコープロッククラス
+/////////////////////////////////////////////////////////////////////////////
+
+class CBlockLock
+{
+public:
+	CBlockLock(CCriticalLock *pCriticalLock);
+	virtual ~CBlockLock();
+		
+private:
+	CCriticalLock *m_pCriticalLock;
+};
 
 /////////////////////////////////////////////////////////////////////////////
 // トレースクラス

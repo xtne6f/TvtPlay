@@ -29,7 +29,7 @@ int CPlaylist::PushBackListOrFile(LPCTSTR path, bool fMovePos)
         // TSファイルとして処理
         PLAY_INFO pi;
         ::lstrcpyn(pi.path, fullPath, _countof(pi.path));
-        pos = size();
+        pos = static_cast<int>(size());
         push_back(pi);
     }
     if (fMovePos && pos >= 0) m_pos = pos;
@@ -40,7 +40,7 @@ int CPlaylist::PushBackListOrFile(LPCTSTR path, bool fMovePos)
 int CPlaylist::PushBackList(LPCTSTR fullPath)
 {
     int pos = -1;
-    TCHAR *pRet = NewReadUtfFileToEnd(fullPath);
+    TCHAR *pRet = NewReadUtfFileToEnd(fullPath, FILE_SHARE_READ);
     if (pRet) {
         // 相対パスとの結合用
         TCHAR dirName[MAX_PATH];
@@ -74,7 +74,7 @@ int CPlaylist::PushBackList(LPCTSTR fullPath)
                         ::lstrcpyn(pi.path, line, _countof(pi.path));
                     }
                     if (::PathFileExists(pi.path)) {
-                        if (pos < 0) pos = size();
+                        if (pos < 0) pos = static_cast<int>(size());
                         push_back(pi);
                     }
                 }

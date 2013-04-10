@@ -658,8 +658,9 @@ DWORD CTsSender::GetAdjTickCount()
         }
     }
     DWORD adjTick = (m_adjDelta ? m_adjHoldTick : tick) + m_adjAmount;
-#ifdef _DEBUG
+#if 0
     static DWORD last;
+    // 2回目以降のOpen()時には必ずしも成立しない
     ASSERT(!last || !MSB(adjTick - last));
     last = adjTick;
 #endif

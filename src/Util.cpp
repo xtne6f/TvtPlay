@@ -30,12 +30,12 @@ BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
 
 // UTF-16またはUTF-8テキストファイルを文字列として全て読む
 // 成功するとnewされた配列のポインタが返るので、必ずdeleteすること
-WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName)
+WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode)
 {
     BYTE *pBuf = NULL;
     WCHAR *pRet = NULL;
 
-    HANDLE hFile = ::CreateFile(fileName, GENERIC_READ, FILE_SHARE_READ,
+    HANDLE hFile = ::CreateFile(fileName, GENERIC_READ, dwShareMode,
                                 NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) goto EXIT;
 
@@ -84,6 +84,38 @@ EXIT:
     if (hFile != INVALID_HANDLE_VALUE) ::CloseHandle(hFile);
     delete [] pBuf;
     return pRet;
+}
+
+
+// 文字列をBOM付きUTF-8テキストファイルとして書き込む
+bool WriteUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, const WCHAR *pStr)
+{
+    BYTE *pBuf = NULL;
+    HANDLE hFile = INVALID_HANDLE_VALUE;
+    bool rv = false;
+
+    // 出力サイズ算出
+    int bufSize = ::WideCharToMultiByte(CP_UTF8, 0, pStr, -1, NULL, 0, NULL, NULL);
+    if (bufSize <= 0) goto EXIT;
+
+    // 文字コード変換(NULL文字含む)
+    pBuf = new BYTE[3 + bufSize];
+    pBuf[0] = 0xEF; pBuf[1] = 0xBB; pBuf[2] = 0xBF;
+    bufSize = ::WideCharToMultiByte(CP_UTF8, 0, pStr, -1, reinterpret_cast<LPSTR>(pBuf + 3), bufSize, NULL, NULL);
+    if (bufSize <= 0) goto EXIT;
+
+    hFile = ::CreateFile(fileName, GENERIC_WRITE, dwShareMode,
+                         NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) goto EXIT;
+
+    DWORD written;
+    if (!::WriteFile(hFile, pBuf, bufSize + 3 - 1, &written, NULL)) goto EXIT;
+
+    rv = true;
+EXIT:
+    if (hFile != INVALID_HANDLE_VALUE) ::CloseHandle(hFile);
+    delete [] pBuf;
+    return rv;
 }
 
 
@@ -571,6 +603,51 @@ int StdUtil::vsnprintf(wchar_t *s,size_t n,const wchar_t *format,va_list args)
 
 
 #if 1 // From: TVTest_0.7.23_Src/TsUtilClass.cpp
+//////////////////////////////////////////////////////////////////////
+// CCriticalLock クラスの構築/消滅
+//////////////////////////////////////////////////////////////////////
+
+CCriticalLock::CCriticalLock()
+{
+	// クリティカルセクション初期化
+	::InitializeCriticalSection(&m_CriticalSection);
+}
+
+CCriticalLock::~CCriticalLock()
+{
+	// クリティカルセクション削除
+	::DeleteCriticalSection(&m_CriticalSection);
+}
+
+void CCriticalLock::Lock(void)
+{
+	// クリティカルセクション取得
+	::EnterCriticalSection(&m_CriticalSection);
+}
+
+void CCriticalLock::Unlock(void)
+{
+	// クリティカルセクション開放
+	::LeaveCriticalSection(&m_CriticalSection);
+}
+
+//////////////////////////////////////////////////////////////////////
+// CBlockLock クラスの構築/消滅
+//////////////////////////////////////////////////////////////////////
+
+CBlockLock::CBlockLock(CCriticalLock *pCriticalLock)
+	: m_pCriticalLock(pCriticalLock)
+{
+	// ロック取得
+	m_pCriticalLock->Lock();
+}
+
+CBlockLock::~CBlockLock()
+{
+	// ロック開放
+	m_pCriticalLock->Unlock();
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // トレースクラス
 /////////////////////////////////////////////////////////////////////////////

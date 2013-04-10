@@ -42,6 +42,7 @@ public:
     bool Seek(int msec);
     void Pause(bool fPause);
     void SetSpeed(int num, int den);
+    bool IsOpen() const { return m_hFile != NULL; }
     bool IsPaused() const { return m_fPause; }
     bool IsFixed(bool *pfSpecialExt = NULL) const { if (pfSpecialExt) *pfSpecialExt=m_fSpecialExtending; return m_fFixed; }
     void GetSpeed(int *pNum, int *pDen) const { *pNum=m_speedNum; *pDen=m_speedDen; }

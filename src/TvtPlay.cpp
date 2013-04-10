@@ -1,31 +1,31 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-12-14
+// 最終更新: 2011-12-30
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
 #include <Shlwapi.h>
 #include <list>
 #include <vector>
+#include <map>
 #include "Util.h"
 #include "Settings.h"
 #include "ColorScheme.h"
 #include "StatusView.h"
 #include "TsSender.h"
 #include "Playlist.h"
+#include "ChapterMap.h"
 #include "resource.h"
 #include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.3r3)";
-static const int INFO_VERSION = 14;
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.4)";
+static const int INFO_VERSION = 15;
 
-#define WM_UPDATE_POSITION  (WM_APP + 1)
-#define WM_UPDATE_TOT_TIME  (WM_APP + 2)
-#define WM_UPDATE_F_PAUSED  (WM_APP + 3)
-#define WM_UPDATE_SPEED     (WM_APP + 4)
-#define WM_QUERY_CLOSE_NEXT (WM_APP + 5)
-#define WM_QUERY_SEEK_BGN   (WM_APP + 6)
-#define WM_QUERY_RESET      (WM_APP + 7)
+#define WM_UPDATE_STATUS    (WM_APP + 1)
+#define WM_QUERY_CLOSE_NEXT (WM_APP + 2)
+#define WM_QUERY_SEEK_BGN   (WM_APP + 3)
+#define WM_QUERY_RESET      (WM_APP + 4)
+#define WM_SATISFIED_POS_GT (WM_APP + 5)
 
 #define WM_TS_SET_UDP       (WM_APP + 1)
 #define WM_TS_SET_PIPE      (WM_APP + 2)
@@ -33,13 +33,22 @@ static const int INFO_VERSION = 14;
 #define WM_TS_SEEK_BGN      (WM_APP + 4)
 #define WM_TS_SEEK_END      (WM_APP + 5)
 #define WM_TS_SEEK          (WM_APP + 6)
-#define WM_TS_SET_SPEED     (WM_APP + 7)
-#define WM_TS_SET_MOD_TS    (WM_APP + 8)
+#define WM_TS_SEEK_ABSOLUTE (WM_APP + 7)
+#define WM_TS_SET_SPEED     (WM_APP + 8)
+#define WM_TS_SET_MOD_TS    (WM_APP + 9)
+#define WM_TS_WATCH_POS_GT  (WM_APP + 10)
 
 static LPCTSTR SETTINGS = TEXT("Settings");
 static LPCTSTR TVTPLAY_FRAME_WINDOW_CLASS = TEXT("TvtPlay Frame");
 static LPCSTR UDP_ADDR = "127.0.0.1";
 static LPCTSTR PIPE_NAME = TEXT("\\\\.\\pipe\\BonDriver_Pipe%02d");
+
+enum {
+    TIMER_ID_AUTO_HIDE = 1,
+    TIMER_ID_RESET_DROP,
+    TIMER_ID_SYNC_CHAPTER,
+    TIMER_ID_WATCH_POS_GT,
+};
 
 enum {
     ID_COMMAND_OPEN,
@@ -49,24 +58,18 @@ enum {
     ID_COMMAND_PREV,
     ID_COMMAND_SEEK_BGN,
     ID_COMMAND_SEEK_END,
+    ID_COMMAND_SEEK_PREV,
+    ID_COMMAND_SEEK_NEXT,
+    ID_COMMAND_ADD_CHAPTER,
+    ID_COMMAND_REPEAT_CHAPTER,
+    ID_COMMAND_SKIP_X_CHAPTER,
     ID_COMMAND_LOOP,
     ID_COMMAND_PAUSE,
     ID_COMMAND_NOP,
-    ID_COMMAND_SEEK_A,
-    ID_COMMAND_SEEK_B,
-    ID_COMMAND_SEEK_C,
-    ID_COMMAND_SEEK_D,
-    ID_COMMAND_SEEK_E,
-    ID_COMMAND_SEEK_F,
-    ID_COMMAND_SEEK_G,
-    ID_COMMAND_SEEK_H,
-    ID_COMMAND_STRETCH_A,
-    ID_COMMAND_STRETCH_B,
-    ID_COMMAND_STRETCH_C,
-    ID_COMMAND_STRETCH_D,
-    ID_COMMAND_STRETCH_E,
-    ID_COMMAND_STRETCH_F,
     ID_COMMAND_STRETCH,
+    ID_COMMAND_STRETCH_RE,
+    ID_COMMAND_SEEK_A,
+    ID_COMMAND_STRETCH_A = ID_COMMAND_SEEK_A + COMMAND_S_MAX,
 };
 
 static const TVTest::CommandInfo COMMAND_LIST[] = {
@@ -77,32 +80,24 @@ static const TVTest::CommandInfo COMMAND_LIST[] = {
     {ID_COMMAND_PREV, L"Prev", L"前のファイル/先頭にシーク"},
     {ID_COMMAND_SEEK_BGN, L"SeekToBgn", L"先頭にシーク"},
     {ID_COMMAND_SEEK_END, L"SeekToEnd", L"次のファイル/末尾にシーク"},
+    {ID_COMMAND_SEEK_PREV, L"SeekToPrev", L"前のチャプター"},
+    {ID_COMMAND_SEEK_NEXT, L"SeekToNext", L"次のチャプター"},
+    {ID_COMMAND_ADD_CHAPTER, L"AddChapter", L"チャプターを追加"},
+    {ID_COMMAND_REPEAT_CHAPTER, L"RepeatChapter", L"チャプターリピート/しない"},
+    {ID_COMMAND_SKIP_X_CHAPTER, L"SkipXChapter", L"チャプタースキップ/しない"},
     {ID_COMMAND_LOOP, L"Loop", L"全体/シングル/リピートしない"},
     {ID_COMMAND_PAUSE, L"Pause", L"一時停止/再生"},
     {ID_COMMAND_NOP, L"Nop", L"何もしない"},
-    {ID_COMMAND_SEEK_A, L"SeekA", L"シーク:A"},
-    {ID_COMMAND_SEEK_B, L"SeekB", L"シーク:B"},
-    {ID_COMMAND_SEEK_C, L"SeekC", L"シーク:C"},
-    {ID_COMMAND_SEEK_D, L"SeekD", L"シーク:D"},
-    {ID_COMMAND_SEEK_E, L"SeekE", L"シーク:E"},
-    {ID_COMMAND_SEEK_F, L"SeekF", L"シーク:F"},
-    {ID_COMMAND_SEEK_G, L"SeekG", L"シーク:G"},
-    {ID_COMMAND_SEEK_H, L"SeekH", L"シーク:H"},
-    {ID_COMMAND_STRETCH_A, L"StretchA", L"早送り:A"},
-    {ID_COMMAND_STRETCH_B, L"StretchB", L"早送り:B"},
-    {ID_COMMAND_STRETCH_C, L"StretchC", L"早送り:C"},
-    {ID_COMMAND_STRETCH_D, L"StretchD", L"早送り:D"},
-    {ID_COMMAND_STRETCH_E, L"StretchE", L"早送り:E"},
-    {ID_COMMAND_STRETCH_F, L"StretchF", L"早送り:F"},
-    {ID_COMMAND_STRETCH, L"Stretch", L"早送り:切り替え"},
+    {ID_COMMAND_STRETCH, L"Stretch", L"倍速:切り替え"},
+    {ID_COMMAND_STRETCH_RE, L"StretchRe", L"倍速:逆順切り替え"},
 };
 
-static const int DEFAULT_SEEK_LIST[COMMAND_SEEK_MAX] = {
+static const int DEFAULT_SEEK_LIST[COMMAND_S_MAX] = {
     -60000, -30000, -15000, -5000, 4000, 14000, 29000, 59000
 };
 
-static const int DEFAULT_STRETCH_LIST[COMMAND_STRETCH_MAX] = {
-    400, 200, 50, 25, 100, 100
+static const int DEFAULT_STRETCH_LIST[COMMAND_S_MAX] = {
+    400, 200, 50, 25
 };
 
 // NULL禁止
@@ -116,7 +111,9 @@ static LPCTSTR DEFAULT_BUTTON_LIST[BUTTON_MAX] = {
     TEXT(";'+'3'0,SeekG"), TEXT("'+'6'0,SeekH"),
     TEXT("3,SeekToEnd"),
     TEXT("'*'2'.'0:30~'*'2'.'0,StretchB"),
-    TEXT("'*'0'.'5:30~'*'0'.'5,StretchC")
+    TEXT("'*'0'.'5:30~'*'0'.'5,StretchC"),
+    TEXT(";'*'1' '.'0:30~'*'4'.'0:30~'*'0'.'2,StretchD,StretchA"),
+    TEXT(";'*'1' '.'0:30~'*'4'.'0:30~'*'2'.'0:30~'*'0'.'5:30~'*'0'.'2,Width=32,StretchZ,Stretch")
 };
 
 
@@ -148,6 +145,8 @@ CTvtPlay::CTvtPlay()
     , m_dispCount(0)
     , m_lastDropCount(0)
     , m_resetDropInterval(0)
+    , m_seekListNum(0)
+    , m_stretchListNum(0)
     , m_popupMax(0)
     , m_fPopupDesc(false)
     , m_fPopuping(false)
@@ -155,16 +154,17 @@ CTvtPlay::CTvtPlay()
     , m_hThread(NULL)
     , m_hThreadEvent(NULL)
     , m_threadID(0)
-    , m_position(0)
-    , m_duration(0)
-    , m_totTime(-1)
-    , m_speed(100)
-    , m_fFixed(false)
-    , m_fSpecialExt(false)
-    , m_fPaused(false)
+    , m_infoPos(0)
+    , m_infoDur(0)
+    , m_infoTot(-1)
+    , m_infoExtMode(0)
+    , m_infoSpeed(100)
+    , m_fInfoPaused(false)
     , m_fHalt(false)
     , m_fAllRepeat(false)
     , m_fSingleRepeat(false)
+    , m_fRepeatChapter(false)
+    , m_fSkipXChapter(false)
     , m_waitOnStop(0)
     , m_resetMode(0)
     , m_stretchMode(0)
@@ -254,8 +254,42 @@ void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst)
 // 初期化処理
 bool CTvtPlay::Initialize()
 {
+    if (!::GetModuleFileName(g_hinstDLL, m_szIniFileName, _countof(m_szIniFileName)) ||
+        !::PathRenameExtension(m_szIniFileName, TEXT(".ini"))) return false;
+
+    TVTest::CommandInfo cmdList[_countof(COMMAND_LIST) + COMMAND_S_MAX * 2];
+    memcpy(cmdList, COMMAND_LIST, sizeof(COMMAND_LIST));
+    int count = _countof(COMMAND_LIST);
+
+    // 設定に応じてコマンド数をふやす
+    TCHAR seekKey[COMMAND_S_MAX][16];
+    TCHAR seekName[COMMAND_S_MAX][16];
+    for (int i = 0; i < COMMAND_S_MAX; ++i) {
+        ::wsprintf(seekKey[i], TEXT("Seek%c"), TEXT('A') + i);
+        ::wsprintf(seekName[i], TEXT("シーク:%c"), TEXT('A') + i);
+        if (!DEFAULT_SEEK_LIST[i]) {
+            if (!::GetPrivateProfileInt(SETTINGS, seekKey[i], 0, m_szIniFileName)) break;
+        }
+        cmdList[count].ID = ID_COMMAND_SEEK_A + i;
+        cmdList[count].pszText = seekKey[i];
+        cmdList[count++].pszName = seekName[i];
+    }
+
+    TCHAR stretchKey[COMMAND_S_MAX][16];
+    TCHAR stretchName[COMMAND_S_MAX][16];
+    for (int i = 0; i < COMMAND_S_MAX; ++i) {
+        ::wsprintf(stretchKey[i], TEXT("Stretch%c"), TEXT('A') + i);
+        ::wsprintf(stretchName[i], TEXT("倍速:%c"), TEXT('A') + i);
+        if (!DEFAULT_STRETCH_LIST[i]) {
+            if (!::GetPrivateProfileInt(SETTINGS, stretchKey[i], 0, m_szIniFileName)) break;
+        }
+        cmdList[count].ID = ID_COMMAND_STRETCH_A + i;
+        cmdList[count].pszText = stretchKey[i];
+        cmdList[count++].pszName = stretchName[i];
+    }
+
     // コマンドを登録
-    m_pApp->RegisterCommand(COMMAND_LIST, _countof(COMMAND_LIST));
+    m_pApp->RegisterCommand(cmdList, count);
 
     // イベントコールバック関数を登録
     m_pApp->SetEventCallback(EventCallback, this);
@@ -278,13 +312,12 @@ void CTvtPlay::LoadSettings()
 {
     if (m_fSettingsLoaded) return;
 
-    if (!::GetModuleFileName(g_hinstDLL, m_szIniFileName, _countof(m_szIniFileName)) ||
-        !::PathRenameExtension(m_szIniFileName, TEXT(".ini"))) m_szIniFileName[0] = 0;
-
     int defSalt = (::GetTickCount()>>16)^(::GetTickCount()&0xffff);
 
     m_fAllRepeat = ::GetPrivateProfileInt(SETTINGS, TEXT("TsRepeatAll"), 0, m_szIniFileName) != 0;
     m_fSingleRepeat = ::GetPrivateProfileInt(SETTINGS, TEXT("TsRepeatSingle"), 0, m_szIniFileName) != 0;
+    m_fRepeatChapter = ::GetPrivateProfileInt(SETTINGS, TEXT("TsRepeatChapter"), 0, m_szIniFileName) != 0;
+    m_fSkipXChapter = ::GetPrivateProfileInt(SETTINGS, TEXT("TsSkipXChapter"), 0, m_szIniFileName) != 0;
     m_waitOnStop = ::GetPrivateProfileInt(SETTINGS, TEXT("TsWaitOnStop"), 800, m_szIniFileName);
     m_waitOnStop = max(m_waitOnStop, 0);
     // m_resetMode == 0:ビューアRS, 1:全体RS, 2:空PAT+ビューアRS, 3:空PAT, 4:何もしない
@@ -321,18 +354,23 @@ void CTvtPlay::LoadSettings()
                               m_szIconFileName, _countof(m_szIconFileName), m_szIniFileName);
 
     // シークコマンドのシーク量設定を取得
-    for (int i = 0; i < COMMAND_SEEK_MAX; i++) {
+    m_seekListNum = 0;
+    while (m_seekListNum < COMMAND_S_MAX) {
         TCHAR key[16];
-        ::wsprintf(key, TEXT("Seek%c"), (TCHAR)i + TEXT('A'));
-        m_seekList[i] = ::GetPrivateProfileInt(SETTINGS, key, DEFAULT_SEEK_LIST[i], m_szIniFileName);
+        ::wsprintf(key, TEXT("Seek%c"), TEXT('A') + m_seekListNum);
+        int val = ::GetPrivateProfileInt(SETTINGS, key, DEFAULT_SEEK_LIST[m_seekListNum], m_szIniFileName);
+        if (!val) break;
+        m_seekList[m_seekListNum++] = val;
     }
 
-    // 早送りコマンドの倍率(25%～800%)設定を取得
-    for (int i = 0; i < COMMAND_STRETCH_MAX; i++) {
+    // 倍速コマンドの倍率(25%～800%)設定を取得
+    m_stretchListNum = 0;
+    while (m_stretchListNum < COMMAND_S_MAX) {
         TCHAR key[16];
-        ::wsprintf(key, TEXT("Stretch%c"), (TCHAR)i + TEXT('A'));
-        int r = ::GetPrivateProfileInt(SETTINGS, key, DEFAULT_STRETCH_LIST[i], m_szIniFileName);
-        m_stretchList[i] = min(max(r, 25), 800);
+        ::wsprintf(key, TEXT("Stretch%c"), TEXT('A') + m_stretchListNum);
+        int val = ::GetPrivateProfileInt(SETTINGS, key, DEFAULT_STRETCH_LIST[m_stretchListNum], m_szIniFileName);
+        if (!val) break;
+        m_stretchList[m_stretchListNum++] = min(max(val, 25), 800);
     }
 
     // ボタンアイテムの配置設定を取得
@@ -501,6 +539,8 @@ void CTvtPlay::SaveSettings() const
 
     WritePrivateProfileInt(SETTINGS, TEXT("TsRepeatAll"), m_fAllRepeat, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsRepeatSingle"), m_fSingleRepeat, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsRepeatChapter"), m_fRepeatChapter, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsSkipXChapter"), m_fSkipXChapter, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsWaitOnStop"), m_waitOnStop, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsResetAllOnSeek"), m_resetMode, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsResetDropInterval"), m_resetDropInterval, m_szIniFileName);
@@ -529,15 +569,15 @@ void CTvtPlay::SaveSettings() const
     ::WritePrivateProfileString(SETTINGS, TEXT("PopupPattern"), m_szPopupPattern, m_szIniFileName);
     ::WritePrivateProfileString(SETTINGS, TEXT("IconImage"), m_szIconFileName, m_szIniFileName);
 
-    for (int i = 0; i < COMMAND_SEEK_MAX; i++) {
+    for (int i = 0; i < m_seekListNum; ++i) {
         TCHAR key[16];
-        ::wsprintf(key, TEXT("Seek%c"), (TCHAR)i + TEXT('A'));
+        ::wsprintf(key, TEXT("Seek%c"), TEXT('A') + i);
         WritePrivateProfileInt(SETTINGS, key, m_seekList[i], m_szIniFileName);
     }
 
-    for (int i = 0; i < COMMAND_STRETCH_MAX; i++) {
+    for (int i = 0; i < m_stretchListNum; ++i) {
         TCHAR key[16];
-        ::wsprintf(key, TEXT("Stretch%c"), (TCHAR)i + TEXT('A'));
+        ::wsprintf(key, TEXT("Stretch%c"), TEXT('A') + i);
         WritePrivateProfileInt(SETTINGS, key, m_stretchList[i], m_szIniFileName);
     }
 
@@ -590,37 +630,77 @@ bool CTvtPlay::InitializePlugin()
     if (!iconMap.IsCreated())
         if (!iconMap.Load(g_hinstDLL, IDB_BUTTONS)) return false;
 
-    DrawUtil::CBitmap icon;
-    if (!icon.Create(ICON_SIZE * 7, ICON_SIZE, 1)) return false;
+    DrawUtil::CBitmap iconS, iconL;
+    if (!iconS.Create(ICON_SIZE * 3, ICON_SIZE, 1) ||
+        !iconL.Create(ICON_SIZE * COMMAND_S_MAX, ICON_SIZE, 1)) return false;
 
     HDC hdcMem = ::CreateCompatibleDC(NULL);
     if (!hdcMem) return false;
-    HGDIOBJ hgdiOld = ::SelectObject(hdcMem, icon.GetHandle());
-
-    RGBQUAD rgbq[2] = {0};
-    rgbq[0].rgbBlue = rgbq[0].rgbGreen = rgbq[0].rgbRed = 0;
-    rgbq[1].rgbBlue = rgbq[1].rgbGreen = rgbq[1].rgbRed = 255;
-    ::SetDIBColorTable(hdcMem, 0, 2, rgbq);
 
     // 文字列解析してボタンアイテムを生成
     for (int i = 0; i < BUTTON_MAX; i++) {
         if (m_buttonList[i][0] == TEXT(';')) continue;
 
-        int commandID = -1;
-        LPCTSTR cmd = ::StrRChr(m_buttonList[i], NULL, TEXT(','));
-        for (int j = 0; cmd && j < _countof(COMMAND_LIST); j++) {
-            if (!::lstrcmpi(&cmd[1], COMMAND_LIST[j].pszText)) {
-                commandID = COMMAND_LIST[j].ID;
-                break;
+        // コマンドはカンマ区切りで2つまで指定できる
+        int cmdID[2] = {-1, -1};
+        int cmdCount = 0, width = ICON_SIZE;
+        TCHAR text[BUTTON_TEXT_MAX];
+        ::lstrcpy(text, m_buttonList[i]);
+        ::CharUpper(text);
+        for (;;) {
+            LPTSTR cmd = ::StrRChr(text, NULL, TEXT(','));
+            if (!cmd) break;
+
+            if (!::StrCmpNI(cmd+1, TEXT("Width="), 6)) {
+                if ((width = ::StrToInt(cmd+7)) < 0) width = 0;
             }
+            else if (cmdCount < 2) {
+                if (::lstrcmpi(cmd+1, TEXT("SeekA")) >= 0 &&
+                    ::lstrcmpi(cmd+1, TEXT("SeekZ")) <= 0 &&
+                    ::lstrlen(cmd) == 6)
+                {
+                    cmdID[cmdCount++] = ID_COMMAND_SEEK_A + cmd[5] - TEXT('A');
+                }
+                else if (::lstrcmpi(cmd+1, TEXT("StretchA")) >= 0 &&
+                         ::lstrcmpi(cmd+1, TEXT("StretchZ")) <= 0 &&
+                         ::lstrlen(cmd) == 9)
+                {
+                    cmdID[cmdCount++] = ID_COMMAND_STRETCH_A + cmd[8] - TEXT('A');
+                }
+                else {
+                    for (int k = 0; k < _countof(COMMAND_LIST); ++k) {
+                        if (!::lstrcmpi(cmd+1, COMMAND_LIST[k].pszText)) {
+                            cmdID[cmdCount++] = COMMAND_LIST[k].ID;
+                            break;
+                        }
+                    }
+                }
+            }
+            cmd[0] = 0;
         }
-        if (commandID == -1) continue;
+        // 同一コマンドのボタンは複数生成できない
+        if (cmdID[0] < 0 || m_statusView.GetItemByID(STATUS_ITEM_BUTTON + cmdID[0])) continue;
+        if (cmdID[1] < 0) {
+            // サブコマンドの省略時解釈
+            cmdID[1] = (cmdID[0]==ID_COMMAND_PREV || cmdID[0]==ID_COMMAND_SEEK_END) ? ID_COMMAND_LIST_POPUP :
+                       (cmdID[0]==ID_COMMAND_OPEN) ? ID_COMMAND_OPEN_POPUP : ID_COMMAND_NOP;
+        }
+
+        // StretchとStretchReのみ大きいビットマップを使う
+        DrawUtil::CBitmap *pIcon = (cmdID[0] == ID_COMMAND_STRETCH ||
+                                    cmdID[0] == ID_COMMAND_STRETCH_RE) ? &iconL : &iconS;
+        HBITMAP hbmOld = SelectBitmap(hdcMem, pIcon->GetHandle());
+
+        RGBQUAD rgbq[2] = {0};
+        rgbq[1].rgbBlue = rgbq[1].rgbGreen = rgbq[1].rgbRed = 255;
+        ::SetDIBColorTable(hdcMem, 0, 2, rgbq);
 
         ComposeMonoColorIcon(hdcMem, 0, 0, iconMap.GetHandle(), m_buttonList[i]);
 
-        m_statusView.AddItem(new CButtonStatusItem(this, STATUS_ITEM_BUTTON + commandID, icon));
+        m_statusView.AddItem(new CButtonStatusItem(this, STATUS_ITEM_BUTTON + cmdID[0],
+                                                   STATUS_ITEM_BUTTON + cmdID[1], width, *pIcon));
+        SelectBitmap(hdcMem, hbmOld);
     }
-    ::SelectObject(hdcMem, hgdiOld);
     ::DeleteDC(hdcMem);
 
     m_statusView.AddItem(new CSeekStatusItem(this, m_fSeekDrawOfs, m_fSeekDrawTot));
@@ -686,8 +766,6 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
 // ポップアップメニュー選択でプラグイン設定する
 void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
 {
-    if (m_fPopuping) return;
-
     // メニュー生成
     int selID = 0;
     HMENU hmenu = ::CreatePopupMenu();
@@ -696,13 +774,8 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
             ::AppendMenu(hmenu, MF_STRING|(m_fAutoHide?MF_UNCHECKED:MF_CHECKED), 1, TEXT("常に表示する"));
         ::AppendMenu(hmenu, MF_STRING|(m_fPosDrawTot?MF_CHECKED:MF_UNCHECKED), 2, TEXT("放送時刻を表示する"));
         ::AppendMenu(hmenu, MF_STRING|(m_fModTimestamp?MF_CHECKED:MF_UNCHECKED), 3, TEXT("ラップアラウンドを回避する"));
-        m_fPopuping = true;
-        // まずコントロールを表示させておく
-        if (m_fAutoHideActive) ::SendMessage(m_hwndFrame, WM_TIMER, TIMER_ID_AUTO_HIDE, 1);
-        selID = (int)::TrackPopupMenu(hmenu, flags | TPM_NONOTIFY | TPM_RETURNCMD,
-                                      pt.x, pt.y, 0, m_hwndFrame, NULL);
+        selID = TrackPopup(hmenu, pt, flags);
         ::DestroyMenu(hmenu);
-        m_fPopuping = false;
     }
     if (selID == 1) {
         m_fAutoHide = !m_fAutoHide;
@@ -801,7 +874,7 @@ bool CTvtPlay::OpenWithDialog()
 // ポップアップメニュー選択でファイルを開く
 bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
 {
-    if (m_popupMax <= 0 || m_fPopuping) return false;
+    if (m_popupMax <= 0) return false;
 
     // 特定指示子をTVTestの保存先フォルダに置換する(手抜き)
     TCHAR pattern[MAX_PATH];
@@ -847,14 +920,8 @@ bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
                 ::AppendMenu(hmenu, MF_STRING, i + 1, str);
             }
         }
-
-        m_fPopuping = true;
-        // まずコントロールを表示させておく
-        if (m_fAutoHideActive) ::SendMessage(m_hwndFrame, WM_TIMER, TIMER_ID_AUTO_HIDE, 1);
-        selID = (int)::TrackPopupMenu(hmenu, flags | TPM_NONOTIFY | TPM_RETURNCMD,
-                                      pt.x, pt.y, 0, m_hwndFrame, NULL);
+        selID = TrackPopup(hmenu, pt, flags);
         ::DestroyMenu(hmenu);
-        m_fPopuping = false;
     }
 
     TCHAR fileName[MAX_PATH];
@@ -875,8 +942,6 @@ bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
 // ポップアップメニュー選択で再生リストのファイルを開く
 bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
 {
-    if (m_fPopuping) return false;
-
     // メニュー生成
     int selID = 0, cmdID = 1;
     HMENU hmenu = ::CreatePopupMenu();
@@ -919,14 +984,8 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
                 ::AppendMenu(hmenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSubMenu), TEXT("その他の操作(&O)"));
             }
         }
-
-        m_fPopuping = true;
-        // まずコントロールを表示させておく
-        if (m_fAutoHideActive) ::SendMessage(m_hwndFrame, WM_TIMER, TIMER_ID_AUTO_HIDE, 1);
-        selID = (int)::TrackPopupMenu(hmenu, flags | TPM_NONOTIFY | TPM_RETURNCMD,
-                                      pt.x, pt.y, 0, m_hwndFrame, NULL);
+        selID = TrackPopup(hmenu, pt, flags);
         ::DestroyMenu(hmenu);
-        m_fPopuping = false;
     }
 
     if (selID >= cmdID || selID - 1 < 0 || (int)m_playlist.size() <= selID - 1) {
@@ -975,6 +1034,75 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
 }
 
 
+// ポップアップメニュー選択でチャプターを編集する
+// chに変更があればtrueを返す
+bool CTvtPlay::EditChapterWithPopup(CHAPTER &ch, const POINT &pt, UINT flags)
+{
+    // メニュー生成
+    int selID = 0;
+    HMENU hmenu = ::CreatePopupMenu();
+    if (hmenu) {
+        TCHAR str[128];
+        ::wsprintf(str, TEXT("%d:%02d:%02d.%03d %s"),
+                   ch.first/1000/60/60%24, ch.first/1000/60%60, ch.first/1000%60, ch.first%1000,
+                   ch.second.val);
+        ::AppendMenu(hmenu, MF_STRING | MF_GRAYED, 0, str);
+        ::AppendMenu(hmenu, MF_SEPARATOR, 0, NULL);
+        ::AppendMenu(hmenu, MF_STRING, 1, TEXT("0.2秒前へ"));
+        ::AppendMenu(hmenu, MF_STRING, 2, TEXT("0.2秒後ろへ"));
+        ::AppendMenu(hmenu, MF_STRING, 3, TEXT("チャプターを削除"));
+        ::AppendMenu(hmenu, MF_SEPARATOR, 0, NULL);
+        ::AppendMenu(hmenu, MF_STRING | (ch.second.IsIn() ? MFS_CHECKED : 0), 4, TEXT("開始チャプター"));
+        ::AppendMenu(hmenu, MF_STRING | (ch.second.IsOut() ? MFS_CHECKED : 0), 5, TEXT("終了チャプター"));
+        ::AppendMenu(hmenu, MF_STRING | (ch.second.IsIn() && ch.second.IsX() ? MFS_CHECKED : 0), 6, TEXT("スキップ開始"));
+        ::AppendMenu(hmenu, MF_STRING | (ch.second.IsOut() && ch.second.IsX() ? MFS_CHECKED : 0), 7, TEXT("スキップ終了"));
+        selID = TrackPopup(hmenu, pt, flags);
+        ::DestroyMenu(hmenu);
+    }
+    switch (selID) {
+    case 1:
+        ch.first = max(ch.first - 200, 0);
+        return true;
+    case 2:
+        ch.first += 200;
+        return true;
+    case 3:
+        ch.first = -1;
+        return true;
+    case 4:
+        if (ch.second.IsOut()) ch.second.val[0] = TEXT('i');
+        else ch.second.InvertPrefix(TEXT('i'));
+        return true;
+    case 5:
+        if (ch.second.IsIn()) ch.second.val[0] = TEXT('o');
+        else ch.second.InvertPrefix(TEXT('o'));
+        return true;
+    case 6:
+        ::lstrcpy(ch.second.val, ch.second.IsIn() && ch.second.IsX() ? TEXT("") : TEXT("ix"));
+        return true;
+    case 7:
+        ::lstrcpy(ch.second.val, ch.second.IsOut() && ch.second.IsX() ? TEXT("") : TEXT("ox"));
+        return true;
+    }
+    return false;
+}
+
+
+int CTvtPlay::TrackPopup(HMENU hmenu, const POINT &pt, UINT flags)
+{
+    int selID = 0;
+    if (!m_fPopuping) {
+        m_fPopuping = true;
+        // まずコントロールを表示させておく
+        if (m_fAutoHideActive) ::SendMessage(m_hwndFrame, WM_TIMER, TIMER_ID_AUTO_HIDE, 1);
+        selID = static_cast<int>(::TrackPopupMenu(hmenu, flags | TPM_NONOTIFY | TPM_RETURNCMD,
+                                                  pt.x, pt.y, 0, m_hwndFrame, NULL));
+        m_fPopuping = false;
+    }
+    return selID;
+}
+
+
 // プレイリストの現在位置のファイルを開く
 bool CTvtPlay::OpenCurrent(int offset)
 {
@@ -1010,15 +1138,14 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset)
         }
     }
 
-    if (m_pApp->GetVersion() < TVTest::MakeVersion(0,7,21))
-        m_pApp->Reset(TVTest::RESET_VIEWER);
+    // 再生情報を初期化する
+    UpdateInfos();
 
     m_hThreadEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
     if (!m_hThreadEvent) {
         m_tsSender.Close();
         return false;
     }
-
     m_hThread = ::CreateThread(NULL, 0, TsSenderThread, this, 0, &m_threadID);
     if (!m_hThread) {
         ::CloseHandle(m_hThreadEvent);
@@ -1026,7 +1153,6 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset)
         m_tsSender.Close();
         return false;
     }
-
     if (m_threadPriority >= THREAD_PRIORITY_LOWEST &&
         m_threadPriority <= THREAD_PRIORITY_HIGHEST) {
         ::SetThreadPriority(m_hThread, m_threadPriority);
@@ -1041,6 +1167,14 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset)
     // PCR/PTS/DTSを変更するかどうか設定
     SetModTimestamp(m_fModTimestamp);
 
+    // チャプターを読み込む
+    m_chapter.Open(fileName);
+    if (m_chapter.NeedToSync()) {
+        ::SetTimer(m_hwndFrame, TIMER_ID_SYNC_CHAPTER, TIMER_SYNC_CHAPTER_INTERVAL, NULL);
+    }
+    BeginWatchingNextChapter(true);
+
+    m_statusView.Invalidate();
     return true;
 }
 
@@ -1077,7 +1211,14 @@ void CTvtPlay::Close()
             SaveSettings();
         }
 
+        ::KillTimer(m_hwndFrame, TIMER_ID_SYNC_CHAPTER);
+        ::KillTimer(m_hwndFrame, TIMER_ID_WATCH_POS_GT);
+        m_chapter.Close();
         m_tsSender.Close();
+
+        // 再生情報を初期化する
+        UpdateInfos();
+        m_statusView.Invalidate();
     }
 }
 
@@ -1126,16 +1267,25 @@ void CTvtPlay::Pause(bool fPause)
 void CTvtPlay::SeekToBegin()
 {
     WaitAndPostToSender(WM_TS_SEEK_BGN, 0, 0, m_resetMode != 0);
+    BeginWatchingNextChapter(true);
 }
 
 void CTvtPlay::SeekToEnd()
 {
     WaitAndPostToSender(WM_TS_SEEK_END, 0, 0, m_resetMode != 0);
+    BeginWatchingNextChapter(true);
 }
 
 void CTvtPlay::Seek(int msec)
 {
     WaitAndPostToSender(WM_TS_SEEK, 0, msec, m_resetMode != 0);
+    BeginWatchingNextChapter(true);
+}
+
+void CTvtPlay::SeekAbsolute(int msec)
+{
+    WaitAndPostToSender(WM_TS_SEEK_ABSOLUTE, 0, msec, m_resetMode != 0);
+    BeginWatchingNextChapter(true);
 }
 
 void CTvtPlay::SetModTimestamp(bool fModTimestamp)
@@ -1151,23 +1301,53 @@ void CTvtPlay::SetRepeatFlags(bool fAllRepeat, bool fSingleRepeat)
     SaveSettings();
 }
 
-int CTvtPlay::GetStretchID() const
+int CTvtPlay::GetStretchID()
 {
-    if (m_speed == 100) return -1;
-    for (int i = 0; i < COMMAND_STRETCH_MAX; i++) {
-        if (m_stretchList[i] == m_speed) return i;
+    CBlockLock lock(&m_tsInfoLock);
+    if (m_infoSpeed == 100) return -1;
+    for (int i = 0; i < m_stretchListNum; ++i) {
+        if (m_stretchList[i] == m_infoSpeed) return i;
     }
     return -1;
 }
 
 void CTvtPlay::Stretch(int stretchID)
 {
-    int speed = 0 <= stretchID && stretchID < COMMAND_STRETCH_MAX ?
+    int speed = 0 <= stretchID && stretchID < m_stretchListNum ?
                 m_stretchList[stretchID] : 100;
 
     // 速度が設定値より大or小のときはミュートフラグをつける
     bool fMute = speed < m_noMuteMin || m_noMuteMax < speed;
     if (m_hThread) ::PostThreadMessage(m_threadID, WM_TS_SET_SPEED, (fMute?4:0)|m_stretchMode, speed);
+}
+
+// 再生位置から直近のチャプターの監視を開始する
+// 再生位置がチャプター位置より大きくなればWM_SATISFIED_POS_GTが呼ばれ、監視は終了する
+// シークが発生すると監視は終了するので注意
+void CTvtPlay::BeginWatchingNextChapter(bool fDoDelay)
+{
+    if (m_hThread && m_chapter.IsOpen() && !m_chapter.empty()) {
+        if (fDoDelay) {
+            // シーク時などはGetPosition()が更新されるまで遅延させる
+            ::SetTimer(m_hwndFrame, TIMER_ID_WATCH_POS_GT, TIMER_WATCH_POS_GT_INTERVAL, NULL);
+        }
+        else {
+            // 直近の終了チャプターかスキップ開始チャプターを監視する
+            // 監視位置は必ずposより大きくする(でないと即座にWM_SATISFIED_POS_GTが呼ばれてしまう)
+            int pos = GetPosition();
+            if (pos >= 0) {
+                CChapterMap::const_iterator it = m_chapter.upper_bound(pos);
+                for (; it != m_chapter.end(); ++it) {
+                    if (m_fSkipXChapter && it->second.IsIn() && it->second.IsX() ||
+                        m_fRepeatChapter && it->second.IsOut())
+                    {
+                        ::PostThreadMessage(m_threadID, WM_TS_WATCH_POS_GT, 0, it->first);
+                        break;
+                    }
+                }
+            }
+        }
+    }
 }
 
 bool CTvtPlay::CalcStatusRect(RECT *pRect, bool fInit)
@@ -1331,7 +1511,7 @@ void CTvtPlay::OnPreviewChange(bool fPreview)
 }
 
 
-void CTvtPlay::OnCommand(int id)
+void CTvtPlay::OnCommand(int id, const POINT *pPt, UINT flags)
 {
     switch (id) {
     case ID_COMMAND_OPEN:
@@ -1343,16 +1523,28 @@ void CTvtPlay::OnCommand(int id)
             ::PostMessage(m_hwndFrame, WM_KEYDOWN, VK_ESCAPE, 0);
             ::PostMessage(m_hwndFrame, WM_KEYUP, VK_ESCAPE, 0);
         }
-        else {
-            CStatusItem *pItem;
-            if (id == ID_COMMAND_OPEN_POPUP) {
-                pItem = m_statusView.GetItemByID(STATUS_ITEM_BUTTON + ID_COMMAND_OPEN);
+        else if (!pPt) {
+            // 適当な位置に表示するためボタンを擬似的に押しに行く
+            CStatusItem *pItem = m_statusView.GetItemByID(STATUS_ITEM_BUTTON + id);
+            if (pItem) {
+                pItem->OnLButtonDown(0, 0);
             }
             else {
-                pItem = m_statusView.GetItemByID(STATUS_ITEM_BUTTON + ID_COMMAND_PREV);
-                if (!pItem) pItem = m_statusView.GetItemByID(STATUS_ITEM_BUTTON + ID_COMMAND_SEEK_END);
+                int num = m_statusView.NumItems();
+                for (int i = 0; i < num; ++i) {
+                    CButtonStatusItem *pButton = dynamic_cast<CButtonStatusItem*>(m_statusView.GetItem(i));
+                    if (pButton && pButton->GetSubID() == STATUS_ITEM_BUTTON + id) {
+                        pButton->OnRButtonDown(0, 0);
+                        break;
+                    }
+                }
             }
-            if (pItem) pItem->OnRButtonDown(0, 0);
+        }
+        else if (id == ID_COMMAND_OPEN_POPUP) {
+            OpenWithPopup(*pPt, flags);
+        }
+        else {
+            OpenWithPlayListPopup(*pPt, flags);
         }
         break;
     case ID_COMMAND_CLOSE:
@@ -1369,6 +1561,56 @@ void CTvtPlay::OnCommand(int id)
         if (m_playlist.size() >= 2 && m_playlist.Next(IsAllRepeat())) OpenCurrent();
         else SeekToEnd();
         break;
+    case ID_COMMAND_SEEK_PREV:
+        if (m_chapter.IsOpen() && !m_chapter.empty()) {
+            int pos = GetPosition();
+            if (pos >= 3000) {
+                // 再生中の連続ジャンプを考慮して多めに戻す
+                CChapterMap::const_iterator it = m_chapter.upper_bound(pos - 3000);
+                if (it != m_chapter.begin()) SeekAbsolute((--it)->first);
+            }
+        }
+        break;
+    case ID_COMMAND_SEEK_NEXT:
+        if (m_chapter.IsOpen() && !m_chapter.empty()) {
+            int pos = GetPosition();
+            if (pos >= 0) {
+                CChapterMap::const_iterator it = m_chapter.upper_bound(pos + 1000);
+                if (it != m_chapter.end()) SeekAbsolute(it->first);
+            }
+        }
+        break;
+    case ID_COMMAND_ADD_CHAPTER:
+        if (m_chapter.IsOpen()) {
+            int pos = GetPosition();
+            if (3000 <= pos && pos <= GetDuration() - 3000) {
+                // 追加位置から±3秒以内に既存のチャプターがないか
+                CChapterMap::const_iterator it = m_chapter.upper_bound(pos - 3000);
+                if (it == m_chapter.end() || it->first > pos + 3000) {
+                    CHAPTER ch;
+                    // どうせPCR挿入間隔の精度しか出ないので100msec単位に落とす
+                    ch.first = pos / 100 * 100;
+                    // 無名チャプター
+                    ch.second.val[0] = 0;
+                    m_chapter.insert(ch);
+                    m_chapter.Save();
+                    m_statusView.UpdateItem(STATUS_ITEM_SEEK);
+                }
+            }
+        }
+        break;
+    case ID_COMMAND_REPEAT_CHAPTER:
+        m_fRepeatChapter = !m_fRepeatChapter;
+        BeginWatchingNextChapter(false);
+        m_statusView.UpdateItem(STATUS_ITEM_BUTTON + id);
+        SaveSettings();
+        break;
+    case ID_COMMAND_SKIP_X_CHAPTER:
+        m_fSkipXChapter = !m_fSkipXChapter;
+        BeginWatchingNextChapter(false);
+        m_statusView.UpdateItem(STATUS_ITEM_BUTTON + id);
+        SaveSettings();
+        break;
     case ID_COMMAND_LOOP:
         if (!IsAllRepeat() && !IsSingleRepeat())
             SetRepeatFlags(true, false);
@@ -1384,26 +1626,32 @@ void CTvtPlay::OnCommand(int id)
         break;
     case ID_COMMAND_NOP:
         break;
-    case ID_COMMAND_SEEK_A:
-    case ID_COMMAND_SEEK_B:
-    case ID_COMMAND_SEEK_C:
-    case ID_COMMAND_SEEK_D:
-    case ID_COMMAND_SEEK_E:
-    case ID_COMMAND_SEEK_F:
-    case ID_COMMAND_SEEK_G:
-    case ID_COMMAND_SEEK_H:
-        Seek(m_seekList[id - ID_COMMAND_SEEK_A]);
-        break;
-    case ID_COMMAND_STRETCH_A:
-    case ID_COMMAND_STRETCH_B:
-    case ID_COMMAND_STRETCH_C:
-    case ID_COMMAND_STRETCH_D:
-    case ID_COMMAND_STRETCH_E:
-    case ID_COMMAND_STRETCH_F:
-        Stretch(GetStretchID() == id-ID_COMMAND_STRETCH_A ? -1 : id-ID_COMMAND_STRETCH_A);
-        break;
     case ID_COMMAND_STRETCH:
-        Stretch(GetStretchID() < 0 ? 0 : GetStretchID() + 1);
+        {
+            int stid = GetStretchID();
+            Stretch(stid < 0 ? 0 : stid + 1);
+        }
+        break;
+    case ID_COMMAND_STRETCH_RE:
+        {
+            int stid = GetStretchID();
+            if (stid < 0) {
+                int rear = 1;
+                for (; rear < m_stretchListNum && m_stretchList[rear] != 100; ++rear);
+                Stretch(rear - 1);
+            }
+            else {
+                Stretch(stid - 1);
+            }
+        }
+        break;
+    default:
+        if (ID_COMMAND_SEEK_A <= id && id < ID_COMMAND_SEEK_A + m_seekListNum) {
+            Seek(m_seekList[id-ID_COMMAND_SEEK_A]);
+        }
+        else if (ID_COMMAND_STRETCH_A <= id && id < ID_COMMAND_STRETCH_A + COMMAND_S_MAX) {
+            Stretch(GetStretchID() == id-ID_COMMAND_STRETCH_A ? -1 : id-ID_COMMAND_STRETCH_A);
+        }
         break;
     }
     m_dispCount = m_timeoutOnCmd / TIMER_AUTO_HIDE_INTERVAL;
@@ -1653,33 +1901,26 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             }
             pThis->m_lastDropCount = si.DropPacketCount;
         }
+        else if (wParam == TIMER_ID_SYNC_CHAPTER) {
+            if (pThis->m_chapter.Sync()) {
+                pThis->m_statusView.UpdateItem(STATUS_ITEM_SEEK);
+                pThis->BeginWatchingNextChapter(false);
+            }
+        }
+        else if (wParam == TIMER_ID_WATCH_POS_GT) {
+            ::KillTimer(hwnd, TIMER_ID_WATCH_POS_GT);
+            pThis->BeginWatchingNextChapter(false);
+        }
         break;
-    case WM_UPDATE_POSITION:
-        {
-            DWORD pos = static_cast<DWORD>(wParam);
-            DWORD dur = static_cast<DWORD>(lParam);
-            pThis->m_position = pos & 0x7fffffff;
-            pThis->m_duration = dur & 0x7fffffff;
-            pThis->m_fSpecialExt = (pos&0x80000000) != 0;
-            pThis->m_fFixed = (dur&0x80000000) != 0;
+    case WM_UPDATE_STATUS:
+        //DEBUG_OUT(TEXT("CTvtPlay::FrameWindowProc(): WM_UPDATE_STATUS\n"));
+        if (wParam) {
+            pThis->m_statusView.Invalidate();
+        }
+        else {
             pThis->m_statusView.UpdateItem(STATUS_ITEM_SEEK);
             pThis->m_statusView.UpdateItem(STATUS_ITEM_POSITION);
         }
-        break;
-    case WM_UPDATE_TOT_TIME:
-        pThis->m_totTime = static_cast<int>(lParam);
-        pThis->m_statusView.UpdateItem(STATUS_ITEM_SEEK);
-        break;
-    case WM_UPDATE_F_PAUSED:
-        pThis->m_fPaused = wParam != 0;
-        pThis->m_statusView.UpdateItem(STATUS_ITEM_SEEK);
-        pThis->m_statusView.UpdateItem(STATUS_ITEM_BUTTON + ID_COMMAND_PAUSE);
-        break;
-    case WM_UPDATE_SPEED:
-        pThis->m_speed = static_cast<int>(lParam);
-        for (int i = 0; i < COMMAND_STRETCH_MAX; i++) 
-            pThis->m_statusView.UpdateItem(STATUS_ITEM_BUTTON + ID_COMMAND_STRETCH_A + i);
-        pThis->m_statusView.UpdateItem(STATUS_ITEM_BUTTON + ID_COMMAND_STRETCH);
         break;
     case WM_QUERY_CLOSE_NEXT:
         pThis->Close();
@@ -1689,12 +1930,44 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
         pThis->SeekToBegin();
         break;
     case WM_QUERY_RESET:
+        DEBUG_OUT(TEXT("CTvtPlay::FrameWindowProc(): WM_QUERY_RESET\n"));
         if (pThis->m_resetMode <= 2) {
             pThis->m_pApp->Reset(wParam && pThis->m_resetMode==1 ? TVTest::RESET_ALL : TVTest::RESET_VIEWER);
         }
         if (wParam && pThis->m_resetDropInterval > 0) {
             pThis->m_lastDropCount = 0;
             ::SetTimer(hwnd, TIMER_ID_RESET_DROP, pThis->m_resetDropInterval, NULL);
+        }
+        break;
+    case WM_SATISFIED_POS_GT:
+        DEBUG_OUT(TEXT("CTvtPlay::FrameWindowProc(): WM_SATISFIED_POS_GT\n"));
+        if (pThis->m_chapter.IsOpen()) {
+            CChapterMap::const_iterator it = pThis->m_chapter.find(static_cast<int>(lParam));
+
+            if (pThis->m_fSkipXChapter && it != pThis->m_chapter.end() &&
+                it->second.IsIn() && it->second.IsX())
+            {
+                for (++it; it != pThis->m_chapter.end(); ++it) {
+                    // スキップ終了チャプターまでシーク
+                    if (it->second.IsOut() && it->second.IsX()) {
+                        pThis->SeekAbsolute(it->first);
+                        break;
+                    }
+                }
+            }
+            else if (pThis->m_fRepeatChapter && it != pThis->m_chapter.end() &&
+                     it->second.IsOut() && it != pThis->m_chapter.begin())
+            {
+                CHAPTER_NAME chName = it->second;
+                do {
+                    // 同じチャプター名の開始チャプターまでシーク
+                    if ((--it)->second.IsIn() && !::lstrcmpi(it->second.val+1, chName.val+1)) {
+                        pThis->SeekAbsolute(it->first);
+                        break;
+                    }
+                } while (it != pThis->m_chapter.begin());
+            }
+            pThis->BeginWatchingNextChapter(true);
         }
         break;
     case WM_APPCOMMAND:
@@ -1706,19 +1979,47 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
 }
 
 
+void CTvtPlay::UpdateInfos()
+{
+    if (m_tsSender.IsOpen()) {
+        bool fSpecialExt;
+        m_infoPos = m_tsSender.GetPosition();
+        m_infoDur = m_tsSender.GetDuration();
+        m_infoTot = m_tsSender.GetBroadcastTime();
+        m_infoExtMode = m_tsSender.IsFixed(&fSpecialExt) ? 0 : fSpecialExt ? 2 : 1;
+        m_fInfoPaused = m_tsSender.IsPaused();
+        // m_infoSpeedはm_tsSenderのもつ値と必ずしも一致しない
+    }
+    else {
+        m_infoPos = m_infoDur = m_infoExtMode = 0;
+        m_infoTot = -1;
+        m_infoSpeed = 100;
+        m_fInfoPaused = false;
+    }
+}
+
+
 // TSデータの送信制御スレッド
 DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
 {
     MSG msg;
     DWORD_PTR dwRes;
     CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(pParam);
-    int posSec = -1, durSec = -1, totSec = -1;
-    bool fPrevFixed = false;
+    int posSec, durSec, lastTot, lastExtMode, lastSpeed;
+    bool fLastPaused;
+    int speed = 100, posWatch = -1;
     static const int RESET_WAIT = 10;
     int resetCount = -RESET_WAIT;
-
-    // コントロールの表示をリセット
-    ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, 0, 0);
+    {
+        CBlockLock lock(&pThis->m_tsInfoLock);
+        pThis->m_infoSpeed = speed;
+        posSec = pThis->m_infoPos / 1000;
+        durSec = pThis->m_infoDur / 1000;
+        lastTot = pThis->m_infoTot;
+        lastExtMode = pThis->m_infoExtMode;
+        lastSpeed = pThis->m_infoSpeed;
+        fLastPaused = pThis->m_fInfoPaused;
+    }
     pThis->m_tsSender.SetupQpc();
 
     for (;;) {
@@ -1746,37 +2047,44 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
             case WM_TS_PAUSE:
                 pThis->m_tsSender.Pause(msg.wParam != 0);
                 ::SendMessageTimeout(pThis->m_hwndFrame, WM_QUERY_RESET, 0, 0, SMTO_NORMAL, 1000, &dwRes);
-                ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, msg.wParam, 0);
                 break;
             case WM_TS_SEEK_BGN:
+                posWatch = -1;
                 if (pThis->m_tsSender.SeekToBegin())
                     resetCount = !resetCount ? -RESET_WAIT : RESET_WAIT;
                 break;
             case WM_TS_SEEK_END:
+                posWatch = -1;
                 if (pThis->m_tsSender.SeekToEnd())
                     resetCount = !resetCount ? -RESET_WAIT : RESET_WAIT;
                 break;
             case WM_TS_SEEK:
+                posWatch = -1;
                 if (pThis->m_tsSender.Seek(static_cast<int>(msg.lParam)))
                     resetCount = !resetCount ? -RESET_WAIT : RESET_WAIT;
                 break;
-            case WM_TS_SET_SPEED:
+            case WM_TS_SEEK_ABSOLUTE:
+                posWatch = -1;
+                if (pThis->m_tsSender.GetPosition() >= 0 &&
+                    pThis->m_tsSender.Seek(static_cast<int>(msg.lParam) - pThis->m_tsSender.GetPosition()))
                 {
-                    int speed = static_cast<int>(msg.lParam);
-                    if (!ASFilterSendMessage(WM_ASFLT_STRETCH, msg.wParam, MAKELPARAM(speed, 100))) {
-                        // コマンド失敗の場合は等速にする
-                        pThis->m_tsSender.SetSpeed(100, 100);
-                        ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_SPEED, 0, 100);
-                    }
-                    else {
-                        // テンポが変化する場合は転送速度を変更する
-                        if (msg.wParam&1) pThis->m_tsSender.SetSpeed(speed, 100);
-                        ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_SPEED, 0, speed);
-                    }
+                    resetCount = !resetCount ? -RESET_WAIT : RESET_WAIT;
                 }
+                break;
+            case WM_TS_SET_SPEED:
+                speed = static_cast<int>(msg.lParam);
+                if (!ASFilterSendMessage(WM_ASFLT_STRETCH, msg.wParam, MAKELPARAM(speed, 100))) {
+                    // コマンド失敗の場合は等速にする
+                    speed = 100;
+                }
+                // テンポが変化する場合は転送速度を変更する
+                pThis->m_tsSender.SetSpeed(msg.wParam & 1 ? speed : 100, 100);
                 break;
             case WM_TS_SET_MOD_TS:
                 pThis->m_tsSender.SetModTimestamp(msg.wParam != 0);
+                break;
+            case WM_TS_WATCH_POS_GT:
+                posWatch = static_cast<int>(msg.lParam);
                 break;
             }
             ::TranslateMessage(&msg);
@@ -1803,7 +2111,6 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
             }
 
             bool fRead = pThis->m_tsSender.Send();
-
             int num, den;
             pThis->m_tsSender.GetSpeed(&num, &den);
             if (num != 100) {
@@ -1815,7 +2122,7 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                     // 等速に戻しておく
                     ASFilterPostMessage(WM_ASFLT_STRETCH, 0, MAKELPARAM(100, 100));
                     pThis->m_tsSender.SetSpeed(100, 100);
-                    ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_SPEED, 0, 100);
+                    speed = 100;
                 }
             }
             if (!fRead) {
@@ -1829,36 +2136,34 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
             }
         }
 
-        int pos = pThis->m_tsSender.GetPosition();
-        int dur = pThis->m_tsSender.GetDuration();
-        int tot = pThis->m_tsSender.GetBroadcastTime();
-        bool fSpecialExt;
-        bool fFixed = pThis->m_tsSender.IsFixed(&fSpecialExt);
-
-        // 再生位置の更新を伝える
-        if (posSec != pos / 1000 || durSec != dur / 1000 || fPrevFixed != fFixed) {
-            ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_POSITION,
-                          fSpecialExt ? 0x80000000|(DWORD)pos : pos,
-                          fFixed ? 0x80000000|(DWORD)dur : dur);
-            posSec = pos / 1000;
-            durSec = dur / 1000;
-            fPrevFixed = fFixed;
-        }
-        // 放送時刻情報の更新を伝える
-        if (totSec != tot / 1000) {
-            ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_TOT_TIME, 0, tot);
-            totSec = tot / 1000;
+        {
+            CBlockLock lock(&pThis->m_tsInfoLock);
+            pThis->UpdateInfos();
+            pThis->m_infoSpeed = speed;
+            if (posSec != pThis->m_infoPos / 1000 || durSec != pThis->m_infoDur / 1000 ||
+                lastTot != pThis->m_infoTot || lastExtMode != pThis->m_infoExtMode ||
+                lastSpeed != pThis->m_infoSpeed || fLastPaused != pThis->m_fInfoPaused)
+            {
+                // コントロールの表示を更新する
+                ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_STATUS,
+                              lastSpeed != pThis->m_infoSpeed || fLastPaused != pThis->m_fInfoPaused, 0);
+                posSec = pThis->m_infoPos / 1000;
+                durSec = pThis->m_infoDur / 1000;
+                lastTot = pThis->m_infoTot;
+                lastExtMode = pThis->m_infoExtMode;
+                lastSpeed = pThis->m_infoSpeed;
+                fLastPaused = pThis->m_fInfoPaused;
+            }
+            if (posWatch >= 0 && pThis->m_infoPos > posWatch) {
+                // 再生位置が監視位置を越えたことを伝える
+                ::PostMessage(pThis->m_hwndFrame, WM_SATISFIED_POS_GT, 0, posWatch);
+                posWatch = -1;
+            }
         }
     }
 
     // 等速に戻しておく(主スレッドが待っているのでSendMessageしてはいけない)
     ASFilterPostMessage(WM_ASFLT_STRETCH, 0, MAKELPARAM(100, 100));
-    ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_SPEED, 0, 100);
-
-    // コントロールの表示をリセット
-    ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, 0, 0);
-    ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_POSITION, 0, 0);
-    ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_TOT_TIME, 0, -1);
     return 0;
 }
 
@@ -1877,7 +2182,7 @@ void CStatusViewEventHandler::OnMouseLeave()
     if (pItem) {
         // ちょっと汚い…
         CSeekStatusItem *pSeekItem = dynamic_cast<CSeekStatusItem*>(pItem);
-        pSeekItem->SetDrawSeekPos(false, 0);
+        pSeekItem->SetMousePos(-1, -1);
         pSeekItem->Update();
     }
 }
@@ -1886,12 +2191,11 @@ void CStatusViewEventHandler::OnMouseLeave()
 CSeekStatusItem::CSeekStatusItem(CTvtPlay *pPlugin, bool fDrawOfs, bool fDrawTot)
     : CStatusItem(STATUS_ITEM_SEEK, 128)
     , m_pPlugin(pPlugin)
-    , m_fDrawSeekPos(false)
-    , m_seekPos(0)
     , m_fDrawOfs(fDrawOfs)
     , m_fDrawTot(fDrawTot)
 {
     m_MinWidth = 128;
+    SetMousePos(-1, -1);
 }
 
 void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
@@ -1905,23 +2209,22 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
 
     // バーの最大矩形(外枠を含まない)
     rcBar.left   = pRect->left + 2;
-    rcBar.top    = pRect->top + (pRect->bottom - pRect->top - 8) / 2 + 2;
+    rcBar.top    = pRect->top + (pRect->bottom - pRect->top) / 2 - 4 + 2;
     rcBar.right  = pRect->right - 2;
-    rcBar.bottom = rcBar.top + 8 - 4;
+    rcBar.bottom = pRect->top + (pRect->bottom - pRect->top) / 2 + 4 - 2;
 
     // 実際に描画するバーの右端位置
-    int barPos = min(rcBar.right, rcBar.left + (dur <= 0 ? 0 :
-                 (int)((long long)(rcBar.right - rcBar.left) * pos / dur)));
+    int barX = rcBar.left + ConvUnit(pos, rcBar.right - rcBar.left, dur);
 
     // シーク位置を描画するかどうか
-    bool fDrawPos = m_fDrawSeekPos && rcBar.left <= m_seekPos && m_seekPos < rcBar.right;
+    bool fDrawPos = rcBar.left <= m_mousePos.x && m_mousePos.x < rcBar.right;
 
     // シーク位置を描画
     int drawPosWidth = 64;
-    int drawPos = 0;
+    int drawPosX = 0;
     if (fDrawPos) {
         TCHAR szText[128], szOfsText[64], szTotText[64];
-        int posSec = (int)((long long)(m_seekPos-rcBar.left) * dur / (rcBar.right-rcBar.left) / 1000);
+        int posSec = ConvUnit(m_mousePos.x - rcBar.left, dur, rcBar.right - rcBar.left) / 1000;
 
         szOfsText[0] = 0;
         if (m_fDrawOfs) {
@@ -1953,83 +2256,154 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
         {
             drawPosWidth = rc.right - rc.left + 10;
         }
-        drawPos = min(m_seekPos + 5, rcBar.right - drawPosWidth - 1);
+        drawPosX = min(m_mousePos.x + 5, rcBar.right - drawPosWidth - 1);
 
         // バーを描画
-        ::SetRect(&rc, drawPos+1, rcBar.top,
-                  min(max(barPos, drawPos+1), drawPos+drawPosWidth-1), rcBar.bottom);
+        ::SetRect(&rc, drawPosX+1, rcBar.top, min(max(barX, drawPosX+1), drawPosX+drawPosWidth-1), rcBar.bottom);
         DrawUtil::Fill(hdc, &rc, MixColor(crText, crBk, 48));
-        rc.left = min(max(barPos - 5, drawPos+1), drawPos+drawPosWidth-1);
+        rc.left = min(max(barX - 5, drawPosX+1), drawPosX+drawPosWidth-1);
         DrawUtil::FillGradient(hdc, &rc, MixColor(crText, crBk, 48), MixColor(crText, crBk, 192));
 
         // シーク位置を描画
-        ::SetRect(&rc, drawPos + 5, pRect->top, drawPos + drawPosWidth, pRect->bottom);
+        ::SetRect(&rc, drawPosX + 5, pRect->top, drawPosX + drawPosWidth, pRect->bottom);
         ::DrawText(hdc, szText, -1, &rc, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    }
+
+    // バーを描画
+    rc = rcBar;
+    rc.right = fDrawPos ? min(barX, drawPosX - 2) : barX;
+    DrawUtil::Fill(hdc, &rc, crBar);
+    if (fDrawPos && barX >= drawPosX + drawPosWidth + 2) {
+        rc.left = drawPosX + drawPosWidth + 2;
+        rc.right = barX;
+        DrawUtil::Fill(hdc, &rc, crBar);
     }
 
     // バーの外枠を描画
     HPEN hpen = ::CreatePen(PS_SOLID, 1, crText);
-    HPEN hpenOld = SelectPen(hdc, hpen);
-    HBRUSH hbrOld = SelectBrush(hdc, ::GetStockObject(NULL_BRUSH));
-    ::SetRect(&rc, rcBar.left - 2, rcBar.top - 2, rcBar.right + 2, rcBar.bottom + 2);
-    if (fDrawPos) {
-        ::Rectangle(hdc, rc.left, rc.top, drawPos, rc.bottom);
-        ::Rectangle(hdc, drawPos + drawPosWidth, rc.top, rc.right, rc.bottom);
+    if (hpen) {
+        HPEN hpenOld = SelectPen(hdc, hpen);
+        HBRUSH hbrOld = SelectBrush(hdc, ::GetStockObject(NULL_BRUSH));
+        ::SetRect(&rc, rcBar.left - 2, rcBar.top - 2, rcBar.right + 2, rcBar.bottom + 2);
+        if (fDrawPos) {
+            ::Rectangle(hdc, rc.left, rc.top, drawPosX, rc.bottom);
+            ::Rectangle(hdc, drawPosX + drawPosWidth, rc.top, rc.right, rc.bottom);
+        }
+        else {
+            ::Rectangle(hdc, rc.left, rc.top, rc.right, rc.bottom);
+        }
+        SelectPen(hdc, hpenOld);
+        SelectBrush(hdc, hbrOld);
     }
-    else {
-        ::Rectangle(hdc, rc.left, rc.top, rc.right, rc.bottom);
-    }
-    SelectBrush(hdc, hbrOld);
-    SelectPen(hdc, hpenOld);
-    ::DeleteObject(hpen);
 
-    // バーを描画
-    rc = rcBar;
-    rc.right = fDrawPos ? min(barPos, drawPos - 2) : barPos;
-    DrawUtil::Fill(hdc, &rc, crBar);
-    if (fDrawPos && barPos >= drawPos + drawPosWidth + 2) {
-        rc.left = drawPos + drawPosWidth + 2;
-        rc.right = barPos;
-        DrawUtil::Fill(hdc, &rc, crBar);
+    // チャプターを描画
+    HBRUSH hbr = ::CreateSolidBrush(crText);
+    if (hpen && hbr) {
+        HPEN hpenOld = SelectPen(hdc, hpen);
+        CHAPTER_NAME chInName;
+        chInName.val[0] = 0;
+        CChapterMap::const_iterator it = m_pPlugin->GetChapter().begin();
+        CChapterMap::const_iterator itEnd = m_pPlugin->GetChapter().end();
+        for (; it != itEnd; ++it) {
+            int chapX = rcBar.left + ConvUnit(it->first, rcBar.right - rcBar.left, dur);
+            POINT apt[3] = { chapX, rcBar.top-3,
+                             it->second.IsOut() ? chapX : chapX-4, rcBar.top-7,
+                             it->second.IsIn() ? chapX : chapX+4, rcBar.top-7 };
+            HBRUSH hbrOld = (fDrawPos && m_mousePos.y <= rcBar.top-2 &&
+                             m_mousePos.x-5 < chapX && chapX < m_mousePos.x+5) ?
+                             SelectBrush(hdc, ::GetStockObject(NULL_BRUSH)) : SelectBrush(hdc, hbr);
+            ::Polygon(hdc, apt, 3);
+            SelectBrush(hdc, hbrOld);
+
+            // チャプター区間を描画
+            if (chInName.val[0]) {
+                if (it->second.IsOut() && !::lstrcmpi(it->second.val+1, chInName.val+1)) {
+                    ::LineTo(hdc, chapX, rcBar.top-7);
+                    chInName.val[0] = 0;
+                }
+            }
+            else if (it->second.IsIn()) {
+                ::MoveToEx(hdc, chapX, rcBar.top-7, NULL);
+                chInName = it->second;
+            }
+        }
+        SelectPen(hdc, hpenOld);
     }
+
+    if (hpen) ::DeletePen(hpen);
+    if (hbr) ::DeleteBrush(hbr);
 }
 
 void CSeekStatusItem::OnLButtonDown(int x, int y)
 {
-    RECT rc;
-    GetClientRect(&rc);
+    CChapterMap &chMap = m_pPlugin->GetChapter();
+    int dur = m_pPlugin->GetDuration();
+    RECT rc, rcc;
+    GetRect(&rc);
+    GetClientRect(&rcc);
 
-    if (x <= 6) {
+    if (y <= (rc.bottom-rc.top)/2-4 && chMap.IsOpen() && !chMap.empty()) {
+        int chapPosL = ConvUnit(x-(rcc.left-rc.left)-2-5, dur, rcc.right-rcc.left-4);
+        int chapPosR = ConvUnit(x-(rcc.left-rc.left)-2+5, dur, rcc.right-rcc.left-4);
+        CChapterMap::iterator it = chMap.upper_bound(chapPosL);
+        if (it != chMap.end() && it->first < chapPosR) {
+            m_pPlugin->SeekAbsolute(it->first);
+        }
+    }
+    else if (x < 7) {
         m_pPlugin->SeekToBegin();
     }
-    else if (x >= rc.right-rc.left+8-6) {
+    else if (x >= rc.right-rc.left-7) {
         m_pPlugin->SeekToEnd();
     }
     else {
-        GetClientRect(&rc);
-        int pos = m_pPlugin->GetPosition();
-        int dur = m_pPlugin->GetDuration();
-        int targetPos = (int)((long long)(x-4-2) * dur / ((rc.right-2) - (rc.left+2)));
+        int pos = ConvUnit(x-(rcc.left-rc.left)-2, dur, rcc.right-rcc.left-4);
         // ちょっと手前にシークされた方が使いやすいため1000ミリ秒引く
-        m_pPlugin->Seek(targetPos - pos - 1000);
+        m_pPlugin->SeekAbsolute(pos - 1000);
     }
 }
 
 void CSeekStatusItem::OnRButtonDown(int x, int y)
 {
-    m_pPlugin->Pause(!m_pPlugin->IsPaused());
+    CChapterMap &chMap = m_pPlugin->GetChapter();
+    int dur = m_pPlugin->GetDuration();
+    RECT rc, rcc;
+    GetRect(&rc);
+    GetClientRect(&rcc);
+
+    if (y <= (rc.bottom-rc.top)/2-4 && chMap.IsOpen() && !chMap.empty()) {
+        int chapPosL = ConvUnit(x-(rcc.left-rc.left)-2-5, dur, rcc.right-rcc.left-4);
+        int chapPosR = ConvUnit(x-(rcc.left-rc.left)-2+5, dur, rcc.right-rcc.left-4);
+        CChapterMap::iterator it = chMap.upper_bound(chapPosL);
+        if (it != chMap.end() && it->first < chapPosR) {
+            POINT pt;
+            UINT flags;
+            if (GetMenuPos(&pt, &flags)) {
+                pt.x += x;
+                int pos = it->first;
+                CHAPTER ch = *it;
+                if (m_pPlugin->EditChapterWithPopup(ch, pt, flags)) {
+                    // 呼び出し中にChapterMapが変更される可能性もある
+                    it = chMap.find(pos);
+                    if (it != chMap.end()) {
+                        chMap.erase(it);
+                        if (ch.first >= 0) chMap.insert(ch);
+                        chMap.Save();
+                        m_pPlugin->BeginWatchingNextChapter(false);
+                    }
+                }
+            }
+        }
+    }
+    else {
+        m_pPlugin->Pause(!m_pPlugin->IsPaused());
+    }
 }
 
 void CSeekStatusItem::OnMouseMove(int x, int y)
 {
-    SetDrawSeekPos(true, x);
+    SetMousePos(x, y);
     Update();
-}
-
-void CSeekStatusItem::SetDrawSeekPos(bool fDraw, int pos)
-{
-    m_fDrawSeekPos = fDraw;
-    m_seekPos = pos;
 }
 
 
@@ -2045,7 +2419,7 @@ void CPositionStatusItem::Draw(HDC hdc, const RECT *pRect)
     TCHAR szText[128], szTotText[64];
     int posSec = m_pPlugin->GetPosition() / 1000;
     int durSec = m_pPlugin->GetDuration() / 1000;
-    bool fSpecialExt;
+    int extMode = m_pPlugin->IsExtending();
 
     szTotText[0] = 0;
     if (m_pPlugin->IsPosDrawTotEnabled()) {
@@ -2059,15 +2433,13 @@ void CPositionStatusItem::Draw(HDC hdc, const RECT *pRect)
         ::wsprintf(szText, TEXT("%02d:%02d/%02d:%02d%s%s"),
                    posSec / 60 % 60, posSec % 60,
                    durSec / 60 % 60, durSec % 60,
-                   m_pPlugin->IsFixed(&fSpecialExt) ? TEXT("") : fSpecialExt ? TEXT("*") : TEXT("+"),
-                   szTotText);
+                   extMode==2 ? TEXT("*") : extMode ? TEXT("+") : TEXT(""), szTotText);
     }
     else {
         ::wsprintf(szText, TEXT("%d:%02d:%02d/%d:%02d:%02d%s%s"),
                    posSec / 60 / 60, posSec / 60 % 60, posSec % 60,
                    durSec / 60 / 60, durSec / 60 % 60, durSec % 60,
-                   m_pPlugin->IsFixed(&fSpecialExt) ? TEXT("") : fSpecialExt ? TEXT("*") : TEXT("+"),
-                   szTotText);
+                   extMode==2 ? TEXT("*") : extMode ? TEXT("+") : TEXT(""), szTotText);
     }
     ::DrawText(hdc, szText, -1, const_cast<LPRECT>(pRect),
                DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
@@ -2113,55 +2485,61 @@ void CPositionStatusItem::OnRButtonDown(int x, int y)
     }
 }
 
-CButtonStatusItem::CButtonStatusItem(CTvtPlay *pPlugin, int id, const DrawUtil::CBitmap &icon)
-    : CStatusItem(id, 16)
+CButtonStatusItem::CButtonStatusItem(CTvtPlay *pPlugin, int id, int subID, int width, const DrawUtil::CBitmap &icon)
+    : CStatusItem(id, width)
     , m_pPlugin(pPlugin)
+    , m_subID(subID)
     , m_icon(icon)
 {
-    m_MinWidth = 16;
+    m_MinWidth = width;
 }
 
 void CButtonStatusItem::Draw(HDC hdc, const RECT *pRect)
 {
-    // LoopとPauseとStretchは特別扱い
     int cmdID = m_ID - STATUS_ITEM_BUTTON;
-    if (cmdID == ID_COMMAND_LOOP)
-        DrawIcon(hdc, pRect, m_icon.GetHandle(), ICON_SIZE * (
-                 m_pPlugin->IsSingleRepeat() ? 2 : m_pPlugin->IsAllRepeat() ? 1 : 0));
-    else if (cmdID == ID_COMMAND_PAUSE)
-        DrawIcon(hdc, pRect, m_icon.GetHandle(), ICON_SIZE * (
-                 !m_pPlugin->IsOpen() || m_pPlugin->IsPaused() ? 1 : 0));
-    else if (ID_COMMAND_STRETCH_A <= cmdID && cmdID <= ID_COMMAND_STRETCH_F)
-        DrawIcon(hdc, pRect, m_icon.GetHandle(), ICON_SIZE * (
-                 m_pPlugin->GetStretchID() == cmdID - ID_COMMAND_STRETCH_A ? 1 : 0));
-    else if (cmdID == ID_COMMAND_STRETCH)
-        DrawIcon(hdc, pRect, m_icon.GetHandle(), ICON_SIZE * (
-                 m_pPlugin->GetStretchID() < 0 ? 0 : m_pPlugin->GetStretchID() + 1));
-    else
-        DrawIcon(hdc, pRect, m_icon.GetHandle(), 0);
+    int subCmdID = m_subID - STATUS_ITEM_BUTTON;
+    int iconPos = 0;
+
+    if (cmdID == ID_COMMAND_REPEAT_CHAPTER) {
+        iconPos = m_pPlugin->IsRepeatChapterEnabled() ? 1 : 0;
+    }
+    if (cmdID == ID_COMMAND_SKIP_X_CHAPTER) {
+        iconPos = m_pPlugin->IsSkipXChapterEnabled() ? 1 : 0;
+    }
+    else if (cmdID == ID_COMMAND_LOOP) {
+        iconPos = m_pPlugin->IsSingleRepeat() ? 2 : m_pPlugin->IsAllRepeat() ? 1 : 0;
+    }
+    else if (cmdID == ID_COMMAND_PAUSE) {
+        iconPos = !m_pPlugin->IsOpen() || m_pPlugin->IsPaused() ? 1 : 0;
+    }
+    else if (cmdID == ID_COMMAND_STRETCH || cmdID == ID_COMMAND_STRETCH_RE) {
+        int stid = m_pPlugin->GetStretchID();
+        iconPos = stid < 0 ? 0 : stid + 1;
+    }
+    else if (ID_COMMAND_STRETCH_A <= cmdID && cmdID < ID_COMMAND_STRETCH_A + COMMAND_S_MAX) {
+        int stid = m_pPlugin->GetStretchID();
+        iconPos = stid == cmdID - ID_COMMAND_STRETCH_A ? 1 :
+                  /* サブコマンドもStretchなら3つ目も使う */
+                  (ID_COMMAND_STRETCH_A <= subCmdID && subCmdID < ID_COMMAND_STRETCH_A + COMMAND_S_MAX) &&
+                  stid == subCmdID - ID_COMMAND_STRETCH_A ? 2 : 0;
+    }
+    DrawIcon(hdc, pRect, m_icon.GetHandle(), ICON_SIZE * iconPos);
 }
 
 void CButtonStatusItem::OnLButtonDown(int x, int y)
 {
-    m_pPlugin->OnCommand(m_ID - STATUS_ITEM_BUTTON);
+    POINT pt;
+    UINT flags;
+    if (GetMenuPos(&pt, &flags)) {
+        m_pPlugin->OnCommand(m_ID - STATUS_ITEM_BUTTON, &pt, flags);
+    }
 }
 
 void CButtonStatusItem::OnRButtonDown(int x, int y)
 {
-    // OpenとPrevとSeekToEndは特別扱い
-    if (m_ID-STATUS_ITEM_BUTTON == ID_COMMAND_OPEN ||
-        m_ID-STATUS_ITEM_BUTTON == ID_COMMAND_PREV ||
-        m_ID-STATUS_ITEM_BUTTON == ID_COMMAND_SEEK_END)
-    {
-        POINT pt;
-        UINT flags;
-        if (GetMenuPos(&pt, &flags)) {
-            if (m_ID-STATUS_ITEM_BUTTON == ID_COMMAND_OPEN) {
-                m_pPlugin->OpenWithPopup(pt, flags);
-            }
-            else {
-                m_pPlugin->OpenWithPlayListPopup(pt, flags);
-            }
-        }
+    POINT pt;
+    UINT flags;
+    if (GetMenuPos(&pt, &flags)) {
+        m_pPlugin->OnCommand(m_subID - STATUS_ITEM_BUTTON, &pt, flags);
     }
 }

@@ -61,7 +61,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalOptions="/PDBALTPATH:%_PDB%"
+				AdditionalOptions="/PDBALTPATH:%_PDB% /OPT:NOWIN98"
 				AdditionalDependencies="ws2_32.lib Shlwapi.lib"
 				OutputFile="$(OutDir)\$(ProjectName).tvtp"
 				LinkIncremental="2"
@@ -140,7 +140,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalOptions="/PDBALTPATH:%_PDB%"
+				AdditionalOptions="/PDBALTPATH:%_PDB% /OPT:NOWIN98"
 				AdditionalDependencies="ws2_32.lib Shlwapi.lib"
 				OutputFile="$(OutDir)\$(ProjectName).tvtp"
 				LinkIncremental="1"
@@ -185,6 +185,10 @@
 			Filter="cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx"
 			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 			>
+			<File
+				RelativePath=".\ChapterMap.cpp"
+				>
+			</File>
 			<File
 				RelativePath=".\Playlist.cpp"
 				>
@@ -251,6 +255,10 @@
 			Filter="h;hpp;hxx;hm;inl;inc;xsd"
 			UniqueIdentifier="{93995380-89BD-4b04-88EB-625FBE52EBFB}"
 			>
+			<File
+				RelativePath=".\ChapterMap.h"
+				>
+			</File>
 			<File
 				RelativePath=".\Playlist.h"
 				>

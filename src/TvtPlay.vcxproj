@@ -179,6 +179,7 @@
   <ItemGroup>
     <ClInclude Include="Aero.h" />
     <ClInclude Include="BasicWindow.h" />
+    <ClInclude Include="ChapterMap.h" />
     <ClInclude Include="ColorScheme.h" />
     <ClInclude Include="DrawUtil.h" />
     <ClInclude Include="Playlist.h" />
@@ -195,6 +196,7 @@
   <ItemGroup>
     <ClCompile Include="Aero.cpp" />
     <ClCompile Include="BasicWindow.cpp" />
+    <ClCompile Include="ChapterMap.cpp" />
     <ClCompile Include="ColorScheme.cpp" />
     <ClCompile Include="DrawUtil.cpp" />
     <ClCompile Include="Playlist.cpp" />
