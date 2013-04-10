@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2012-05-08
+// 最終更新: 2012-06-17
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -32,8 +32,8 @@
 #include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.8r2)";
-static const int INFO_VERSION = 21;
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.9)";
+static const int INFO_VERSION = 22;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
 #define WM_QUERY_CLOSE_NEXT (WM_APP + 2)
@@ -83,6 +83,7 @@ static const TVTest::CommandInfo COMMAND_LIST[] = {
     {ID_COMMAND_NOP, L"Nop", L"何もしない"},
     {ID_COMMAND_STRETCH, L"Stretch", L"倍速:切り替え"},
     {ID_COMMAND_STRETCH_RE, L"StretchRe", L"倍速:逆順切り替え"},
+    {ID_COMMAND_STRETCH_POPUP, L"StretchPopup", L"倍速:ポップアップ"},
 };
 
 static const int DEFAULT_SEEK_LIST[COMMAND_S_MAX] = {
@@ -105,7 +106,7 @@ static LPCTSTR DEFAULT_BUTTON_LIST[] = {
     TEXT("'*'2'.'0:30~'*'2'.'0,StretchB"),
     TEXT("'*'0'.'5:30~'*'0'.'5,StretchC"),
     TEXT(";'*'1' '.'0:30~'*'4'.'0:30~'*'0'.'2,StretchD,StretchA"),
-    TEXT(";'*'1' '.'0:30~'*'4'.'0:30~'*'2'.'0:30~'*'0'.'5:30~'*'0'.'2,Width=32,StretchZ,Stretch"),
+    TEXT(";'*'1' '.'0:30~'*'4'.'0:30~'*'2'.'0:30~'*'0'.'5:30~'*'0'.'2,Width=32,StretchPopup,Stretch"),
     NULL
 };
 
@@ -121,6 +122,7 @@ CTvtPlay::CTvtPlay()
     , m_fEventStartupDone(false)
     , m_fPausedOnPreviewChange(false)
     , m_specOffset(-1)
+    , m_specStretchID(-1)
     , m_fShowOpenDialog(false)
     , m_fRaisePriority(false)
     , m_hwndFrame(NULL)
@@ -148,6 +150,8 @@ CTvtPlay::CTvtPlay()
     , m_fPopupDesc(false)
     , m_fPopuping(false)
     , m_fDialogOpen(false)
+    , m_seekMode(0)
+    , m_apparentPos(-1)
     , m_hThread(NULL)
     , m_hThreadEvent(NULL)
     , m_threadID(0)
@@ -173,6 +177,7 @@ CTvtPlay::CTvtPlay()
     , m_fUnderrunCtrl(false)
     , m_fUseQpc(false)
     , m_fModTimestamp(false)
+    , m_initialStretchID(-1)
     , m_pcrThresholdMsec(0)
     , m_salt(0)
     , m_hashListMax(0)
@@ -214,6 +219,7 @@ void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst)
 {
     m_szSpecFileName[0] = 0;
     m_specOffset = -1;
+    m_specStretchID = -1;
 
     int argc;
     LPTSTR *argv = ::CommandLineToArgvW(cmdLine, &argc);
@@ -232,6 +238,13 @@ void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst)
                         if (argv[i][n] == TEXT('+')) ++n;
                         m_specOffset += ::StrToInt(argv[i] + n);
                         if (m_specOffset < 0) m_specOffset = 0;
+                    }
+                }
+                else if (!::lstrcmpi(argv[i]+1, TEXT("tvtpstr")) && i+1 < argc) {
+                    ++i;
+                    int stid = (TCHAR)::CharUpper((LPTSTR)argv[i][0]) - TEXT('A');
+                    if (0 <= stid && stid < COMMAND_S_MAX) {
+                        m_specStretchID = stid;
                     }
                 }
             }
@@ -308,9 +321,12 @@ bool CTvtPlay::Initialize()
     ::GetPrivateProfileString(SETTINGS, TEXT("TvtpCmdOption"), TEXT(""), cmdOption, _countof(cmdOption), m_szIniFileName);
     AnalyzeCommandLine(cmdOption, false);
 
+    // コマンドラインで指定されていなければ設定ファイルの値を適用する
     int preSpecOffset = m_specOffset;
+    int preSpecStretchID = m_specStretchID;
     AnalyzeCommandLine(::GetCommandLine(), true);
     if (m_specOffset < 0) m_specOffset = preSpecOffset;
+    if (m_specStretchID < 0) m_specStretchID = preSpecStretchID;
     return true;
 }
 
@@ -362,6 +378,7 @@ void CTvtPlay::LoadSettings()
         m_fAutoHide         = GetBufferedProfileInt(pBuf, TEXT("AutoHide"), 0) != 0;
         m_statusRow         = GetBufferedProfileInt(pBuf, TEXT("RowPos"), 0);
         m_statusRowFull     = GetBufferedProfileInt(pBuf, TEXT("RowPosFull"), 0);
+        m_seekMode          = GetBufferedProfileInt(pBuf, TEXT("SeekMode"), 1);
         m_fSeekDrawOfs      = GetBufferedProfileInt(pBuf, TEXT("DispOffset"), 0) != 0;
         m_fSeekDrawTot      = GetBufferedProfileInt(pBuf, TEXT("DispTot"), 0) != 0;
         m_fPosDrawTot       = GetBufferedProfileInt(pBuf, TEXT("DispTotOnStatus"), 0) != 0;
@@ -581,6 +598,7 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
     if (fWriteDefault) {
         WritePrivateProfileInt(SETTINGS, TEXT("RowPos"), m_statusRow, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("RowPosFull"), m_statusRowFull, m_szIniFileName);
+        WritePrivateProfileInt(SETTINGS, TEXT("SeekMode"), m_seekMode, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("DispOffset"), m_fSeekDrawOfs, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("DispTot"), m_fSeekDrawTot, m_szIniFileName);
     }
@@ -751,7 +769,7 @@ bool CTvtPlay::InitializePlugin()
     // 文字列解析してボタンアイテムを生成
     for (int i = -1; i < BUTTON_MAX + 2; i++) {
         if (i == seekItemOrder) {
-            m_statusView.AddItem(new CSeekStatusItem(this, m_fSeekDrawOfs, m_fSeekDrawTot, m_seekItemMinWidth));
+            m_statusView.AddItem(new CSeekStatusItem(this, m_fSeekDrawOfs, m_fSeekDrawTot, m_seekItemMinWidth, m_seekMode));
         }
         if (i == posItemOrder) {
             m_statusView.AddItem(new CPositionStatusItem(this));
@@ -908,15 +926,25 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
 #ifdef EN_SWC
         HMENU hSubMenu = ::CreatePopupMenu();
         if (hSubMenu) {
-            ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==0   ?MF_CHECKED:MF_UNCHECKED), 101, TEXT("しない"));
+            TCHAR str[32];
+            for (int i = 0; i < m_stretchListNum; ++i) {
+                if (m_stretchList[i] > 100) {
+                    ::wsprintf(str, TEXT("=%d%%"), m_stretchList[i]);
+                    ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==-m_stretchList[i]?MF_CHECKED:MF_UNCHECKED), 105 + i, str);
+                }
+            }
+            ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==-100?MF_CHECKED:MF_UNCHECKED), 101, TEXT("=100%"));
             ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==75  ?MF_CHECKED:MF_UNCHECKED), 102, TEXT("0.75倍"));
             ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==50  ?MF_CHECKED:MF_UNCHECKED), 103, TEXT("0.50倍"));
             ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==25  ?MF_CHECKED:MF_UNCHECKED), 104, TEXT("0.25倍"));
-            ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==-100?MF_CHECKED:MF_UNCHECKED), 105, TEXT("-100%"));
-            ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==-200?MF_CHECKED:MF_UNCHECKED), 106, TEXT("-200%"));
-            ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==-300?MF_CHECKED:MF_UNCHECKED), 107, TEXT("-300%"));
-            ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==-400?MF_CHECKED:MF_UNCHECKED), 108, TEXT("-400%"));
-            ::AppendMenu(hmenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSubMenu), TEXT("字幕でゆっくり"));
+            ::lstrcpy(str, TEXT("字幕でゆっくり"));
+            if (m_slowerWithCaption > 0) {
+                ::wsprintf(str + ::lstrlen(str), TEXT(" [0.%02d倍]"), m_slowerWithCaption);
+            }
+            else if (m_slowerWithCaption < 0) {
+                ::wsprintf(str + ::lstrlen(str), TEXT(" [=%d%%]"), -m_slowerWithCaption);
+            }
+            ::AppendMenu(hmenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSubMenu), str);
         }
 #endif
         selID = TrackPopup(hmenu, pt, flags);
@@ -944,16 +972,15 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
         SaveSettings();
     }
 #ifdef EN_SWC
-    else if (101 <= selID && selID <= 108) {
+    else if (101 <= selID && selID-105 < m_stretchListNum) {
         switch (selID) {
-        case 101: m_slowerWithCaption = 0; break;
-        case 102: m_slowerWithCaption = 75; break;
-        case 103: m_slowerWithCaption = 50; break;
-        case 104: m_slowerWithCaption = 25; break;
-        case 105: m_slowerWithCaption = -100; break;
-        case 106: m_slowerWithCaption = -200; break;
-        case 107: m_slowerWithCaption = -300; break;
-        case 108: m_slowerWithCaption = -400; break;
+        case 101: m_slowerWithCaption = m_slowerWithCaption==-100?0:-100; break;
+        case 102: m_slowerWithCaption = m_slowerWithCaption==75?0:75; break;
+        case 103: m_slowerWithCaption = m_slowerWithCaption==50?0:50; break;
+        case 104: m_slowerWithCaption = m_slowerWithCaption==25?0:25; break;
+        default:
+            m_slowerWithCaption = m_slowerWithCaption==-m_stretchList[selID-105] ? 0 : -m_stretchList[selID-105];
+            break;
         }
         Stretch(GetStretchID());
         SaveSettings();
@@ -1203,6 +1230,30 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
 }
 
 
+// ポップアップメニュー選択で再生速度を設定
+void CTvtPlay::StretchWithPopup(const POINT &pt, UINT flags)
+{
+    // メニュー生成
+    int selID = 0;
+    int stid = GetStretchID();
+    HMENU hmenu = ::CreatePopupMenu();
+    if (hmenu) {
+        for (int i = 0; i < m_stretchListNum; ++i) {
+            if (m_stretchList[i] != 100) {
+                TCHAR str[32];
+                ::wsprintf(str, TEXT("%d%%"), m_stretchList[i]);
+                ::AppendMenu(hmenu, MF_STRING|(i==stid?MF_CHECKED:MF_UNCHECKED), 1 + i, str);
+            }
+        }
+        selID = TrackPopup(hmenu, pt, flags);
+        ::DestroyMenu(hmenu);
+    }
+    if (0 <= selID-1 && selID-1 < m_stretchListNum) {
+        Stretch(selID-1==stid ? -1 : selID-1);
+    }
+}
+
+
 static INT_PTR CALLBACK EditChapterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     // WM_INITDIALOGのとき不定
@@ -1392,14 +1443,14 @@ int CTvtPlay::TrackPopup(HMENU hmenu, const POINT &pt, UINT flags)
 
 
 // プレイリストの現在位置のファイルを開く
-bool CTvtPlay::OpenCurrent(int offset)
+bool CTvtPlay::OpenCurrent(int offset, int stretchID)
 {
     size_t pos = m_playlist.GetPosition();
-    return pos < m_playlist.size() ? Open(m_playlist[pos].path, offset) : false;
+    return pos < m_playlist.size() ? Open(m_playlist[pos].path, offset, stretchID) : false;
 }
 
 
-bool CTvtPlay::Open(LPCTSTR fileName, int offset)
+bool CTvtPlay::Open(LPCTSTR fileName, int offset, int stretchID)
 {
     Close();
 
@@ -1487,6 +1538,10 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset)
     }
     BeginWatchingNextChapter(true);
 
+    // 初期再生速度を設定
+    if (stretchID >= 0) m_initialStretchID = stretchID;
+    if (m_initialStretchID >= 0) Stretch(m_initialStretchID);
+
     m_statusView.Invalidate();
     return true;
 }
@@ -1514,6 +1569,9 @@ void CTvtPlay::Close()
         ::KillTimer(m_hwndFrame, TIMER_ID_WATCH_POS_GT);
         m_chapter.Close();
         m_tsSender.Close();
+
+        // 閉じる直前の再生速度を保存
+        m_initialStretchID = GetStretchID();
 
         // 再生情報を初期化する
         UpdateInfos();
@@ -1617,7 +1675,8 @@ void CTvtPlay::Stretch(int stretchID)
     int lowSpeed = speed;
 #ifdef EN_SWC
     // 字幕表示中の速度を計算
-    lowSpeed = m_slowerWithCaption > 0 ? speed * m_slowerWithCaption / 100 : speed + m_slowerWithCaption;
+    lowSpeed = m_slowerWithCaption > 0 ? speed * m_slowerWithCaption / 100 :
+               m_slowerWithCaption < 0 ? -m_slowerWithCaption : speed;
     // 切り替え時のプチノイズ防止のため101
     lowSpeed = min(max(lowSpeed, 101), speed);
 #endif
@@ -1889,6 +1948,7 @@ void CTvtPlay::OnCommand(int id, const POINT *pPt, UINT flags)
         break;
     case ID_COMMAND_OPEN_POPUP:
     case ID_COMMAND_LIST_POPUP:
+    case ID_COMMAND_STRETCH_POPUP:
         if (m_fPopuping) {
             ::PostMessage(m_hwndFrame, WM_KEYDOWN, VK_ESCAPE, 0);
             ::PostMessage(m_hwndFrame, WM_KEYUP, VK_ESCAPE, 0);
@@ -1913,8 +1973,11 @@ void CTvtPlay::OnCommand(int id, const POINT *pPt, UINT flags)
         else if (id == ID_COMMAND_OPEN_POPUP) {
             OpenWithPopup(*pPt, flags);
         }
-        else {
+        else if (id == ID_COMMAND_LIST_POPUP) {
             OpenWithPlayListPopup(*pPt, flags);
+        }
+        else if (id == ID_COMMAND_STRETCH_POPUP) {
+            StretchWithPopup(*pPt, flags);
         }
         break;
     case ID_COMMAND_CLOSE:
@@ -2084,7 +2147,7 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         // コマンドラインにパスが指定されていれば開く
         if (pThis->m_pApp->IsPluginEnabled() && pThis->m_szSpecFileName[0]) {
             if (pThis->m_playlist.PushBackListOrFile(pThis->m_szSpecFileName, true) >= 0) {
-                pThis->OpenCurrent(pThis->m_specOffset);
+                pThis->OpenCurrent(pThis->m_specOffset, pThis->m_specStretchID);
             }
             pThis->m_szSpecFileName[0] = 0;
         }
@@ -2137,7 +2200,7 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
             // コマンドラインにパスが指定されていれば開く
             if (pThis->m_szSpecFileName[0]) {
                 if (pThis->m_playlist.PushBackListOrFile(pThis->m_szSpecFileName, true) >= 0) {
-                    pThis->OpenCurrent(pThis->m_specOffset);
+                    pThis->OpenCurrent(pThis->m_specOffset, pThis->m_specStretchID);
                 }
                 pThis->m_szSpecFileName[0] = 0;
             }
@@ -2483,9 +2546,9 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
 
             int rvSend = pThis->m_tsSender.Send();
             if (speed != 100) {
-                // ファイル末尾に達したか、追っかけ時に(再生時間-3)秒以上の位置に達した場合
-                if (!rvSend || (!pThis->m_tsSender.IsFixed() &&
-                    pThis->m_tsSender.GetPosition() > pThis->m_tsSender.GetDuration() - 3000))
+                // 追っかけ時に(再生時間-3)秒以上の位置に達した場合
+                if (!pThis->m_tsSender.IsFixed() &&
+                    pThis->m_tsSender.GetPosition() > pThis->m_tsSender.GetDuration() - 3000)
                 {
                     // 等速に戻しておく
                     ASFilterSendNotifyMessage(WM_ASFLT_STRETCH, 0, MAKELPARAM(100, 100));

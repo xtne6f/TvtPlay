@@ -20,6 +20,7 @@ public:
     // ITvtPlayController
     bool IsOpen() const { return m_hThread ? true : false; }
     int GetPosition() { CBlockLock lock(&m_tsInfoLock); return m_infoPos; }
+    int GetApparentPosition() { return m_apparentPos>=0 ? m_apparentPos : GetPosition(); }
     int GetDuration() { CBlockLock lock(&m_tsInfoLock); return m_infoDur; }
     int GetTotTime() { CBlockLock lock(&m_tsInfoLock); return m_infoTot; }
     int IsExtending() { CBlockLock lock(&m_tsInfoLock); return m_infoExtMode; }
@@ -39,6 +40,7 @@ public:
     void SeekToEnd();
     void Seek(int msec);
     void SeekAbsolute(int msec);
+    void SeekAbsoluteApparently(int msec) { m_apparentPos = msec; }
     void OnCommand(int id, const POINT *pPt = NULL, UINT flags = 0);
 private:
     // ファイルごとの固有情報
@@ -60,9 +62,10 @@ private:
     bool OpenWithDialog();
     bool OpenWithPopup(const POINT &pt, UINT flags);
     bool OpenWithPlayListPopup(const POINT &pt, UINT flags);
+    void StretchWithPopup(const POINT &pt, UINT flags);
     int TrackPopup(HMENU hmenu, const POINT &pt, UINT flags);
-    bool OpenCurrent(int offset = -1);
-    bool Open(LPCTSTR fileName, int offset);
+    bool OpenCurrent(int offset = -1, int stretchID = -1);
+    bool Open(LPCTSTR fileName, int offset, int stretchID);
     void Close();
     void SetupDestination();
     void WaitAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll);
@@ -97,6 +100,7 @@ private:
     TCHAR m_szIniFileName[MAX_PATH];
     TCHAR m_szSpecFileName[MAX_PATH];
     int m_specOffset;
+    int m_specStretchID;
     bool m_fShowOpenDialog;
     bool m_fRaisePriority;
 
@@ -125,6 +129,8 @@ private:
     TCHAR m_szPopupPattern[MAX_PATH];
     bool m_fPopupDesc, m_fPopuping;
     bool m_fDialogOpen;
+    int m_seekMode;
+    int m_apparentPos;
 
     // TS送信
     HANDLE m_hThread, m_hThreadEvent;
@@ -141,6 +147,7 @@ private:
     int m_resetMode;
     int m_stretchMode, m_noMuteMax, m_noMuteMin;
     bool m_fConvTo188, m_fUnderrunCtrl, m_fUseQpc, m_fModTimestamp;
+    int m_initialStretchID;
     int m_pcrThresholdMsec;
     int m_salt, m_hashListMax;
     bool m_fUpdateHashList;

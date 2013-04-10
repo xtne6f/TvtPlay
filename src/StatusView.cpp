@@ -452,6 +452,14 @@ LRESULT CStatusView::OnMessage(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam)
 		return 0;
 
 	case WM_LBUTTONUP:
+		if (m_HotItem>=0) {
+			int x=GET_X_LPARAM(lParam),y=GET_Y_LPARAM(lParam);
+			RECT rc;
+
+			GetItemRectByIndex(m_HotItem,&rc);
+			x-=rc.left;
+			m_ItemList[m_HotItem]->OnLButtonUp(x,y);
+		}
 		if (::GetCapture()==hwnd) {
 			ReleaseCapture();
 		}

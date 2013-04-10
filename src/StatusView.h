@@ -49,6 +49,7 @@ public:
 	virtual void Draw(HDC hdc,const RECT *pRect)=0;
 	virtual void DrawPreview(HDC hdc,const RECT *pRect) { Draw(hdc,pRect); }
 	virtual void OnLButtonDown(int x,int y) {}
+	virtual void OnLButtonUp(int x,int y) {}
 	virtual void OnRButtonDown(int x,int y) { OnLButtonDown(x,y); }
 	virtual void OnLButtonDoubleClick(int x,int y) { OnLButtonDown(x,y); }
 	virtual void OnMouseMove(int x,int y) {}

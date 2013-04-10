@@ -18,11 +18,12 @@ void CStatusViewEventHandler::OnMouseLeave()
     }
 }
 
-CSeekStatusItem::CSeekStatusItem(ITvtPlayController *pPlugin, bool fDrawOfs, bool fDrawTot, int width)
+CSeekStatusItem::CSeekStatusItem(ITvtPlayController *pPlugin, bool fDrawOfs, bool fDrawTot, int width, int seekMode)
     : CStatusItem(STATUS_ITEM_SEEK, max(width, 64))
     , m_pPlugin(pPlugin)
     , m_fDrawOfs(fDrawOfs)
     , m_fDrawTot(fDrawTot)
+    , m_seekMode(seekMode==1 ? 1 : seekMode==2 ? 2 : 0)
 {
     m_MinWidth = m_DefaultWidth;
     SetMousePos(-1, -1);
@@ -32,7 +33,7 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
 {
     CChapterMap &chMap = m_pPlugin->GetChapter();
     int dur = m_pPlugin->GetDuration();
-    int pos = m_pPlugin->GetPosition();
+    int pos = m_pPlugin->GetApparentPosition();
     COLORREF crText = ::GetTextColor(hdc);
     COLORREF crBk = ::GetBkColor(hdc);
     COLORREF crBar = m_pPlugin->IsPaused() ? MixColor(crText, crBk, 128) : crText;
@@ -47,18 +48,18 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
     // 実際に描画するバーの右端位置
     int barX = rcBar.left + ConvUnit(pos, rcBar.right - rcBar.left, dur);
 
-    // シーク位置を描画するかどうか
-    bool fDrawPos = rcBar.left <= m_mousePos.x && m_mousePos.x < rcBar.right;
-
     // マウスホバー中のチャプターを探す
     CChapterMap::const_iterator itHover = chMap.end();
-    if (fDrawPos && m_mousePos.y <= rcBar.top && chMap.IsOpen()) {
+    bool fMouseOnBar = rcBar.left <= m_mousePos.x && m_mousePos.x < rcBar.right;
+    if (fMouseOnBar && 0<=m_mousePos.y && m_mousePos.y<=rcBar.top && chMap.IsOpen()) {
         int chapPosL = ConvUnit(m_mousePos.x-rcBar.left-5, dur, rcBar.right - rcBar.left);
         int chapPosR = ConvUnit(m_mousePos.x-rcBar.left+5, dur, rcBar.right - rcBar.left);
         if (chapPosR >= dur) chapPosR = INT_MAX;
         itHover = chMap.lower_bound(chapPosL);
         if (itHover != chMap.end() && itHover->first >= chapPosR) itHover = chMap.end();
     }
+    // シーク位置を描画するかどうか
+    bool fDrawPos = itHover != chMap.end() || (m_seekMode==0 && fMouseOnBar);
 
     // シーク位置を描画
     int drawPosWidth = 64;
@@ -128,6 +129,16 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
         rc.right = barX;
         DrawUtil::Fill(hdc, &rc, crBar);
     }
+    if (m_seekMode==1) {
+        int realPos = m_pPlugin->GetPosition();
+        int realBarX = rcBar.left + ConvUnit(realPos, rcBar.right - rcBar.left, dur);
+        if (realBarX != barX) {
+            rc = rcBar;
+            rc.left = realBarX - 1;
+            rc.right = realBarX + 2;
+            DrawUtil::Fill(hdc, &rc, MixColor(crBar, crBk, 128));
+        }
+    }
 
     // バーの外枠を描画
     HPEN hpen = ::CreatePen(PS_SOLID, 1, crText);
@@ -181,6 +192,25 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
     if (hbr) ::DeleteBrush(hbr);
 }
 
+void CSeekStatusItem::ProcessSeek(int x)
+{
+    int dur = m_pPlugin->GetDuration();
+    RECT rc, rcc;
+    GetRect(&rc);
+    GetClientRect(&rcc);
+    if (x < 7) {
+        m_pPlugin->SeekToBegin();
+    }
+    else if (x >= rc.right-rc.left-7) {
+        m_pPlugin->SeekToEnd();
+    }
+    else {
+        int pos = ConvUnit(x-(rcc.left-rc.left)-2, dur, rcc.right-rcc.left-4);
+        // ちょっと手前にシークされた方が使いやすいため1000ミリ秒引く
+        m_pPlugin->SeekAbsolute(pos - 1000);
+    }
+}
+
 void CSeekStatusItem::OnLButtonDown(int x, int y)
 {
     CChapterMap &chMap = m_pPlugin->GetChapter();
@@ -198,16 +228,26 @@ void CSeekStatusItem::OnLButtonDown(int x, int y)
             m_pPlugin->SeekAbsolute(it->first);
         }
     }
-    else if (x < 7) {
-        m_pPlugin->SeekToBegin();
+    else if (m_seekMode==1) {
+        ::SetCapture(m_pStatus->GetHandle());
+        int pos = ConvUnit(x-(rcc.left-rc.left)-2, dur, rcc.right-rcc.left-4);
+        m_pPlugin->SeekAbsoluteApparently(max(pos - 1000, 0));
+        m_pStatus->Invalidate();
     }
-    else if (x >= rc.right-rc.left-7) {
-        m_pPlugin->SeekToEnd();
+    else if (m_seekMode==2) {
+        ::SetCapture(m_pStatus->GetHandle());
+        ProcessSeek(x);
     }
     else {
-        int pos = ConvUnit(x-(rcc.left-rc.left)-2, dur, rcc.right-rcc.left-4);
-        // ちょっと手前にシークされた方が使いやすいため1000ミリ秒引く
-        m_pPlugin->SeekAbsolute(pos - 1000);
+        ProcessSeek(x);
+    }
+}
+
+void CSeekStatusItem::OnLButtonUp(int x, int y)
+{
+    if (m_seekMode==1 && ::GetCapture()==m_pStatus->GetHandle()) {
+        m_pPlugin->SeekAbsoluteApparently(-1);
+        ProcessSeek(x);
     }
 }
 
@@ -243,8 +283,24 @@ void CSeekStatusItem::OnRButtonDown(int x, int y)
 
 void CSeekStatusItem::OnMouseMove(int x, int y)
 {
-    SetMousePos(x, y);
-    Update();
+    if (m_mousePos.x != x || m_mousePos.y != y) {
+        SetMousePos(x, y);
+        if (m_seekMode==1 && ::GetCapture()==m_pStatus->GetHandle()) {
+            int dur = m_pPlugin->GetDuration();
+            RECT rc, rcc;
+            GetRect(&rc);
+            GetClientRect(&rcc);
+            int pos = ConvUnit(x-(rcc.left-rc.left)-2, dur, rcc.right-rcc.left-4);
+            m_pPlugin->SeekAbsoluteApparently(max(pos - 1000, 0));
+            m_pStatus->Invalidate();
+        }
+        else if (m_seekMode==2 && ::GetCapture()==m_pStatus->GetHandle()) {
+            ProcessSeek(x);
+        }
+        else {
+            Update();
+        }
+    }
 }
 
 
@@ -258,7 +314,7 @@ CPositionStatusItem::CPositionStatusItem(ITvtPlayController *pPlugin)
 void CPositionStatusItem::Draw(HDC hdc, const RECT *pRect)
 {
     TCHAR szText[128], szTotText[64];
-    int posSec = m_pPlugin->GetPosition() / 1000;
+    int posSec = m_pPlugin->GetApparentPosition() / 1000;
     int durSec = m_pPlugin->GetDuration() / 1000;
     int extMode = m_pPlugin->IsExtending();
 

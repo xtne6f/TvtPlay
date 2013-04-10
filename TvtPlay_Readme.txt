@@ -1,10 +1,8 @@
-﻿TVTest TvtPlay Plugin ver.1.8r2 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.1.9 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
 再生するプラグインです。
-チャプター機能はテスト実装段階です。興味ある方は後述「チャプター機能について」を
-参照のうえ、慎重に利用してください。
 
 ■動作環境
 ・Windows XP以降(ただしVistaは未確認)
@@ -40,7 +38,7 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
 用画像の配置転換などで、設定キーButton02～Button15のデフォルトが一部変更されてい
 ます。ボタンアイコンがおかしくなった場合は、一度これらのキーをメモ帳などを使って
 削除してみてください。
-(ver.1.8からの移行)
+(ver.1.8～ver.1.8r2からの移行)
   TvtPlay.tvtpを置きかえてください。
 (ver.1.3～ver.1.7からの移行)
   TvtPlay.tvtpとBonDriver_Pipe.dllとを置きかえてください。ver.1.8は
@@ -89,8 +87,6 @@ BonDriver_UDPのプロセス間通信方式をパイプに改変したもので�
 導入にはVisual C++ 2005 SP1 再頒布可能パッケージ(x64版はVisual C++ 2010 SP1 再頒
 布可能パッケージ (x64))が必要です。x64版はファイル名を必ず"BonDriver_Pipe.dll"に
 リネームしてください。
-BonDriver_Pipe(simple).dllはver.1.7以前のものと同じ動作をするBonDriver_Pipe.dll
-で、比較検証に利用できます(こちらは今後のver.0.9系に添付する予定です)。
 
 ■TVTest起動オプションについて
 TVTest起動時につぎのようなオプションを追加することで、プラグインの有効・無効の自
@@ -101,9 +97,11 @@ TVTest起動時につぎのようなオプションを追加することで、�
 /tvtplay          起動時にプラグインを有効化＋ファイルパスの拡張子を問わない
 # 以上のオプションは複数起動禁止のTVTest起動中に追加できます(削除はできません)
 /tvtpofs <ms>[+-]<ofs>
-                  初期再生位置をミリ秒で指定する。
+                  初期再生位置をミリ秒で指定する
                   例: /tvtpofs 30000      # 30秒の位置から再生
                       /tvtpofs 30000-3000 # 27秒の位置から再生
+/tvtpstr [A-Z]    初期再生速度を指定する
+                  例: /tvtpstr B          # 設定キーStretchBで倍速再生
 
 ■読み込み可能なプレイリストファイル
 プレイリストファイル仕様はおおむねBonDriver_File+TVTestPluginに準拠します。拡張
@@ -214,7 +212,7 @@ TsEnableUnderrunCtrl【ver.1.8～】
     BonDriverのバッファアンダーランを防ぐ[=1]かどうか
     # 映像が途切れとぎれになる場合に解決策になるかもしれません。ただし、TVTestの
     #「バッファリングを行う」は使わないでください。
-    # BonDriver_Pipe(simpleじゃないほう)使用時のみ効果があります。
+    # BonDriver_Pipe使用時のみ効果があります。
 TsUsePerfCounter【ver.1.3r2～】
     パフォーマンスカウンタをTSデータ送出タイミングの基準とする[=1]かどうか
     # 基本的に[=1]で良いと思います。
@@ -251,6 +249,11 @@ RowPos / RowPosFull【ver.1.1～】
     # [=0]でTVTestウインドウの下、[=1]でステータスバーの位置、[=-1]でタイトルバ
     # ーの位置になります。実用的なのは[=-2]～[=2]の範囲だと思います。
     # RowPosFullの[=0]は[=1]と同じです。
+SeekMode【ver.1.9～】
+    シークバーのシーク方法を指定
+    # [=0]: 左クリック押下時にシーク(従来)
+    # [=1]: ドラッグ後にシーク
+    # [=2]: ドラッグ中にシーク(シーク中のディスクアクセスが増えるので注意)
 DispOffset【ver.1.2～】
     シークバーに再生位置からの相対位置を表示する[=1]かどうか
 DispTot【ver.0.5～】
@@ -309,7 +312,7 @@ Button[00-17]
     #   {アイコン番号}[,Width=(ボタン幅)][,{右クリックコマンド}],{コマンド}
     # コマンドはキー割り当て順に Open,OpenPopup,ListPopup,Close,Prev,SeekToBgn,
     # SeekToEnd,SeekToPrev,SeekToNext,AddChapter,RepeatChapter,SkipXChapter,
-    # Loop,Pause,Stretch,StretchRe,Seek[A-Z],Stretch[A-Z]
+    # Loop,Pause,Stretch,StretchRe,StretchPopup,Seek[A-Z],Stretch[A-Z]
     # (ボタン幅)のデフォルトは16です。';'でコメントアウトするか何も指定しなけれ
     # ばそのボタンは消えます。並べ替えもできます。Stretch/StretchReコマンドは設
     # 定キーStretchAから[=100]となる設定キーまでを順/逆順に倍速切り替えします。
@@ -376,7 +379,7 @@ GetTickCount、[=1]ならQueryPerformanceCounterにします。どちらでも�
 PCでは、たとえば時計が一日に数秒～数分単位で遅れるor進む、アナログチューナの音声
 と映像のずれが次第に激しくなる、といった現象もみられるかもしれません。
 
-■チャプター機能について(テスト実装中)
+■チャプター機能について
 [ver.1.6からの変更点]
 ・chaptersフォルダがあれば利用するようになりました:
   <チャプターを読みこむ優先順位>
@@ -478,6 +481,11 @@ http://2sen.dip.jp/dtv/)のup0598.zip「非公式 TvtPlayシークボタンカ�
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.1.9 (2012-06-18)
+・設定キーSeekModeを追加し、デフォルトでドラッグシークにした
+・起動時に倍速指定するオプション/tvtpstrを追加
+・ポップアップで倍速指定するコマンドStretchPopupを追加
+・つぎのファイルを開くときも倍速再生の状態をそのままにするようにした
 ver.1.8r2 (2012-05-11)
 ・「ラップアラウンドを避ける」(設定キーTsAvoidWraparound)を使っている場合、特定
   パターンのパケットのPTS、DTSタイムスタンプを書き換えていなかったバグを修正
@@ -676,7 +684,7 @@ ver.0.1 (2011-08-13)
 
 ■ボタンカスタマイズ例
 ※設定ファイルの該当部分にコピペして利用してください
-【ver.1.7のデフォルト】
+【ver.1.9のデフォルト】
 SeekItemOrder=99
 StatusItemOrder=99
 IconImage=
@@ -709,7 +717,7 @@ Button13=3,SeekToEnd
 Button14='*'2'.'0:30~'*'2'.'0,StretchB
 Button15='*'0'.'5:30~'*'0'.'5,StretchC
 Button16=;'*'1' '.'0:30~'*'4'.'0:30~'*'0'.'2,StretchD,StretchA
-Button17=;'*'1' '.'0:30~'*'4'.'0:30~'*'2'.'0:30~'*'0'.'5:30~'*'0'.'2,Width=32,StretchZ,Stretch
+Button17=;'*'1' '.'0:30~'*'4'.'0:30~'*'2'.'0:30~'*'0'.'5:30~'*'0'.'2,Width=32,StretchPopup,Stretch
 
 【ボタン数を少なく+チャプター機能も使う】
 SeekItemOrder=11

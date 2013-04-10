@@ -21,6 +21,7 @@ enum {
     ID_COMMAND_NOP,
     ID_COMMAND_STRETCH,
     ID_COMMAND_STRETCH_RE,
+    ID_COMMAND_STRETCH_POPUP,
     ID_COMMAND_SEEK_A,
     ID_COMMAND_STRETCH_A = ID_COMMAND_SEEK_A + COMMAND_S_MAX,
 };
@@ -37,6 +38,7 @@ public:
     virtual ~ITvtPlayController() {}
     virtual bool IsOpen() const=0;
     virtual int GetPosition()=0;
+    virtual int GetApparentPosition()=0;
     virtual int GetDuration()=0;
     virtual int GetTotTime()=0;
     virtual int IsExtending()=0;
@@ -56,6 +58,7 @@ public:
     virtual void SeekToEnd()=0;
     virtual void Seek(int msec)=0;
     virtual void SeekAbsolute(int msec)=0;
+    virtual void SeekAbsoluteApparently(int msec)=0;
     virtual void OnCommand(int id, const POINT *pPt = NULL, UINT flags = 0)=0;
 };
 
@@ -68,18 +71,21 @@ public:
 class CSeekStatusItem : public CStatusItem
 {
 public:
-    CSeekStatusItem(ITvtPlayController *pPlugin, bool fDrawOfs, bool fDrawTot, int width);
+    CSeekStatusItem(ITvtPlayController *pPlugin, bool fDrawOfs, bool fDrawTot, int width, int seekMode);
     LPCTSTR GetName() const { return TEXT("シークバー"); }
     void Draw(HDC hdc, const RECT *pRect);
     void OnLButtonDown(int x, int y);
+    void OnLButtonUp(int x, int y);
     void OnRButtonDown(int x, int y);
     void OnMouseMove(int x, int y);
     void SetMousePos(int x, int y) { m_mousePos.x = x; m_mousePos.y = y; }
 private:
+    void ProcessSeek(int x);
     static int ConvUnit(int x, int a, int b) { return x<0||a<0||b<=0 ? 0 : x>=b ? a : (int)((long long)x*a/b); }
     ITvtPlayController *m_pPlugin;
     bool m_fDrawOfs, m_fDrawTot;
     POINT m_mousePos;
+    int m_seekMode;
 };
 
 class CPositionStatusItem : public CStatusItem

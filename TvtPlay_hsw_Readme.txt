@@ -1,4 +1,5 @@
 ﻿高速鑑賞機能ソースコードについて
+2012-06-17 ver.4: 再生速度の指定方法を微変更
 2012-05-11 ver.3: TvtPlay本体にマージ + TvtPlay_Blacklist.txt を少し修正
 2012-04-21 ver.2: bregonig.dllを不要に + ルビを区別できるようにした
 2012-04-17 ver.1: 初版
@@ -45,9 +46,9 @@ BregonigDll
     # 検索量は微々たるものなので、T-Rexの正規表現で足るならば指定なしのほうが性
     # 能面で有利です
 SlowerWithCaption
-    字幕のある区間での再生速度を字幕のない区間にたいする倍率で指定
-    # [=正数]のとき、{再生速度}×{設定値}÷100
-    # [=負数]のとき、{再生速度}＋{設定値}
+    字幕のある区間での再生速度を指定
+    # [=正数]のとき、{字幕のある区間での再生速度}＝{再生速度}×{設定値}÷100
+    # [=負数]のとき、{字幕のある区間での再生速度}＝－{設定値}
     # [=0]で機能オフ
     # ただし、どのような設定値でも字幕のある区間での再生速度は100%を下回らないよ
     # うに調整されます。
@@ -74,7 +75,7 @@ SlowerWithCaptionShowLate / SlowerWithCaptionClearEarly
     "Gaiji"フォルダの"UNICODE_cc_*.ini"を弄って何らかの文字に置きかえてください
   <TVCaptionMod2 の Caption.dll>
     上記STD-B24の表7-19および表7-20にしたがってUnicodeに置換されるので、対応する
-    文字をIMEパッドで植えたり、Caption2Ass_PCR.exeをつかって(添付のCaption.dllを
+    文字をIMEパッドで植えるか、Caption2Ass_PCR.exeをつかって(添付のCaption.dllを
     TVCaptionMod2のCaption.dllに置きかえる)字幕を出力し、対応する文字をコピペし
     てください
 
