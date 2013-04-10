@@ -28,6 +28,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     bool m_fForceEnable, m_fIgnoreExt;
     bool m_fAutoEnUdp, m_fAutoEnPipe;
     bool m_fEventExecute;
+    bool m_fEventStartupDone;
     bool m_fPausedOnPreviewChange;
     TCHAR m_szIniFileName[MAX_PATH];
     TCHAR m_szSpecFileName[MAX_PATH];
@@ -36,7 +37,6 @@ class CTvtPlay : public TVTest::CTVTestPlugin
 
     // コントロール
     HWND m_hwndFrame;
-    bool m_fFullScreen, m_fHide;
     bool m_fAutoHide, m_fAutoHideActive;
     bool m_fHoveredFromOutside;
     int m_statusRow, m_statusRowFull;
@@ -102,6 +102,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     void ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll);
     bool CalcStatusRect(RECT *pRect, bool fInit = false);
     void OnResize(bool fInit = false);
+    void OnDispModeChange(bool fStandby, bool fInit = false);
     void OnFrameResize();
     void EnablePluginByDriverName();
     void OnPreviewChange(bool fPreview);

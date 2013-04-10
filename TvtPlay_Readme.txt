@@ -1,5 +1,5 @@
-﻿TVTest TvtPlay Plugin ver.1.2(人柱版) + BonDriver_Pipe.dll
-                                      + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.1.2r2(人柱版) + BonDriver_Pipe.dll
+                                        + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -22,11 +22,9 @@ ver.1.xは人柱版です。今後の大幅な機能追加や機能削除、大�
 削除してみてください。
 設定キーToBottomは廃止されました(詳細は「更新履歴」参照)。ToBottomを[=0]で使用し
 ていた方は[=1]の動作にもどるので、新しい設定キーRowPosFullで調整してください。
-(ver.0.9r3～ver.0.9r5からの移行)
-  TvtPlay.tvtpを置きかえてください。
-(ver.0.9、ver.0.9r2からの移行)
-  TvtPlay.tvtpとTvtAudioStretchFilter.axとを置きかえてください。
-(～ver.0.8r2からの移行)
+(ver.0.9r3～ver.1.2からの移行)
+  TvtPlay.tvtpとBonDriver_Pipe.dllとを置きかえてください。
+(～ver.0.9r2からの移行)
   TvtPlay.tvtpとBonDriver_Pipe.dllとTvtAudioStretchFilter.axとを置きかえてくださ
   い。
 
@@ -328,6 +326,12 @@ http://2sen.dip.jp/)のup0598.zip「非公式 TvtPlayシークボタンカスタ
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.1.2r2 (2011-11-24)
+・BonDriver_Pipeの以下の不具合修正
+  ・ドライバの初期化と再生開始のタイミングが重なった場合に、TVTestをフリーズさせ
+    てしまうことがある
+・全画面表示でドラッグ&ドロップできるように戻した
+・TVTest待機状態(常駐モード)を考慮した
 ver.1.2 (2011-11-22)
 ・「ファイルを開く」ダイアログを複数選択可能にしてプラグイン有効時に表示できるよ
   うにした

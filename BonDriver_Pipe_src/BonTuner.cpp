@@ -343,10 +343,14 @@ static bool CheckPipeConnection(HANDLE hPipe, HANDLE hEvent, OVERLAPPED *pOl, bo
 	if (!*pbWait) {
 		::ZeroMemory(pOl, sizeof(OVERLAPPED));
 		pOl->hEvent = hEvent;
-		::ConnectNamedPipe(hPipe, pOl);
-		*pbWait = true;
+		if (!::ConnectNamedPipe(hPipe, pOl)) {
+			// すでに接続されている可能性もある
+			DWORD dwErr = ::GetLastError();
+			if (dwErr == ERROR_IO_PENDING) *pbWait = true;
+			else if (dwErr == ERROR_PIPE_CONNECTED) return true;
+		}
 	}
-	if (::WaitForSingleObject(hEvent, 0) == WAIT_OBJECT_0) {
+	if (*pbWait && HasOverlappedIoCompleted(pOl)) {
 		*pbWait = false;
 		return true;
 	}
@@ -472,8 +476,7 @@ const BOOL CBonTuner::PopIoRequest()
 
 	// エラーチェック
 	if(!bRet){
-		int err = ::GetLastError();
-		if(err == ERROR_IO_INCOMPLETE){
+		if(::GetLastError() == ERROR_IO_INCOMPLETE){
 			// 処理未完了
 			return FALSE;
 		} else {

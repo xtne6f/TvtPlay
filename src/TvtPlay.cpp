@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-11-21
+// 最終更新: 2011-11-23
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -16,7 +16,7 @@
 #include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.2)";
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.2r2)";
 static const int INFO_VERSION = 12;
 
 #define WM_UPDATE_POSITION  (WM_APP + 1)
@@ -128,12 +128,11 @@ CTvtPlay::CTvtPlay()
     , m_fAutoEnUdp(false)
     , m_fAutoEnPipe(false)
     , m_fEventExecute(false)
+    , m_fEventStartupDone(false)
     , m_fPausedOnPreviewChange(false)
     , m_specOffset(-1)
     , m_fShowOpenDialog(false)
     , m_hwndFrame(NULL)
-    , m_fFullScreen(false)
-    , m_fHide(false)
     , m_fAutoHide(false)
     , m_fAutoHideActive(false)
     , m_fHoveredFromOutside(false)
@@ -251,10 +250,9 @@ void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst)
 }
 
 
+// 初期化処理
 bool CTvtPlay::Initialize()
 {
-    // 初期化処理
-
     // コマンドを登録
     m_pApp->RegisterCommand(COMMAND_LIST, _countof(COMMAND_LIST));
 
@@ -262,15 +260,13 @@ bool CTvtPlay::Initialize()
     m_pApp->SetEventCallback(EventCallback, this);
 
     AnalyzeCommandLine(::GetCommandLine(), true);
-    if (m_fForceEnable) m_pApp->EnablePlugin(true);
-
     return true;
 }
 
 
+// 終了処理
 bool CTvtPlay::Finalize()
 {
-    // 終了処理
     if (m_pApp->IsPluginEnabled()) EnablePlugin(false);
     return true;
 }
@@ -653,8 +649,6 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
         }
         m_statusView.SetEventHandler(&m_eventHandler);
 
-        if (m_fShowOpenDialog && !m_szSpecFileName[0]) OpenWithDialog();
-
         CStatusItem *pItem = m_statusView.GetItemByID(STATUS_ITEM_POSITION);
         if (pItem) {
             if (m_posItemWidth < 0) {
@@ -665,7 +659,9 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
                 pItem->SetWidth(m_posItemWidth);
             }
         }
-        OnResize(true);
+        OnDispModeChange(m_pApp->GetStandby(), true);
+
+        if (m_fShowOpenDialog && !m_szSpecFileName[0] && !m_pApp->GetStandby()) OpenWithDialog();
 
         m_pApp->SetWindowMessageCallback(WindowMsgCallback, this);
         ::DragAcceptFiles(m_pApp->GetAppWindow(), TRUE);
@@ -709,8 +705,7 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
     }
     if (selID == 1) {
         m_fAutoHide = !m_fAutoHide;
-        m_fFullScreen = !m_pApp->GetFullscreen();
-        OnResize();
+        OnDispModeChange(m_pApp->GetStandby());
         SaveSettings();
     }
     else if (selID == 2) {
@@ -1221,43 +1216,43 @@ void CTvtPlay::OnResize(bool fInit)
         ::SetWindowPos(m_hwndFrame, NULL, rect.left, rect.top,
                        rect.right-rect.left, rect.bottom-rect.top, SWP_NOZORDER | SWP_NOACTIVATE);
     }
-    if (fInit) {
-        m_fFullScreen = !m_pApp->GetFullscreen();
-        m_fAutoHideActive = false;
-        ::ShowWindow(m_hwndFrame, SW_SHOWNOACTIVATE);
+}
+
+void CTvtPlay::OnDispModeChange(bool fStandy, bool fInit)
+{
+    if (!fInit && m_fAutoHideActive) {
+        ::KillTimer(m_hwndFrame, TIMER_ID_AUTO_HIDE);
     }
-    if (m_pApp->GetFullscreen()) {
-        if (!m_fFullScreen) {
-            // フルスクリーン表示への遷移
-            m_fHide = m_fHoveredFromOutside = false;
-            m_dispCount = 0;
-            ::GetCursorPos(&m_lastCurPos);
-            m_idleCurPos = m_lastCurPos;
-            if (!m_fAutoHideActive) {
-                ::SetTimer(m_hwndFrame, TIMER_ID_AUTO_HIDE, TIMER_AUTO_HIDE_INTERVAL, NULL);
-                m_fAutoHideActive = true;
-            }
-            m_fFullScreen = true;
+    m_fAutoHideActive = false;
+    m_fHoveredFromOutside = false;
+    m_dispCount = 0;
+
+    OnResize(fInit);
+
+    if (fStandy) {
+        // 待機状態
+        ::ShowWindow(m_hwndFrame, SW_HIDE);
+        // ファイルが開かれていれば閉じる
+        Close();
+    }
+    else if (m_pApp->GetFullscreen()) {
+        // フルスクリーン表示状態
+        ::GetCursorPos(&m_lastCurPos);
+        m_idleCurPos = m_lastCurPos;
+        if (!m_fAutoHideActive) {
+            ::SetTimer(m_hwndFrame, TIMER_ID_AUTO_HIDE, TIMER_AUTO_HIDE_INTERVAL, NULL);
+            m_fAutoHideActive = true;
         }
     }
     else {
-        if (m_fFullScreen) {
-            // 通常表示への遷移
-            if ((m_statusRow == 0 || !m_fAutoHide) && m_fAutoHideActive) {
-                ::KillTimer(m_hwndFrame, TIMER_ID_AUTO_HIDE);
-                m_fAutoHideActive = false;
-            }
-            ::SetWindowPos(m_hwndFrame, m_pApp->GetAlwaysOnTop() ? HWND_TOPMOST : HWND_NOTOPMOST,
-                           0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE);
-            m_fHide = m_fHoveredFromOutside = false;
-            m_dispCount = 0;
-            ::GetCursorPos(&m_lastCurPos);
-            m_idleCurPos.x = m_idleCurPos.y = -10;
-            if (m_statusRow != 0 && m_fAutoHide && !m_fAutoHideActive) {
-                ::SetTimer(m_hwndFrame, TIMER_ID_AUTO_HIDE, TIMER_AUTO_HIDE_INTERVAL, NULL);
-                m_fAutoHideActive = true;
-            }
-            m_fFullScreen = false;
+        // 通常表示状態
+        ::SetWindowPos(m_hwndFrame, m_pApp->GetAlwaysOnTop() ? HWND_TOPMOST : HWND_NOTOPMOST,
+                       0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE);
+        ::GetCursorPos(&m_lastCurPos);
+        m_idleCurPos.x = m_idleCurPos.y = -10;
+        if (m_statusRow != 0 && m_fAutoHide && !m_fAutoHideActive) {
+            ::SetTimer(m_hwndFrame, TIMER_ID_AUTO_HIDE, TIMER_AUTO_HIDE_INTERVAL, NULL);
+            m_fAutoHideActive = true;
         }
     }
 }
@@ -1432,12 +1427,21 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
     case TVTest::EVENT_FULLSCREENCHANGE:
         // 全画面表示状態が変化した
         if (pThis->m_pApp->IsPluginEnabled())
-            pThis->OnResize();
+            pThis->OnDispModeChange(false);
+        break;
+    case TVTest::EVENT_STANDBY:
+        // 待機状態が変化した
+        // 全画面表示時はEVENT_FULLSCREENCHANGEの後に呼ばれる
+        // GetStandby()の変化に先行して呼ばれるので注意
+        if (pThis->m_pApp->IsPluginEnabled())
+            pThis->OnDispModeChange(lParam1 != 0);
         break;
     case TVTest::EVENT_DRIVERCHANGE:
         // ドライバが変更された
-        pThis->EnablePluginByDriverName();
-
+        // 起動が完了するまでは不安定なので有効にしない
+        if (pThis->m_fEventStartupDone) {
+            pThis->EnablePluginByDriverName();
+        }
         // 複数禁止起動時にチャンネル設定されない場合の対策(ver.0.7.22未満)
         if (pThis->m_fEventExecute &&
             pThis->m_pApp->GetVersion() < TVTest::MakeVersion(0,7,22))
@@ -1493,6 +1497,10 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         // FALL THROUGH!
     case TVTest::EVENT_STARTUPDONE:
         // 起動時の処理が終わった
+        if (Event == TVTest::EVENT_STARTUPDONE) {
+            if (pThis->m_fForceEnable) pThis->m_pApp->EnablePlugin(true);
+            pThis->m_fEventStartupDone = true;
+        }
         pThis->EnablePluginByDriverName();
         // コマンドラインにパスが指定されていれば開く
         if (pThis->m_pApp->IsPluginEnabled() && pThis->m_szSpecFileName[0]) {
@@ -1528,7 +1536,7 @@ BOOL CALLBACK CTvtPlay::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, L
         }
         break;
     case WM_DROPFILES:
-        if (!pThis->m_pApp->GetFullscreen()) {
+        if (!pThis->m_fDialogOpen) {
             bool fAdded = false;
             TCHAR fileName[MAX_PATH];
             int num = ::DragQueryFile((HDROP)wParam, 0xFFFFFFFF, fileName, _countof(fileName));
@@ -1544,7 +1552,7 @@ BOOL CALLBACK CTvtPlay::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, L
         }
         break;
     case WM_MOUSEMOVE:
-        if (pThis->m_fAutoHideActive && !pThis->m_fFullScreen) {
+        if (pThis->m_fAutoHideActive && !pThis->m_pApp->GetFullscreen()) {
             // m_fHoveredFromOutsideの更新のため
             ::SendMessage(pThis->m_hwndFrame, WM_TIMER, TIMER_ID_AUTO_HIDE, 1);
             // カーソルが移動したときに表示する(通常表示)
@@ -1592,10 +1600,11 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
                 // curPosとrectはともに仮想スクリーン座標系
                 bool fHovered = rect.left <= curPos.x && curPos.x < rect.right &&
                                 rect.top <= curPos.y && curPos.y < rect.bottom;
+                bool fFull = pThis->m_pApp->GetFullscreen();
 
                 // カーソルがどの方向からホバーされたか
                 POINT lastPos = pThis->m_lastCurPos;
-                if (pThis->m_fFullScreen || !fHovered) {
+                if (fFull || !fHovered) {
                     pThis->m_fHoveredFromOutside = false;
                 }
                 else if (pThis->m_statusRow== 1 && (rect.left>lastPos.x || rect.right<=lastPos.x || rect.bottom<=lastPos.y) ||
@@ -1605,7 +1614,7 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
                 }
                 pThis->m_lastCurPos = curPos;
 
-                if (pThis->m_fFullScreen) {
+                if (fFull) {
                     // カーソルが移動したときに表示する(フルスクリーン)
                     if (pThis->m_timeoutOnMove > 0 &&
                         (curPos.x < pThis->m_idleCurPos.x-2 || pThis->m_idleCurPos.x+2 < curPos.x ||
@@ -1621,22 +1630,20 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
                 }
 
                 if (pThis->m_dispCount > 0 || (fHovered && !pThis->m_fHoveredFromOutside) || pThis->m_fPopuping) {
-                    if (pThis->m_fHide) {
-                        if (pThis->m_fFullScreen) {
+                    if (!::IsWindowVisible(hwnd)) {
+                        if (fFull) {
                             ::SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
                         }
                         else {
                             ::ShowWindow(hwnd, SW_SHOWNOACTIVATE);
                         }
-                        pThis->m_fHide = false;
                     }
                     if (fHovered) pThis->m_dispCount = 0;
                     else if (!lParam) pThis->m_dispCount--;
                 }
                 else {
-                    if (!pThis->m_fHide) {
+                    if (::IsWindowVisible(hwnd)) {
                         ::ShowWindow(hwnd, SW_HIDE);
-                        pThis->m_fHide = true;
                     }
                 }
             }
