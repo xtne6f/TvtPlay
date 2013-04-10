@@ -3,9 +3,12 @@
 #include "Util.h"
 #include "TsSender.h"
 
+#ifndef __AFX_H__
+#include <cassert>
+#define ASSERT assert
+#endif
 
 #define MSB(x) ((x) & 0x80000000)
-
 
 CTsTimestampShifter::CTsTimestampShifter()
     : m_shift45khz(0)
@@ -132,7 +135,7 @@ CTsSender::CTsSender()
     , m_curr(NULL)
     , m_tail(NULL)
     , m_unitSize(0)
-    , m_fConvTo188(false)
+    , m_bufSize(0)
     , m_fTrimPacket(false)
     , m_fModTimestamp(false)
     , m_sock(NULL)
@@ -141,11 +144,11 @@ CTsSender::CTsSender()
     , m_baseTick(0)
     , m_renewSizeTick(0)
     , m_renewDurTick(0)
-    , m_pcrCount(0)
     , m_pcr(0)
     , m_basePcr(0)
     , m_initPcr(0)
     , m_fPcr(false)
+    , m_fEnPcr(false)
     , m_fShareWrite(false)
     , m_fFixed(false)
     , m_fPause(false)
@@ -170,10 +173,11 @@ CTsSender::CTsSender()
 CTsSender::~CTsSender()
 {
     Close();
+    delete [] m_pBuf;
 }
 
 
-bool CTsSender::Open(LPCTSTR name, DWORD salt)
+bool CTsSender::Open(LPCTSTR name, DWORD salt, bool fConvTo188)
 {
     Close();
 
@@ -199,17 +203,22 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt)
     DWORD readBytes;
     if (!::ReadFile(m_hFile, buf, sizeof(buf), &readBytes, NULL)) goto ERROR_EXIT;
     m_unitSize = select_unit_size(buf, buf + readBytes);
-    if (m_unitSize < 188) goto ERROR_EXIT;
+    if (m_unitSize < 188 || 320 < m_unitSize) goto ERROR_EXIT;
 
     // 転送時にパケットを188Byteに詰めるかどうか
-    m_fTrimPacket = m_fConvTo188 && m_unitSize == 192;
+    // TimestampedTS(192Byte)の場合のみ変換する
+    m_fTrimPacket = fConvTo188 && m_unitSize == 192;
 
-    // 識別情報としてファイル先頭のハッシュ値をとる
+    // 識別情報としてファイル先頭の56bitハッシュ値をとる
     m_hash = CalcHash(buf, min(readBytes, 2048), salt);
     if (m_hash < 0) goto ERROR_EXIT;
 
     // バッファ確保
-    m_pBuf = new BYTE[m_unitSize * BUFFER_LEN];
+    if (m_bufSize != m_unitSize * BUFFER_LEN) {
+        delete [] m_pBuf;
+        m_bufSize = m_unitSize * BUFFER_LEN;
+        m_pBuf = new BYTE[m_bufSize];
+    }
 
     // PCR参照PIDをクリア
     m_pcrPid = m_pcrPidsLen = 0;
@@ -222,11 +231,11 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt)
 
     // ファイル先頭のPCRと動画の長さを取得
     m_fSpecialExtending = false;
-    if (Seek(-TS_SUPPOSED_RATE * 2, FILE_END) && m_pcrCount) {
+    if (Seek(-TS_SUPPOSED_RATE * 2, FILE_END)) {
         // ファイル末尾が正常である場合
         DWORD finPcr = m_pcr;
 
-        if (!SeekToBegin() || !m_pcrCount) goto ERROR_EXIT;
+        if (!SeekToBegin()) goto ERROR_EXIT;
         m_initPcr = m_pcr;
         m_duration = (int)((finPcr - m_initPcr) / PCR_PER_MSEC) + 2000;
         m_duration = (int)((finPcr - m_initPcr) / PCR_PER_MSEC) +
@@ -234,13 +243,13 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt)
     }
     else if (m_fShareWrite &&
              SeekToBoundary(fileSize / 2, fileSize, buf, sizeof(buf) / 2) &&
-             Seek(-TS_SUPPOSED_RATE * 2, FILE_CURRENT) && m_pcrCount)
+             Seek(-TS_SUPPOSED_RATE * 2, FILE_CURRENT))
     {
         // 書き込み共有かつファイル末尾が正常でない場合
         long long filePos = GetFilePosition();
         DWORD finPcr = m_pcr;
 
-        if (!SeekToBegin() || !m_pcrCount) goto ERROR_EXIT;
+        if (!SeekToBegin()) goto ERROR_EXIT;
         m_initPcr = m_pcr;
         m_duration = (int)((finPcr - m_initPcr) / PCR_PER_MSEC) + 2000;
 
@@ -251,9 +260,15 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt)
     }
     else {
         // 最低限、再生はできる場合
-        if (!SeekToBegin() || !m_pcrCount) goto ERROR_EXIT;
+        if (!SeekToBegin()) goto ERROR_EXIT;
         m_initPcr = m_pcr;
         m_duration = 0;
+    }
+
+    // 再生レートが極端に小さい場合(ワンセグ等)はバッファを縮める
+    if (GetRate() < m_bufSize) {
+        m_bufSize = GetRate() / m_unitSize * m_unitSize;
+        if (!SeekToBegin()) goto ERROR_EXIT;
     }
 
     // 定期的にファイルサイズの更新状況を取得するため
@@ -297,14 +312,6 @@ void CTsSender::SetPipeName(LPCTSTR name)
 }
 
 
-// 転送時に188ByteTSに変換するかどうか
-// パケットがTimestampedTS(192Byte)の場合のみ変換する
-void CTsSender::SetConvTo188(bool fConvTo188)
-{
-    m_fConvTo188 = fConvTo188;
-}
-
-
 // ラップアラウンドをなるべく避けるようにPCR/PTS/DTSを変更するかどうか
 void CTsSender::SetModTimestamp(bool fModTimestamp)
 {
@@ -318,10 +325,6 @@ void CTsSender::Close()
         ::CloseHandle(m_hFile);
         m_hFile = NULL;
     }
-    if (m_pBuf) {
-        delete [] m_pBuf;
-        m_pBuf = NULL;
-    }
     CloseSocket();
     ClosePipe();
     m_udpAddr[0] = 0;
@@ -331,11 +334,13 @@ void CTsSender::Close()
 }
 
 
-// TSパケットを読んで、一度だけ転送する
-// ファイルの終端に達した場合はfalseを返す
+// PCRが現れるまでTSパケットを読んで転送する
+// ファイルの終端に達したか、PCRが挿入されていない場合はfalseを返す
 // 適当にレート制御される
 bool CTsSender::Send()
 {
+    if (!m_hFile) return false;
+
     // 動画の長さ情報を更新
     if (m_fShareWrite) {
         DWORD tick = ::GetTickCount();
@@ -364,35 +369,60 @@ bool CTsSender::Send()
         m_renewDurTick = tick;
     }
 
-    if (m_fPause) return true;
+    if (m_fPause) {
+        ::Sleep(100);
+    }
+    else {
+        if (!ReadToPcr(40000, true) || !m_fPcr) return false;
 
-    // パケットの読み込みと転送
-    for (bool fSent = false; !fSent;) {
-        if (!ReadPacket()) {
-            ConsumeBuffer(true);
-            if (!ReadPacket()) return false;
-            fSent = true;
-        }
         // 転送レート制御
-        if (m_fPcr) {
-            DWORD tickDiff = ::GetTickCount() - m_baseTick;
+        DWORD tickDiff = ::GetTickCount() - m_baseTick;
 
-            DWORD pcrDiff = m_pcr - m_basePcr;
-            if (MSB(pcrDiff)) pcrDiff = 0;
+        DWORD pcrDiff = m_pcr - m_basePcr;
+        if (MSB(pcrDiff)) pcrDiff = 0;
 
-            // 再生速度が上がる=PCRの進行が遅くなる
-            int msec = (int)((long long)pcrDiff * m_speedDen / m_speedNum / PCR_PER_MSEC) - tickDiff;
+        // 再生速度が上がる=PCRの進行が遅くなる
+        int msec = (int)((long long)pcrDiff * m_speedDen / m_speedNum / PCR_PER_MSEC) - tickDiff;
 
-            // 制御しきれない場合は一度リセット
-            if (msec < -2000 || 2000 * m_speedDen / m_speedNum < msec) {
-                // 基準PCRを設定(受信側のストアを増やすため少し引く)
-                m_baseTick = ::GetTickCount() - m_initStore;
-                m_basePcr = m_pcr;
-            }
-            else if (msec > 0) ::Sleep(msec);
+        // 制御しきれない場合は一度リセット
+        if (msec < -2000 || 2000 * m_speedDen / m_speedNum < msec) {
+            // 基準PCRを設定(受信側のストアを増やすため少し引く)
+            m_baseTick = ::GetTickCount() - m_initStore;
+            m_basePcr = m_pcr;
         }
+        else if (msec > 0) ::Sleep(msec);
     }
     return true;
+}
+
+
+static const BYTE NULL_PACKET[] = {
+    0x47, 0x1F, 0xFF, 0x10, 'E', 'M', 'P', 'T',
+    'Y', 'P', 'A', 'T'
+};
+
+static const BYTE EMPTY_PAT[] = {
+    0x47, 0x60, 0x00, 0x10, 0x00, 0x00, 0xB0, 0x09,
+    0x00, 0x00, 0xC1, 0x00, 0x00, 0x33, 0x4F, 0xF8,
+    0xA0
+};
+
+// PMTリストが空のPATを送る
+void CTsSender::SendEmptyPat()
+{
+    if (!m_hFile) return;
+    ASSERT(m_unitSize <= 320);
+
+    BYTE buf[320 * 9];
+    int unitSize = m_fTrimPacket ? 188 : m_unitSize;
+
+    // 同期できるようにNULLパケットで囲っておく
+    memset(buf, 0xFF, unitSize*9);
+    for (int i = 0; i < 9; ++i)
+        memcpy(buf + unitSize*i, NULL_PACKET, sizeof(NULL_PACKET));
+    memcpy(buf + unitSize*4, EMPTY_PAT, sizeof(EMPTY_PAT));
+
+    SendData(buf, unitSize*9);
 }
 
 
@@ -416,9 +446,9 @@ bool CTsSender::SeekToEnd()
 // シークできなかったorシークが打ち切られたときはfalseを返す
 bool CTsSender::Seek(int msec)
 {
-    if (!m_pcrCount) return SeekToBegin();
+    if (!m_fEnPcr) return SeekToBegin();
 
-    long long rate = (long long)GetRate();
+    long long rate = GetRate();
     long long size = GetFileSize();
     long long pos;
 
@@ -438,13 +468,13 @@ bool CTsSender::Seek(int msec)
         if (approx < 0) approx = 0;
 
         DWORD prevPcr = m_pcr;
-        if (!Seek(approx, FILE_BEGIN) || !m_pcrCount) return false;
+        if (!Seek(approx, FILE_BEGIN)) return false;
 
         // 移動分を差し引く
         msec += MSB(m_pcr-prevPcr) ? (int)(prevPcr-m_pcr) / PCR_PER_MSEC :
                                     -(int)(m_pcr-prevPcr) / PCR_PER_MSEC;
     }
-    if (!m_pcrCount || msec < -5000 || 5000 < msec) return false;
+    if (msec < -5000 || 5000 < msec) return false;
 
     if (msec < 0) {
         // 約1秒ずつ前方シーク
@@ -454,7 +484,7 @@ bool CTsSender::Seek(int msec)
             if (pos <= rate) return true;
 
             DWORD prevPcr = m_pcr;
-            if (!Seek(-rate, FILE_CURRENT) || !m_pcrCount || MSB(prevPcr-m_pcr)) return false;
+            if (!Seek(-rate, FILE_CURRENT) || MSB(prevPcr-m_pcr)) return false;
             msec += (int)(prevPcr-m_pcr) / PCR_PER_MSEC;
         }
         if (msec < -500) return false;
@@ -467,7 +497,7 @@ bool CTsSender::Seek(int msec)
             if (pos >= size - rate*2) return true;
 
             DWORD prevPcr = m_pcr;
-            if (!Seek(rate, FILE_CURRENT) || !m_pcrCount || MSB(m_pcr-prevPcr)) return false;
+            if (!Seek(rate, FILE_CURRENT) || MSB(m_pcr-prevPcr)) return false;
             msec -= (int)(m_pcr-prevPcr) / PCR_PER_MSEC;
         }
         if (msec > 500) return false;
@@ -534,7 +564,7 @@ int CTsSender::GetDuration() const
 // 動画の再生位置(ミリ秒)を取得する
 int CTsSender::GetPosition() const
 {
-    return !m_pcrCount ? 0 : (m_pcr - m_initPcr) / PCR_PER_MSEC;
+    return !m_fEnPcr ? 0 : (m_pcr - m_initPcr) / PCR_PER_MSEC;
 }
 
 
@@ -564,47 +594,44 @@ int CTsSender::GetRate() const
         rate = fileSize < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
                static_cast<int>(fileSize * 1000 / m_duration);
     }
-    return rate < TS_SUPPOSED_RATE/128 ? TS_SUPPOSED_RATE/128 :
-           rate > TS_SUPPOSED_RATE*4 ? TS_SUPPOSED_RATE*4 : rate;
+    return min(max(rate, TS_SUPPOSED_RATE/128), TS_SUPPOSED_RATE*4);
 }
 
 
-// ファイル先頭の56bitハッシュ値を取得する
-long long CTsSender::GetFileHash() const
+// PCRが現れるまでTSパケットを処理する
+// limitに達するとm_fPcr==falseの状態でtrueを返す
+bool CTsSender::ReadToPcr(int limit, bool fSend)
 {
-    return m_hash;
+    do {
+        if (!ReadPacket(fSend)) return false;
+    } while (!m_fPcr && --limit > 0);
+
+    return true;
 }
 
 
-// TSパケットを1つ読む
-bool CTsSender::ReadPacket(int count)
+// TSパケットを1つ処理する
+bool CTsSender::ReadPacket(bool fSend)
 {
-    if (!m_hFile || !m_pBuf || count <= 0) return false;
+    ASSERT(m_pBuf);
+    m_fPcr = false;
 
-    if (m_curr + m_unitSize >= m_tail) {
-        int n = static_cast<int>(m_pBuf + m_unitSize * BUFFER_LEN - m_tail);
-        if (n > 0) {
-            DWORD readBytes;
-            if (!::ReadFile(m_hFile, m_tail, n, &readBytes, NULL)) return false;
-            m_tail += readBytes;
-        }
+    if (m_tail - m_curr <= m_unitSize) {
+        RotateBuffer(fSend);
+        if (m_tail - m_curr <= m_unitSize) return false;
     }
-
-    // バッファにTSパケットを読めるだけのデータがない
-    if (m_curr + m_unitSize >= m_tail) return false;
 
     if (m_curr[0] != 0x47 || m_curr[m_unitSize] != 0x47) {
-        BYTE *p = resync(m_curr, m_tail, m_unitSize);
-        if (!p) {
-            m_curr = m_tail = m_pBuf;
-            // 不正なパケットが続けばカウントは減っていく
-            return ReadPacket(count - 1);
+        // m_currをパケットヘッダと同期させる
+        int i = 0;
+        for (; i < RESYNC_FAILURE_LIMIT; ++i) {
+            if ((m_curr = resync(m_curr, m_tail, m_unitSize)) != NULL) break;
+            m_curr = m_tail; // 処理済にする
+            RotateBuffer(fSend);
         }
-        m_curr = p;
-        if (m_curr + m_unitSize > m_tail) return ReadPacket(count - 1);
+        if (i == RESYNC_FAILURE_LIMIT) return false;
+        ASSERT(m_tail - m_curr > m_unitSize);
     }
-
-    m_fPcr = false;
 
     TS_HEADER header;
     extract_ts_header(&header, m_curr);
@@ -642,18 +669,18 @@ bool CTsSender::ReadPacket(int count)
             if (header.pid == m_pcrPid) {
                 m_pcrPidsLen = 0;
                 m_pcr = (DWORD)adapt.pcr_45khz;
-
-                if (m_pcrCount++ == 0) {
+                if (!m_fEnPcr) {
                     // 基準PCRを設定(受信側のストアを増やすため少し引く)
                     m_baseTick = ::GetTickCount() - m_initStore;
                     m_basePcr = m_pcr;
+                    m_fEnPcr = true;
                 }
                 m_fPcr = true;
             }
         }
     }
 
-    if (header.pid == 0x14 && m_pcrCount &&
+    if (header.pid == 0x14 && m_fEnPcr &&
         !header.transport_scrambling_control &&
         !header.transport_error_indicator &&
         header.payload_unit_start_indicator &&
@@ -679,10 +706,10 @@ bool CTsSender::ReadPacket(int count)
 }
 
 
-// 読み込まれたTSパケットを転送・消費する
-void CTsSender::ConsumeBuffer(bool fSend)
+// 処理済みのTSパケットを転送し、ファイルから読み込む
+void CTsSender::RotateBuffer(bool fSend)
 {
-    if (!m_pBuf) return;
+    ASSERT(m_hFile && m_pBuf);
 
     if (fSend && m_curr > m_pBuf) {
         if (m_fTrimPacket) {
@@ -698,74 +725,63 @@ void CTsSender::ConsumeBuffer(bool fSend)
             m_curr -= p - q;
             m_tail -= p - q;
         }
+        SendData(m_pBuf, static_cast<int>(m_curr - m_pBuf));
+    }
 
-        if (m_udpAddr[0]) {
-            if (!m_sock) OpenSocket();
-            if (m_sock) {
-                // UDP転送
-                struct sockaddr_in addr;
-                addr.sin_family = AF_INET;
-                addr.sin_port = htons(m_udpPort);
-                addr.sin_addr.S_un.S_addr = inet_addr(m_udpAddr);
-                if (::sendto(m_sock, (const char*)m_pBuf, (int)(m_curr - m_pBuf),
-                             0, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
-                {
-                    CloseSocket();
-                }
-            }
-        }
-        if (m_pipeName[0]) {
-            if (!m_hPipe) OpenPipe();
-            if (m_hPipe) {
-                // パイプ転送
-                DWORD written;
-                if (!::WriteFile(m_hPipe, m_pBuf, (DWORD)(m_curr - m_pBuf), &written, NULL)) {
-                    ClosePipe();
-                }
-            }
+    // この繰越し処理によりバッファの先頭とパケットヘッダは同期する
+    int carrySize = static_cast<int>(m_tail - m_curr);
+    if (carrySize > 0) memmove(m_pBuf, m_curr, carrySize);
+    m_curr = m_pBuf;
+    m_tail = m_pBuf + carrySize;
+
+    int numToRead = static_cast<int>(m_pBuf + m_bufSize - m_tail);
+    if (numToRead > 0) {
+        DWORD readBytes;
+        if (::ReadFile(m_hFile, m_tail, numToRead, &readBytes, NULL)) {
+            m_tail += readBytes;
         }
     }
-    int n = static_cast<int>(m_tail - m_curr);
-    if (n > 0) memcpy(m_pBuf, m_curr, n);
+}
 
-    m_curr = m_pBuf;
-    m_tail = m_pBuf + n;
+
+bool CTsSender::SetPointer(long long distanceToMove, DWORD dwMoveMethod)
+{
+    LARGE_INTEGER liMove;
+    liMove.QuadPart = distanceToMove;
+    return m_hFile && ::SetFilePointerEx(m_hFile, liMove, NULL, dwMoveMethod) != FALSE;
 }
 
 
 // シークする
-// シーク後、可能ならば最初のPCRの位置まで読まれる
+// シーク後、最初のPCRの位置まで読むことができればtrueを返す
 bool CTsSender::Seek(long long distanceToMove, DWORD dwMoveMethod)
 {
-    if (!m_hFile) return false;
+    long long lastPos = GetFilePosition();
+    if (lastPos < 0) return false;
 
-    LARGE_INTEGER lDistanceToMove;
-    lDistanceToMove.QuadPart = distanceToMove;
-    if (!::SetFilePointerEx(m_hFile, lDistanceToMove, NULL, dwMoveMethod)) return false;
+    if (!SetPointer(distanceToMove, dwMoveMethod)) return false;
 
     // シーク後はバッファを空にする
     m_curr = m_tail = m_pBuf;
-    m_pcrCount = 0;
-    for (int i = 0; i < 20000 && !m_pcrCount; i++) {
-        if (!ReadPacket()) {
-            ConsumeBuffer(false);
-            if (!ReadPacket()) break;
+    m_fEnPcr = false;
+    if (!ReadToPcr(40000, false) || !m_fEnPcr) {
+        // なるべく呼び出し前の状態に回復させるが、完全とは限らない
+        if (SetPointer(lastPos, FILE_BEGIN)) {
+            m_curr = m_tail = m_pBuf;
+            m_fEnPcr = false;
+            ReadToPcr(40000, false);
         }
+        return false;
     }
-
     return true;
 }
 
 
 // ファイル中にTSデータが存在する境目までシークする
 // log2(ファイルサイズ/TS_SUPPOSED_RATE)回ぐらい再帰する
-bool CTsSender::SeekToBoundary(long long predicted, long long range, LPBYTE pWork, int workSize)
+bool CTsSender::SeekToBoundary(long long predicted, long long range, BYTE *pWork, int workSize)
 {
-    if (!m_hFile) return false;
-
-    LARGE_INTEGER lDistanceToMove;
-    lDistanceToMove.QuadPart = predicted;
-    if (!::SetFilePointerEx(m_hFile, lDistanceToMove, NULL, FILE_BEGIN)) return false;
+    if (!SetPointer(predicted, FILE_BEGIN)) return false;
 
     if (range < TS_SUPPOSED_RATE) return true;
 
@@ -792,7 +808,6 @@ void CTsSender::OpenSocket()
     }
 }
 
-
 void CTsSender::CloseSocket()
 {
     if (m_sock) {
@@ -801,7 +816,6 @@ void CTsSender::CloseSocket()
         ::WSACleanup();
     }
 }
-
 
 void CTsSender::OpenPipe()
 {
@@ -816,11 +830,52 @@ void CTsSender::OpenPipe()
     }
 }
 
-
 void CTsSender::ClosePipe()
 {
     if (m_hPipe) {
         ::CloseHandle(m_hPipe);
         m_hPipe = NULL;
     }
+}
+
+void CTsSender::SendData(BYTE *pData, int dataSize)
+{
+    ASSERT(m_hFile);
+
+    if (m_udpAddr[0]) {
+        if (!m_sock) OpenSocket();
+        if (m_sock) {
+            // UDP転送
+            sockaddr_in addr = {0};
+            addr.sin_family = AF_INET;
+            addr.sin_port = htons(m_udpPort);
+            addr.sin_addr.S_un.S_addr = inet_addr(m_udpAddr);
+            // 48128Byte(BonDriver_UDPのキューサイズ)以下に分割して送る
+            int sendUnit = (48128-1024) / m_unitSize * m_unitSize;
+            for (BYTE *p = pData; p < pData + dataSize; p += sendUnit) {
+                int sendSize = min(sendUnit, (int)(pData + dataSize - p));
+                if (::sendto(m_sock, (const char*)p, sendSize, 0,
+                             (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
+                {
+                    CloseSocket();
+                    break;
+                }
+            }
+        }
+    }
+    if (m_pipeName[0]) {
+        if (!m_hPipe) OpenPipe();
+        if (m_hPipe) {
+            // パイプ転送
+            DWORD written;
+            if (!::WriteFile(m_hPipe, pData, (DWORD)dataSize, &written, NULL)) {
+                ClosePipe();
+            }
+        }
+    }
+    /*static HANDLE hFile;
+    if (!hFile) hFile = CreateFile(TEXT("foo.ts"), GENERIC_WRITE, 0, NULL,
+                                   CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    DWORD written;
+    ::WriteFile(hFile, pData, (DWORD)dataSize, &written, NULL);*/
 }

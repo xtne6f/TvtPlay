@@ -71,7 +71,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     bool m_fFixed, m_fSpecialExt, m_fPaused;
     bool m_fHalt, m_fAllRepeat, m_fSingleRepeat;
     int m_waitOnStop;
-    bool m_fResetAllOnSeek;
+    int m_resetMode;
     int m_stretchMode, m_noMuteMax, m_noMuteMin;
     bool m_fConvTo188;
     bool m_fModTimestamp;

@@ -31,6 +31,12 @@ BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
 }
 #endif
 
+#ifdef _DEBUG
+#define DEBUG_OUT(x) ::OutputDebugString(x)
+#else
+#define DEBUG_OUT(x)
+#endif
+
 // {F8BE8BA2-0B9E-4F1F-9DB8-E603BD3EF711}
 static const GUID CLSID_TvtAudioStretchFilter = 
 { 0xf8be8ba2, 0xb9e, 0x4f1f, { 0x9d, 0xb8, 0xe6, 0x3, 0xbd, 0x3e, 0xf7, 0x11 } };
@@ -45,6 +51,89 @@ static HINSTANCE g_hinstDLL;
 #define RATE_MIN 0.24f
 #define RATE_MAX 8.01f
 
+// ptrBegin()を公開するため
+class CSoundTouch : public soundtouch::SoundTouch
+{
+public:
+    soundtouch::SAMPLETYPE *ptrBegin() { return soundtouch::SoundTouch::ptrBegin(); }
+};
+
+// 簡易6ch対応SoundTouch
+// 2ch以下のパフォーマンスはオリジナルと同等
+class CSoundTouchEx
+{
+    static const int MAX_OBJ = 3;
+public:
+    CSoundTouchEx() : m_numChannels(2) { for (int i=0; i<MAX_OBJ; ++i) m_stouch[i].setChannels(2); }
+    void setRate(float newRate) { for (int i=0; i<MAX_OBJ; ++i) m_stouch[i].setRate(newRate); }
+    void setTempo(float newTempo) { for (int i=0; i<MAX_OBJ; ++i) m_stouch[i].setTempo(newTempo); }
+    void setPitch(float newPitch) { for (int i=0; i<MAX_OBJ; ++i) m_stouch[i].setPitch(newPitch); }
+    void setSampleRate(uint srate) { for (int i=0; i<MAX_OBJ; ++i) m_stouch[i].setSampleRate(srate); }
+    void clear() { for (int i=0; i<MAX_OBJ; ++i) m_stouch[i].clear(); }
+    uint getChannels() { return m_numChannels; }
+    void setChannels(uint numChannels);
+    void putSamples(const soundtouch::SAMPLETYPE *samples, uint numSamples);
+    uint receiveSamples(soundtouch::SAMPLETYPE *output, uint maxSamples);
+private:
+    CSoundTouch m_stouch[MAX_OBJ];
+    uint m_numChannels;
+};
+
+void CSoundTouchEx::setChannels(uint numChannels)
+{
+    ASSERT(numChannels <= MAX_OBJ * 2);
+    m_stouch[0].setChannels(min(numChannels, 2));
+    m_numChannels = numChannels;
+}
+
+void CSoundTouchEx::putSamples(const soundtouch::SAMPLETYPE *samples, uint numSamples)
+{
+    int ch = m_numChannels;
+    if (ch <= 2) {
+        m_stouch[0].putSamples(samples, numSamples);
+    }
+    else {
+        // 3ch以上は2chごとに分離して入力
+        soundtouch::SAMPLETYPE buf[4096];
+        for (int rest = numSamples; rest > 0; rest -= _countof(buf)/2) {
+            const soundtouch::SAMPLETYPE *in = samples + (numSamples - rest) * ch;
+            int num = min(rest, _countof(buf)/2);
+            for (int i=0; i < (ch + 1) / 2; ++i) {
+                for (int j=0; j < (i*2+1<ch ? 2 : 1); ++j) {
+                    for (int k=0; k < num; ++k) buf[j+k*2] = in[i*2+j+k*ch];
+                }
+                m_stouch[i].putSamples(buf, num);
+            }
+        }
+    }
+}
+
+uint CSoundTouchEx::receiveSamples(soundtouch::SAMPLETYPE *output, uint maxSamples)
+{
+    int ch = m_numChannels;
+    if (ch <= 2) {
+        return m_stouch[0].receiveSamples(output, maxSamples);
+    }
+    else {
+        // maxSamplesの範囲内で現在取得可能なサンプル数を算出
+        int reqSamples = m_stouch[0].numSamples();
+        for (int i=1; i < (ch + 1) / 2; ++i) {
+            reqSamples = min(reqSamples, (int)m_stouch[i].numSamples());
+        }
+        reqSamples = min(reqSamples, (int)maxSamples);
+
+        // 内部バッファから直接出力
+        for (int i=0; i < (ch + 1) / 2; ++i) {
+            const soundtouch::SAMPLETYPE *in = m_stouch[i].ptrBegin();
+            for (int j=0; j < (i*2+1<ch ? 2 : 1); ++j) {
+                 for (int k=0; k < reqSamples; ++k) output[i*2+j+k*ch] = in[j+k*2];
+            }
+            m_stouch[i].receiveSamples(reqSamples);
+        }
+        return reqSamples;
+    }
+}
+
 class CTvtAudioStretchFilter : public CTransformFilter
 {
 public:
@@ -57,42 +146,42 @@ public:
     HRESULT GetMediaType(int iPosition, CMediaType *pMediaType);
     HRESULT CompleteConnect(PIN_DIRECTION dir, IPin *pReceivePin);
     HRESULT BreakConnect(PIN_DIRECTION dir);
+    HRESULT SetMediaType(PIN_DIRECTION dir, const CMediaType *pmt);
+    HRESULT EndFlush(void);
+    HRESULT Receive(IMediaSample *pSample);
     HRESULT Transform(IMediaSample *pIn, IMediaSample *pOut);
-    HRESULT StartStreaming();
-    HRESULT StopStreaming();
 private:
     static IPin* GetFilterPin(IBaseFilter *pFilter, PIN_DIRECTION dir);
-    void OnStreamChanged(const WAVEFORMATEX *pwfx);
+    void AddExtraFilter(IPin *pReceivePin);
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
     ATOM m_atom;
     HWND m_hwnd;
-    bool m_fRate, m_fPitch, m_fTempo, m_fMute, m_fChanged;
     float m_rate;
-    bool m_fAcceptConv, m_fStereo;
-    soundtouch::SoundTouch m_stouch;
+    bool m_fMute;
+    bool m_fAcceptConv;
+    bool m_fOutputFormatChanged;
     bool m_fFilterAdded;
-    //DWORD m_dwTick;
+    CSoundTouchEx m_stouch;
 };
+
 
 CTvtAudioStretchFilter::CTvtAudioStretchFilter(LPUNKNOWN punk, HRESULT *phr)
     : CTransformFilter(NAME(FILTER_NAME), punk, CLSID_TvtAudioStretchFilter)
     , m_atom(0)
     , m_hwnd(NULL)
-    , m_fRate(false)
-    , m_fPitch(false)
-    , m_fTempo(false)
-    , m_fMute(false)
-    , m_fChanged(false)
     , m_rate(1.0f)
+    , m_fMute(false)
     , m_fAcceptConv(false)
-    , m_fStereo(false)
+    , m_fOutputFormatChanged(false)
     , m_fFilterAdded(false)
 {
+    DEBUG_OUT(TEXT("CTvtAudioStretchFilter::CTvtAudioStretchFilter()\n"));
 }
 
 
 CTvtAudioStretchFilter::~CTvtAudioStretchFilter()
 {
+    DEBUG_OUT(TEXT("CTvtAudioStretchFilter::~CTvtAudioStretchFilter()\n"));
     ASSERT(!m_hwnd);
     if (m_atom) ::UnregisterClass(MAKEINTATOM(m_atom), ::GetModuleHandle(NULL));
 }
@@ -108,12 +197,17 @@ CUnknown* WINAPI CTvtAudioStretchFilter::CreateInstance(LPUNKNOWN punk, HRESULT 
 
 HRESULT CTvtAudioStretchFilter::CheckInputType(const CMediaType *mtIn)
 {
-    // 入力形式はPCMのみであること
-    if (IsEqualGUID(*mtIn->Type(), MEDIATYPE_Audio) &&
-        IsEqualGUID(*mtIn->Subtype(), MEDIASUBTYPE_PCM) &&
-        IsEqualGUID(*mtIn->FormatType(), FORMAT_WaveFormatEx))
+    // 入力はWave(PCM)形式であること
+    if (mtIn->majortype == MEDIATYPE_Audio &&
+        mtIn->subtype == MEDIASUBTYPE_PCM &&
+        mtIn->formattype == FORMAT_WaveFormatEx &&
+        mtIn->cbFormat >= sizeof(WAVEFORMATEX) &&
+        mtIn->pbFormat)
     {
-        return S_OK;
+        WAVEFORMATEX &wfx = *reinterpret_cast<WAVEFORMATEX*>(mtIn->Format());
+        if (wfx.wFormatTag == WAVE_FORMAT_PCM || wfx.wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+            return S_OK;
+        }
     }
     return VFW_E_TYPE_NOT_ACCEPTED;
 }
@@ -121,9 +215,26 @@ HRESULT CTvtAudioStretchFilter::CheckInputType(const CMediaType *mtIn)
 
 HRESULT CTvtAudioStretchFilter::CheckTransform(const CMediaType *mtIn, const CMediaType *mtOut)
 {
-    // 出力形式は入力形式と同じであること
-    if (SUCCEEDED(CheckInputType(mtIn)) && *mtIn == *mtOut) {
-        return S_OK;
+    DEBUG_OUT(TEXT("CTvtAudioStretchFilter::CheckTransform()\n"));
+    if (SUCCEEDED(CheckInputType(mtIn)) && SUCCEEDED(CheckInputType(mtOut))) {
+        if (m_pInput && m_pOutput && m_pInput->IsConnected() && m_pOutput->IsConnected()) {
+            // フォーマット変更時に入出力形式が異なる場合もある
+            return S_OK;
+        }
+        else {
+            // 接続時は入出力形式が一致すること
+            WAVEFORMATEX &wfxIn = *reinterpret_cast<WAVEFORMATEX*>(mtIn->Format());
+            WAVEFORMATEX &wfxOut = *reinterpret_cast<WAVEFORMATEX*>(mtOut->Format());
+            if (wfxIn.wFormatTag      == wfxOut.wFormatTag &&
+                wfxIn.nChannels       == wfxOut.nChannels &&
+                wfxIn.nSamplesPerSec  == wfxOut.nSamplesPerSec &&
+                wfxIn.nAvgBytesPerSec == wfxOut.nAvgBytesPerSec &&
+                wfxIn.nBlockAlign     == wfxOut.nBlockAlign &&
+                wfxIn.wBitsPerSample  == wfxOut.wBitsPerSample)
+            {
+                return S_OK;
+            }
+        }
     }
     return VFW_E_TYPE_NOT_ACCEPTED;
 }
@@ -131,31 +242,34 @@ HRESULT CTvtAudioStretchFilter::CheckTransform(const CMediaType *mtIn, const CMe
 
 HRESULT CTvtAudioStretchFilter::DecideBufferSize(IMemAllocator *pAlloc, ALLOCATOR_PROPERTIES *pProp)
 {
+    DEBUG_OUT(TEXT("CTvtAudioStretchFilter::DecideBufferSize()\n"));
     if (!m_pInput->IsConnected()) return E_UNEXPECTED;
+    CheckPointer(pAlloc, E_POINTER);
+    CheckPointer(pProp, E_POINTER);
 
-    IMemAllocator *pInAlloc = NULL;
+    IMemAllocator *pInAlloc;
     HRESULT hr = m_pInput->GetAllocator(&pInAlloc);
     if (SUCCEEDED(hr)) {
-        ALLOCATOR_PROPERTIES InProps;
-        hr = pInAlloc->GetProperties(&InProps);
+        ALLOCATOR_PROPERTIES inProp;
+        hr = pInAlloc->GetProperties(&inProp);
         if (SUCCEEDED(hr)) {
             // スロー再生のために入力ピンよりも大きなバッファを出力ピンに確保
-            pProp->cbBuffer = (int)(InProps.cbBuffer / RATE_MIN) / 4 * 4 + 256;
-            pProp->cBuffers = 1;
-            pProp->cbAlign  = 4;
+            pProp->cbBuffer = (int)(inProp.cbBuffer / RATE_MIN) / 4 * 4 + 256;
+            pProp->cBuffers = 2;
+            pProp->cbAlign = 1;
         }
         pInAlloc->Release();
     }
     if (FAILED(hr)) return hr;
 
     // 実際にバッファを確保する
-    ALLOCATOR_PROPERTIES Actual;
-    hr = pAlloc->SetProperties(pProp, &Actual);
+    ALLOCATOR_PROPERTIES actual;
+    hr = pAlloc->SetProperties(pProp, &actual);
     if (FAILED(hr)) return hr;
 
     // 確保されたバッファが要求よりも少ないことがある
-    if (pProp->cBuffers > Actual.cBuffers ||
-        pProp->cbBuffer > Actual.cbBuffer) return E_FAIL;
+    if (pProp->cBuffers > actual.cBuffers ||
+        pProp->cbBuffer > actual.cbBuffer) return E_FAIL;
 
     return S_OK;
 }
@@ -173,18 +287,12 @@ HRESULT CTvtAudioStretchFilter::GetMediaType(int iPosition, CMediaType *pMediaTy
 }
 
 
-#if 0
-// 参照カウントを表示する
-static void ShowRefCount(IUnknown *pUnk, LPCTSTR pszFormat = NULL)
+#ifdef _DEBUG
+static int GetRefCount(IUnknown *pUnk)
 {
-    int ref = 0;
-    if (pUnk) {
-        pUnk->AddRef();
-        ref = (int)pUnk->Release();
-    }
-    TCHAR szStr[256];
-    ::wsprintf(szStr, pszFormat?pszFormat:TEXT("ref:%d"), ref);
-    ::MessageBox(NULL, szStr, NULL, MB_OK);
+    if (!pUnk) return 0;
+    pUnk->AddRef();
+    return pUnk->Release();
 }
 #endif
 
@@ -194,8 +302,7 @@ static void ShowRefCount(IUnknown *pUnk, LPCTSTR pszFormat = NULL)
 IPin* CTvtAudioStretchFilter::GetFilterPin(IBaseFilter *pFilter, PIN_DIRECTION dir)
 {
     IEnumPins *pEnumPins = NULL;
-    IPin *pPin;
-    IPin *pRetPin = NULL;
+    IPin *pPin, *pRetPin = NULL;
 
     if (pFilter->EnumPins(&pEnumPins) == S_OK) {
         ULONG cFetched;
@@ -216,77 +323,97 @@ IPin* CTvtAudioStretchFilter::GetFilterPin(IBaseFilter *pFilter, PIN_DIRECTION d
 }
 
 
-HRESULT CTvtAudioStretchFilter::CompleteConnect(PIN_DIRECTION dir, IPin *pReceivePin)
+void CTvtAudioStretchFilter::AddExtraFilter(IPin *pReceivePin)
 {
-    if (dir == PINDIR_OUTPUT && !m_fFilterAdded) {
-        IFilterGraph *pGraph = GetFilterGraph();
-        IBaseFilter *pFilter = NULL;
-        HRESULT hr;
+    IFilterGraph *pGraph = GetFilterGraph();
+    IBaseFilter *pFilter = NULL;
+    IPin *pInput = NULL;
+    CMediaType mt;
 
-        // 設定ファイルに指定されていれば、追加のフィルタを生成する
-        WCHAR szIniPath[MAX_PATH + 4];
-        if (::GetModuleFileName(g_hinstDLL, szIniPath, MAX_PATH)) {
-            // 拡張子リネーム
-            WCHAR *p = szIniPath + ::lstrlenW(szIniPath) - 1;
-            while (p >= szIniPath && *p != L'\\' && *p != L'.') --p;
-            if (p >= szIniPath && *p == L'.') ::lstrcpyW(p, L".ini");
-            else ::lstrcatW(szIniPath, L".ini");
+    ASSERT(m_pOutput && pReceivePin);
+    if (m_fFilterAdded || !pGraph) return;
 
-            WCHAR szFilterID[64];
-            ::GetPrivateProfileStringW(L_FILTER_NAME, L"AddFilter", L"",
-                                       szFilterID, _countof(szFilterID), szIniPath);
-            if (szFilterID[0]) {
-                CLSID clsid;
-                if (SUCCEEDED(::CLSIDFromString(szFilterID, &clsid))) {
-                    hr = ::CoCreateInstance(clsid, NULL, CLSCTX_INPROC, IID_IBaseFilter,
-                                            reinterpret_cast<LPVOID*>(&pFilter));
-                    if (FAILED(hr)) pFilter = NULL;
-                }
-                if (!pFilter) {
-                    ::MessageBox(NULL, TEXT("追加のフィルタを生成できません。"),
-                                 TEXT(FILTER_NAME), MB_ICONWARNING);
-                }
+    // 設定ファイルに指定されていれば、追加のフィルタを生成する
+    WCHAR szIniPath[MAX_PATH + 4];
+    if (::GetModuleFileNameW(g_hinstDLL, szIniPath, MAX_PATH)) {
+        // 拡張子リネーム
+        WCHAR *p = szIniPath + ::lstrlenW(szIniPath) - 1;
+        while (p >= szIniPath && *p != L'\\' && *p != L'.') --p;
+        if (p >= szIniPath && *p == L'.') ::lstrcpyW(p, L".ini");
+        else ::lstrcatW(szIniPath, L".ini");
+
+        WCHAR szFilterID[64];
+        ::GetPrivateProfileStringW(L_FILTER_NAME, L"AddFilter", L"",
+                                   szFilterID, _countof(szFilterID), szIniPath);
+        if (szFilterID[0]) {
+            CLSID clsid;
+            if (FAILED(::CLSIDFromString(szFilterID, &clsid)) ||
+                FAILED(::CoCreateInstance(clsid, NULL, CLSCTX_INPROC, IID_IBaseFilter,
+                                          reinterpret_cast<LPVOID*>(&pFilter))))
+            {
+                ::MessageBox(NULL, TEXT("追加のフィルタを生成できません。"),
+                             TEXT(FILTER_NAME), MB_ICONWARNING);
+                pFilter = NULL;
             }
-        }
-
-        // 追加のフィルタをこのフィルタの出力端に挿入する
-        bool fSucceeded = false;
-        if (pGraph && pFilter &&
-            SUCCEEDED(pGraph->AddFilter(pFilter, NULL)) &&
-            SUCCEEDED(pGraph->Disconnect(pReceivePin)) &&
-            SUCCEEDED(pGraph->Disconnect(m_pOutput)))
-        {
-            m_fFilterAdded = true;
-            IPin *pInput = GetFilterPin(pFilter, PINDIR_INPUT);
-            if (pInput) {
-                hr = pGraph->ConnectDirect(m_pOutput, pInput, NULL);
-                if (SUCCEEDED(hr)) {
-                    IPin *pOutput = GetFilterPin(pFilter, PINDIR_OUTPUT);
-                    if (pOutput) {
-                        hr = pGraph->ConnectDirect(pOutput, pReceivePin, NULL);
-                        if (SUCCEEDED(hr)) fSucceeded = true;
-                        pOutput->Release();
-                    }
-                }
-                pInput->Release();
-            }
-            if (!fSucceeded) {
-                pGraph->RemoveFilter(pFilter);
-                // つなぎ直す
-                hr = pGraph->ConnectDirect(m_pOutput, pReceivePin, NULL);
-                ASSERT(SUCCEEDED(hr));
-            }
-        }
-
-        if (pFilter) pFilter->Release();
-        if (pFilter && !fSucceeded) {
-            ::MessageBox(NULL, TEXT("追加のフィルタを接続できません。"),
-                         TEXT(FILTER_NAME), MB_ICONWARNING);
         }
     }
+    if (!pFilter) goto EXIT;
 
-    if (dir != PINDIR_INPUT) return S_OK;
-    ASSERT(!m_hwnd);
+    // メディアタイプが受け入れられるか調べる(確実ではない)
+    pInput = GetFilterPin(pFilter, PINDIR_INPUT);
+    if (m_pOutput->GetMediaType(0, &mt) != S_OK ||
+        !pInput || pInput->QueryAccept(&mt) != S_OK)
+    {
+        ::OutputDebugString(TEXT("CTvtAudioStretchFilter::AddExtraFilter(): Denied!\n"));
+        goto EXIT;
+    }
+
+    // 追加のフィルタをこのフィルタの出力端に挿入する
+    bool fSucceeded = false;
+    if (SUCCEEDED(pGraph->AddFilter(pFilter, NULL))) {
+        // ConnectDirect()により再帰するため
+        m_fFilterAdded = true;
+        if (SUCCEEDED(pGraph->Disconnect(pReceivePin)) &&
+            SUCCEEDED(pGraph->Disconnect(m_pOutput)))
+        {
+            HRESULT hr = pGraph->ConnectDirect(m_pOutput, pInput, NULL);
+            if (SUCCEEDED(hr)) {
+                IPin *pOutput = GetFilterPin(pFilter, PINDIR_OUTPUT);
+                if (pOutput) {
+                    hr = pGraph->ConnectDirect(pOutput, pReceivePin, NULL);
+                    if (SUCCEEDED(hr)) fSucceeded = true;
+                    pOutput->Release();
+                }
+            }
+        }
+        if (!fSucceeded) {
+            HRESULT hr = pGraph->RemoveFilter(pFilter);
+            ASSERT(SUCCEEDED(hr));
+            // つなぎ直す
+            hr = pGraph->ConnectDirect(m_pOutput, pReceivePin, NULL);
+            ASSERT(SUCCEEDED(hr));
+        }
+    }
+    if (!fSucceeded) {
+        ::OutputDebugString(TEXT("CTvtAudioStretchFilter::AddExtraFilter(): Denied and Reconnected!\n"));
+    }
+
+EXIT:
+    if (pInput) pInput->Release();
+    ASSERT(fSucceeded || GetRefCount(pFilter) <= 1);
+    if (pFilter) pFilter->Release();
+}
+
+
+HRESULT CTvtAudioStretchFilter::CompleteConnect(PIN_DIRECTION dir, IPin *pReceivePin)
+{
+    DEBUG_OUT(TEXT("CTvtAudioStretchFilter::CompleteConnect(): "));
+    DEBUG_OUT(dir == PINDIR_OUTPUT ? TEXT("Out\n") : TEXT("In\n"));
+
+    if (dir == PINDIR_OUTPUT) {
+        AddExtraFilter(pReceivePin);
+        return S_OK;
+    }
 
     if (!m_atom) {
         // ウィンドウクラスを登録
@@ -303,13 +430,10 @@ HRESULT CTvtAudioStretchFilter::CompleteConnect(PIN_DIRECTION dir, IPin *pReceiv
         wc.lpszMenuName  = NULL;
         wc.lpszClassName = TEXT(FILTER_NAME);
         m_atom = ::RegisterClass(&wc);
-        if (!m_atom) return S_FALSE;
+        if (!m_atom) return E_FAIL;
     }
 
-    m_fRate = m_fPitch = m_fTempo = m_fMute = false;
-    m_rate = 1.0f;
-    m_fChanged = true;
-
+    ASSERT(!m_hwnd);
     if (!m_hwnd) {
         // ウインドウ名をシステム全体で一意にする
         TCHAR szName[128];
@@ -318,19 +442,18 @@ HRESULT CTvtAudioStretchFilter::CompleteConnect(PIN_DIRECTION dir, IPin *pReceiv
         m_hwnd = ::CreateWindow(MAKEINTATOM(m_atom), szName, WS_OVERLAPPEDWINDOW,
                                 CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
                                 HWND_MESSAGE, NULL, ::GetModuleHandle(NULL), this);
-        if (!m_hwnd) return S_FALSE;
+        if (!m_hwnd) return E_FAIL;
     }
-
     return S_OK;
 }
 
 
 HRESULT CTvtAudioStretchFilter::BreakConnect(PIN_DIRECTION dir)
 {
-    if (dir != PINDIR_INPUT) return S_OK;
-    ASSERT(m_hwnd);
+    DEBUG_OUT(TEXT("CTvtAudioStretchFilter::BreakConnect() "));
+    DEBUG_OUT(dir == PINDIR_OUTPUT ? TEXT("Out\n") : TEXT("In\n"));
 
-    if (m_hwnd) {
+    if (dir == PINDIR_INPUT && m_hwnd) {
         ::DestroyWindow(m_hwnd);
         m_hwnd = NULL;
     }
@@ -338,101 +461,109 @@ HRESULT CTvtAudioStretchFilter::BreakConnect(PIN_DIRECTION dir)
 }
 
 
-void CTvtAudioStretchFilter::OnStreamChanged(const WAVEFORMATEX *pwfx)
+HRESULT CTvtAudioStretchFilter::SetMediaType(PIN_DIRECTION dir, const CMediaType *pmt)
 {
-    // 16bitPCM以外は変換しない
-    m_fAcceptConv = pwfx->wFormatTag == WAVE_FORMAT_PCM &&
-                    pwfx->wBitsPerSample == 16 &&
-                    (pwfx->nChannels == 1 || pwfx->nChannels == 2);
+    DEBUG_OUT(TEXT("CTvtAudioStretchFilter::SetMediaType() "));
+    DEBUG_OUT(dir == PINDIR_OUTPUT ? TEXT("Out\n") : TEXT("In\n"));
 
-    if (m_fAcceptConv) {
-        m_stouch.setChannels(pwfx->nChannels);
-        m_stouch.setSampleRate(pwfx->nSamplesPerSec);
-        m_stouch.clear();
-        m_fStereo = pwfx->nChannels == 2;
+    if (dir == PINDIR_INPUT && SUCCEEDED(CheckInputType(pmt))) {
+        CAutoLock lock(&m_csReceive);
+        WAVEFORMATEX &wfx = *reinterpret_cast<WAVEFORMATEX*>(pmt->Format());
+        // 伸縮可能な形式は16bit,6ch以下
+        m_fAcceptConv = wfx.wBitsPerSample == 16 && 1 <= wfx.nChannels && wfx.nChannels <= 6;
+        if (m_fAcceptConv) {
+            m_stouch.setChannels(wfx.nChannels);
+            m_stouch.setSampleRate(wfx.nSamplesPerSec);
+            m_stouch.clear();
+        }
     }
+    return S_OK;
+}
+
+
+HRESULT CTvtAudioStretchFilter::EndFlush(void)
+{
+    DEBUG_OUT(TEXT("CTvtAudioStretchFilter::EndFlush()\n"));
+    CAutoLock lock(&m_csReceive);
+    if (m_fAcceptConv) m_stouch.clear();
+    return CTransformFilter::EndFlush();
+}
+
+
+HRESULT CTvtAudioStretchFilter::Receive(IMediaSample *pSample)
+{
+    // m_csReceiveでロックされている
+    // メディアタイプの変更を監視
+    AM_MEDIA_TYPE *pMtIn;
+    if (pSample->GetMediaType(&pMtIn) == S_OK) {
+        CMediaType mtIn = *pMtIn;
+        ::DeleteMediaType(pMtIn);
+        HRESULT hr = CheckInputType(&mtIn);
+        if (FAILED(hr)) return hr;
+
+        // 出力側のバッファを再設定
+        hr = E_POINTER;
+        IPin *pPin = m_pOutput->GetConnected();
+        if (pPin) {
+            IMemInputPin *pMemInputPin;
+            hr = pPin->QueryInterface(IID_IMemInputPin, reinterpret_cast<void**>(&pMemInputPin));
+            if (SUCCEEDED(hr)) {
+                IMemAllocator *pAlloc;
+                hr = pMemInputPin->GetAllocator(&pAlloc);
+                if (SUCCEEDED(hr)) {
+                    hr = E_FAIL;
+                    ALLOCATOR_PROPERTIES prop = {0};
+                    if (pAlloc->Decommit() == S_OK &&
+                        DecideBufferSize(pAlloc, &prop) == S_OK &&
+                        pAlloc->Commit() == S_OK)
+                    {
+                        hr = S_OK;
+                    }
+                    pAlloc->Release();
+                }
+                pMemInputPin->Release();
+            }
+        }
+        if (FAILED(hr)) return hr;
+
+        // ピンのメディアタイプを変更(SetMediaType()が呼ばれる)
+        m_pInput->SetMediaType(&mtIn);
+        m_pOutput->SetMediaType(&mtIn);
+        m_fOutputFormatChanged = true;
+    }
+    // Transform()が呼ばれる
+    return CTransformFilter::Receive(pSample);
 }
 
 
 HRESULT CTvtAudioStretchFilter::Transform(IMediaSample *pIn, IMediaSample *pOut)
 {
-    // メディアタイプの変更を監視
-    AM_MEDIA_TYPE *pMediaType = NULL;
-    if (pIn->GetMediaType(&pMediaType) == S_OK) {
-        if (IsEqualGUID(pMediaType->majortype, MEDIATYPE_Audio) &&
-            IsEqualGUID(pMediaType->subtype, MEDIASUBTYPE_PCM) &&
-            IsEqualGUID(pMediaType->formattype, FORMAT_WaveFormatEx) &&
-            pMediaType->cbFormat >= sizeof(WAVEFORMATEX))
-        {
-            OnStreamChanged(reinterpret_cast<WAVEFORMATEX*>(pMediaType->pbFormat));
-            ::DeleteMediaType(pMediaType);
-        }
-        else {
-            ::DeleteMediaType(pMediaType);
-            return VFW_E_INVALIDMEDIATYPE;
-        }
-    }
-
-    // 本当は排他制御すべき
-    bool fChanged = m_fChanged, fMute = m_fMute;
-    float rate = m_rate;
-    rate = min(max(rate, RATE_MIN), RATE_MAX);
-    if (fChanged) {
-        bool fRate = m_fRate, fPitch = m_fPitch, fTempo = m_fTempo;
-        m_fChanged = false;
-        m_stouch.setRate(fRate ? rate : 1.0f);
-        m_stouch.setPitch(fPitch ? rate : 1.0f);
-        m_stouch.setTempo(fTempo ? rate : 1.0f);
+    if (m_fOutputFormatChanged) {
+        // メディアタイプの変更を下流に伝える
+        pOut->SetMediaType(&m_pOutput->CurrentMediaType());
+        m_fOutputFormatChanged = false;
     }
 
     BYTE *pbSrc, *pbDest;
     pIn->GetPointer(&pbSrc);
     pOut->GetPointer(&pbDest);
     int srcLen = pIn->GetActualDataLength();
-    int destLen;
+    int destLen = pOut->GetSize();
+    ASSERT(srcLen <= destLen);
 
-    if (!m_fAcceptConv || rate == 1.0f) {
-        ::CopyMemory(pbDest, pbSrc, srcLen);
-        destLen = srcLen;
+    if (!m_fAcceptConv || m_rate == 1.0f) {
+        destLen = min(srcLen, destLen);
+        ::CopyMemory(pbDest, pbSrc, destLen);
     }
     else {
-        // この場合は16bitPCMであると確信してよい
-        int bps = m_fStereo ? 4 : 2;
+        int bps = m_stouch.getChannels() * 2;
         m_stouch.putSamples((soundtouch::SAMPLETYPE*)pbSrc, srcLen / bps);
-        destLen = m_stouch.receiveSamples((soundtouch::SAMPLETYPE*)pbDest, pOut->GetSize() / bps) * bps;
-        if (fMute) ::ZeroMemory(pbDest, destLen);
+        destLen = m_stouch.receiveSamples((soundtouch::SAMPLETYPE*)pbDest, destLen / bps) * bps;
     }
+    if (m_fMute) ::ZeroMemory(pbDest, destLen);
 
-    // ストリームタイムはそのまま
-    REFERENCE_TIME TimeStart, TimeEnd;
-    if (pIn->GetTime(&TimeStart, &TimeEnd) == NOERROR) {
-        pOut->SetTime(&TimeStart, &TimeEnd);
-    }
-    LONGLONG MediaStart, MediaEnd;
-    if(pIn->GetMediaTime(&MediaStart, &MediaEnd) == NOERROR) {
-        pOut->SetMediaTime(&MediaStart, &MediaEnd);
-    }
-    // データサイズは伸縮する
-    ASSERT(destLen <= pOut->GetSize());
+    // データサイズを伸縮させる
     pOut->SetActualDataLength(destLen);
-
-    return S_OK;
-}
-
-
-HRESULT CTvtAudioStretchFilter::StartStreaming()
-{
-    OnStreamChanged(reinterpret_cast<WAVEFORMATEX*>(m_pInput->CurrentMediaType().Format()));
-    //m_dwTick = ::GetTickCount();
-    return S_OK;
-}
-
-
-HRESULT CTvtAudioStretchFilter::StopStreaming()
-{
-    //TCHAR str[128];
-    //::wsprintf(str, TEXT("Time: %lu msec."), ::GetTickCount() - m_dwTick);
-    //::MessageBox(NULL, str, NULL, MB_OK);
     return S_OK;
 }
 
@@ -447,24 +578,36 @@ LRESULT CALLBACK CTvtAudioStretchFilter::WndProc(HWND hwnd, UINT uMsg, WPARAM wP
             LPCREATESTRUCT pcs = reinterpret_cast<LPCREATESTRUCT>(lParam);
             pThis = reinterpret_cast<CTvtAudioStretchFilter*>(pcs->lpCreateParams);
             ::SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pThis));
+
+            CAutoLock lock(&pThis->m_csReceive);
+            pThis->m_stouch.setRate(1.0f);
+            pThis->m_stouch.setPitch(1.0f);
+            pThis->m_stouch.setTempo(1.0f);
+            pThis->m_rate = 1.0f;
+            pThis->m_fMute = false;
         }
         break;
     case WM_ASFLT_STRETCH:
         {
-            // 常速に対する比率をlParamで受け取る
+            CAutoLock lock(&pThis->m_csReceive);
+            if (!pThis->m_fAcceptConv) return FALSE;
+
+            // 常速に対する比率をlParamで受ける
             int num = LOWORD(lParam);
             int den = HIWORD(lParam);
             if (den == 0) return FALSE;
             float rate = num==den ? 1.0f : (float)((double)num / den);
             if (rate < RATE_MIN || RATE_MAX < rate) return FALSE;
-            pThis->m_rate = rate;
 
             // 変換の種類をwParamで受ける
-            pThis->m_fRate = (wParam&0x3) == 1;
-            pThis->m_fPitch = (wParam&0x3) == 2;
-            pThis->m_fTempo = (wParam&0x3) == 3;
+            pThis->m_stouch.setRate((wParam&0x3) == 1 ? rate : 1.0f);
+            pThis->m_stouch.setPitch((wParam&0x3) == 2 ? rate : 1.0f);
+            pThis->m_stouch.setTempo((wParam&0x3) == 3 ? rate : 1.0f);
             pThis->m_fMute = (wParam&0x4) != 0;
-            pThis->m_fChanged = true;
+
+            // ノイズ防止
+            if (pThis->m_rate != 1.0f && rate == 1.0f) pThis->m_stouch.clear();
+            pThis->m_rate = rate;
         }
         return TRUE;
     }

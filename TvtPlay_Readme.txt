@@ -1,5 +1,5 @@
-﻿TVTest TvtPlay Plugin ver.1.2r2(人柱版) + BonDriver_Pipe.dll
-                                        + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.1.3(人柱版) + BonDriver_Pipe.dll
+                                      + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -22,9 +22,9 @@ ver.1.xは人柱版です。今後の大幅な機能追加や機能削除、大�
 削除してみてください。
 設定キーToBottomは廃止されました(詳細は「更新履歴」参照)。ToBottomを[=0]で使用し
 ていた方は[=1]の動作にもどるので、新しい設定キーRowPosFullで調整してください。
-(ver.0.9r3～ver.1.2からの移行)
-  TvtPlay.tvtpとBonDriver_Pipe.dllとを置きかえてください。
-(～ver.0.9r2からの移行)
+(ver.1.2r2からの移行)
+  TvtPlay.tvtpとTvtAudioStretchFilter.axとを置きかえてください。
+(ver.1.2以前からの移行)
   TvtPlay.tvtpとBonDriver_Pipe.dllとTvtAudioStretchFilter.axとを置きかえてくださ
   い。
 
@@ -104,8 +104,10 @@ Order Mark)の無いものはUTF-8と判断します。
 TVTestの音声フィルタを一つしか指定できないことへの対策として、ver.0.9r3以降に添
 付のTvtAudioStretchFilterでは、接続するDirectShowフィルタを1つだけ指定できるよう
 になりました。たとえば、フィルタを置いたフォルダに"TvtAudioStretchFilter.ini"を
-次のような内容で作成すると、(ffdshowがインストールされていれば)このフィルタの後
-続にffdshow Audio Decoderが接続されます。
+次のような内容で作成すると、ffdshowがインストールされていて、"Uncompressed"形式
+が有効に設定されていれば、フィルタの後続にffdshow Audio Decoderが接続されます。
+ver.1.3以降に添付のフィルタは5.1ch音声に対応しています。S/PDIFパススルーには未対
+応なので注意してください。
 
 [TvtAudioStretchFilter]
 AddFilter={0F40E1E5-4F79-4988-B1A9-CC98794E6B55}
@@ -113,10 +115,6 @@ AddFilter={0F40E1E5-4F79-4988-B1A9-CC98794E6B55}
 (エラーメッセージ)
   「追加のフィルタを生成できません。」
   AddFilterに指定したDirectShowフィルタが見つからなかったときに表示されます。
-  
-  「追加のフィルタを接続できません。」
-  おもにフィルタの入出力ピンがPCM形式をサポートしていない(たとえばffdshow Audio
-  Decoderの設定で"Uncompressed"形式を有効にしていないなど)ときに表示されます。
 
 (上級者向け)
   一般に1入力1出力のPCM音声フィルタであれば(おそらく)何でも追加できます。
@@ -130,11 +128,8 @@ AddFilter={0F40E1E5-4F79-4988-B1A9-CC98794E6B55}
 やRecTaskのようなファイル容量確保型の録画中であると判断します。このようなファイ
 ルの追っかけ再生時にはコントロールの総再生時間の右隣に'*'が表示されます(通常の追
 っかけ再生は'+')。また、総再生時間はファイルサイズが初めて減少するタイミングまで
-増加し続けます。さらに、以下のような制約があります。
-・ファイル末尾へのシークは機能しない
-・再生時間外の位置へシークしようとすると、一度ファイル先頭に戻る
-・再生時間ぎりぎりの位置へ一気にシークしようとすると、ファイル先頭に戻る場合があ
-  る(概算シーク中に再生時間外の位置へシークしてしまうため)
+増加し続けます。さらに、「末尾シーク」ボタンや再生時間ぎりぎりの位置へのシークは
+機能しない制約があります。
 
 ■設定ファイルについて
 設定ファイル"TvtPlay.ini"は初回使用時プラグインフォルダに自動作成されます。必要
@@ -294,7 +289,7 @@ Button[00-15]
 
 ■ソースについて
 当プラグインの作成にあたり、EpgDataCap_BonのEpgTimerPlugInを参考にしました。また
-、PCR/PTS/DTSタイムスタンプの変更コードの作成にあたり、TsTimeKeeper Ver 2.1.3.0
+、PCR/PTS/DTSタイムスタンプの変更コードの作成にあたり、TsTimeKeeper Ver 3.4.15.0
 を参考にしました。
 TSファイルの同期・解析のために、tsselect-0.1.8(
 http://www.marumo.ne.jp/junk/tsselect-0.1.8.lzh)よりソースコードを改変利用してい
@@ -326,6 +321,12 @@ http://2sen.dip.jp/)のup0598.zip「非公式 TvtPlayシークボタンカスタ
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.1.3 (2011-12-10)
+・TvtAudioStretchFilterを5.1ch対応にした
+・容量確保録画の追っかけ再生でのシーク失敗時の挙動を改善
+・ファイルの読み出し単位を上げ、関連するコードを整理
+・シーク動作のパフォーマンス改善
+・メッセージポスト部分の微バグ修正(送り過ぎてた)
 ver.1.2r2 (2011-11-24)
 ・BonDriver_Pipeの以下の不具合修正
   ・ドライバの初期化と再生開始のタイミングが重なった場合に、TVTestをフリーズさせ

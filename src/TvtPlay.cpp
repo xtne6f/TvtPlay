@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-11-23
+// 最終更新: 2011-12-10
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -16,8 +16,8 @@
 #include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.2r2)";
-static const int INFO_VERSION = 12;
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.3)";
+static const int INFO_VERSION = 13;
 
 #define WM_UPDATE_POSITION  (WM_APP + 1)
 #define WM_UPDATE_TOT_TIME  (WM_APP + 2)
@@ -166,7 +166,7 @@ CTvtPlay::CTvtPlay()
     , m_fAllRepeat(false)
     , m_fSingleRepeat(false)
     , m_waitOnStop(0)
-    , m_fResetAllOnSeek(false)
+    , m_resetMode(0)
     , m_stretchMode(0)
     , m_noMuteMax(0)
     , m_noMuteMin(0)
@@ -286,7 +286,8 @@ void CTvtPlay::LoadSettings()
     m_fSingleRepeat = ::GetPrivateProfileInt(SETTINGS, TEXT("TsRepeatSingle"), 0, m_szIniFileName) != 0;
     m_waitOnStop = ::GetPrivateProfileInt(SETTINGS, TEXT("TsWaitOnStop"), 800, m_szIniFileName);
     m_waitOnStop = max(m_waitOnStop, 0);
-    m_fResetAllOnSeek = ::GetPrivateProfileInt(SETTINGS, TEXT("TsResetAllOnSeek"), 0, m_szIniFileName) != 0;
+    // m_resetMode == 0:ビューアRS, 1:全体RS, 2:空PAT+ビューアRS, 3:空PAT, 4:何もしない
+    m_resetMode = ::GetPrivateProfileInt(SETTINGS, TEXT("TsResetAllOnSeek"), 0, m_szIniFileName);
     m_resetDropInterval = ::GetPrivateProfileInt(SETTINGS, TEXT("TsResetDropInterval"), 1000, m_szIniFileName);
     m_threadPriority = ::GetPrivateProfileInt(SETTINGS, TEXT("TsThreadPriority"), THREAD_PRIORITY_NORMAL, m_szIniFileName);
     m_stretchMode = ::GetPrivateProfileInt(SETTINGS, TEXT("TsStretchMode"), 3, m_szIniFileName);
@@ -499,7 +500,7 @@ void CTvtPlay::SaveSettings() const
     WritePrivateProfileInt(SETTINGS, TEXT("TsRepeatAll"), m_fAllRepeat, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsRepeatSingle"), m_fSingleRepeat, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsWaitOnStop"), m_waitOnStop, m_szIniFileName);
-    WritePrivateProfileInt(SETTINGS, TEXT("TsResetAllOnSeek"), m_fResetAllOnSeek, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsResetAllOnSeek"), m_resetMode, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsResetDropInterval"), m_resetDropInterval, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsThreadPriority"), m_threadPriority, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsStretchMode"), m_stretchMode, m_szIniFileName);
@@ -621,9 +622,6 @@ bool CTvtPlay::InitializePlugin()
 
     m_statusView.AddItem(new CSeekStatusItem(this, m_fSeekDrawOfs, m_fSeekDrawTot));
     m_statusView.AddItem(new CPositionStatusItem(this));
-
-    // CTsSenderを初期設定
-    m_tsSender.SetConvTo188(m_fConvTo188);
 
     m_fInitialized = true;
     return true;
@@ -986,7 +984,7 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset)
 {
     Close();
 
-    if (!m_tsSender.Open(fileName, m_salt)) return false;
+    if (!m_tsSender.Open(fileName, m_salt, m_fConvTo188)) return false;
 
     if (offset >= 0) {
         // オフセットが指定されているのでシーク
@@ -1128,17 +1126,17 @@ void CTvtPlay::Pause(bool fPause)
 
 void CTvtPlay::SeekToBegin()
 {
-    ResetAndPostToSender(WM_TS_SEEK_BGN, 0, 0, m_fResetAllOnSeek);
+    ResetAndPostToSender(WM_TS_SEEK_BGN, 0, 0, m_resetMode != 0);
 }
 
 void CTvtPlay::SeekToEnd()
 {
-    ResetAndPostToSender(WM_TS_SEEK_END, 0, 0, m_fResetAllOnSeek);
+    ResetAndPostToSender(WM_TS_SEEK_END, 0, 0, m_resetMode != 0);
 }
 
 void CTvtPlay::Seek(int msec)
 {
-    ResetAndPostToSender(WM_TS_SEEK, 0, msec, m_fResetAllOnSeek);
+    ResetAndPostToSender(WM_TS_SEEK, 0, msec, m_resetMode != 0);
 }
 
 void CTvtPlay::SetModTimestamp(bool fModTimestamp)
@@ -1403,11 +1401,10 @@ void CTvtPlay::OnCommand(int id)
     case ID_COMMAND_STRETCH_D:
     case ID_COMMAND_STRETCH_E:
     case ID_COMMAND_STRETCH_F:
-        Stretch(GetStretchID() == id - ID_COMMAND_STRETCH_A ?
-                -1 : id - ID_COMMAND_STRETCH_A);
+        Stretch(GetStretchID() == id-ID_COMMAND_STRETCH_A ? -1 : id-ID_COMMAND_STRETCH_A);
         break;
     case ID_COMMAND_STRETCH:
-            Stretch(GetStretchID() < 0 ? 0 : GetStretchID() + 1);
+        Stretch(GetStretchID() < 0 ? 0 : GetStretchID() + 1);
         break;
     }
     m_dispCount = m_timeoutOnCmd / TIMER_AUTO_HIDE_INTERVAL;
@@ -1694,7 +1691,9 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
         break;
     case WM_QUERY_RESET:
         if (pThis->m_pApp->GetVersion() >= TVTest::MakeVersion(0,7,21)) {
-            pThis->m_pApp->Reset((wParam && pThis->m_fResetAllOnSeek) ? TVTest::RESET_ALL : TVTest::RESET_VIEWER);
+            if (pThis->m_resetMode <= 2) {
+                pThis->m_pApp->Reset(wParam && pThis->m_resetMode==1 ? TVTest::RESET_ALL : TVTest::RESET_VIEWER);
+            }
         }
         if (wParam && pThis->m_resetDropInterval > 0) {
             pThis->m_lastDropCount = 0;
@@ -1717,7 +1716,8 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
     CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(pParam);
     int posSec = -1, durSec = -1, totSec = -1;
     bool fPrevFixed = false;
-    int resetCount = 5;
+    static const int RESET_WAIT = 10;
+    int resetCount = -RESET_WAIT;
 
     // コントロールの表示をリセット
     pThis->m_tsSender.Pause(false);
@@ -1753,15 +1753,15 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                 break;
             case WM_TS_SEEK_BGN:
                 if (pThis->m_tsSender.SeekToBegin())
-                    resetCount = 5;
+                    resetCount = !resetCount ? -RESET_WAIT : RESET_WAIT;
                 break;
             case WM_TS_SEEK_END:
                 if (pThis->m_tsSender.SeekToEnd())
-                    resetCount = 5;
+                    resetCount = !resetCount ? -RESET_WAIT : RESET_WAIT;
                 break;
             case WM_TS_SEEK:
                 if (pThis->m_tsSender.Seek(static_cast<int>(msg.lParam)))
-                    resetCount = 5;
+                    resetCount = !resetCount ? -RESET_WAIT : RESET_WAIT;
                 break;
             case WM_TS_SET_SPEED:
                 {
@@ -1786,9 +1786,27 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
             ::DispatchMessage(&msg);
         }
         else if (pThis->m_fHalt) {
-            ::Sleep(10);
+            ::Sleep(20);
+        }
+        else if (resetCount > 0) {
+            // 大量のリセット要求を抑える
+            if (--resetCount == 0) {
+                ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET, 1, 0);
+                if (pThis->m_resetMode==2 || pThis->m_resetMode==3) {
+                    pThis->m_tsSender.SendEmptyPat();
+                }
+            }
+            ::Sleep(20);
         }
         else {
+            // 最初のリセット要求はすみやかに発行
+            if (resetCount < 0 && resetCount++ == -RESET_WAIT) {
+                ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET, 1, 0);
+                if (pThis->m_resetMode==2 || pThis->m_resetMode==3) {
+                    pThis->m_tsSender.SendEmptyPat();
+                }
+            }
+
             bool fRead = pThis->m_tsSender.Send();
 
             int num, den;
@@ -1812,14 +1830,7 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                                   pThis->m_fSingleRepeat ? WM_QUERY_SEEK_BGN : WM_QUERY_CLOSE_NEXT,
                                   0, 0);
                 }
-            }
-            if (!fRead || pThis->m_tsSender.IsPaused()) {
-                resetCount = 0;
                 ::Sleep(100);
-            }
-            else if (resetCount > 0 && --resetCount == 0) {
-                // シーク後のリセットはある程度転送してから行う
-                ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET, 1, 0);
             }
         }
 
@@ -1839,7 +1850,7 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
             fPrevFixed = fFixed;
         }
         // 放送時刻情報の更新を伝える
-        if (totSec != tot) {
+        if (totSec != tot / 1000) {
             ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_TOT_TIME, 0, tot);
             totSec = tot / 1000;
         }

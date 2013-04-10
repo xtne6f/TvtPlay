@@ -1,4 +1,3 @@
-LIBRARY TvtAudioStretchFilter.ax
 EXPORTS
         DllGetClassObject   PRIVATE
         DllCanUnloadNow     PRIVATE
