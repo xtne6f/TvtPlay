@@ -2,6 +2,7 @@
 #define INCLUDE_TVT_PLAY_H
 
 #define TVTEST_PLUGIN_CLASS_IMPLEMENT
+#define TVTEST_PLUGIN_VERSION TVTEST_PLUGIN_VERSION_(0,0,13)
 #include "TVTestPlugin.h"
 #include "StatusView.h"
 #include "TsSender.h"
@@ -20,7 +21,9 @@ class CTvtPlay : public TVTest::CTVTestPlugin
 {
     static const int STATUS_HEIGHT = 22;
     static const int STATUS_MARGIN = 2;
-    static const int STATUS_TIMER_INTERVAL = 100;
+    static const int TIMER_ID_FULL_SCREEN = 1;
+    static const int TIMER_ID_RESET_DROP = 2;
+    static const int TIMER_FULL_SCREEN_INTERVAL = 100;
     bool m_fInitialized;
     bool m_fSettingsLoaded;
     bool m_fForceEnable;
@@ -30,8 +33,12 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     // コントロール
     HWND m_hwndFrame;
     bool m_fFullScreen, m_fHide, m_fToBottom;
+    bool m_fSeekDrawTot, m_fPosDrawTot;
+    int m_posItemWidth;
     int m_timeoutOnCmd, m_timeoutOnMove;
     int m_dispCount;
+    DWORD m_lastDropCount;
+    int m_resetDropInterval;
     POINT m_lastCurPos;
     CStatusView m_statusView;
     CStatusViewEventHandler m_eventHandler;
@@ -47,6 +54,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     TCHAR m_szPrevFileName[MAX_PATH];
     int m_position;
     int m_duration;
+    int m_totTime;
     bool m_fFixed, m_fPaused;
     bool m_fHalt, m_fAutoClose, m_fAutoLoop;
     bool m_fResetAllOnSeek;
@@ -75,6 +83,7 @@ public:
     bool IsOpen() const { return m_hThread ? true : false; }
     int GetPosition() const { return m_position; }
     int GetDuration() const { return m_duration; }
+    int GetTotTime() const { return m_totTime; }
     bool IsFixed() const { return m_fFixed; }
     bool IsPaused() const { return m_fPaused; }
     bool IsAutoLoop() const { return m_fAutoLoop; }
@@ -96,7 +105,7 @@ enum {
 class CSeekStatusItem : public CStatusItem
 {
 public:
-    CSeekStatusItem(CTvtPlay *pPlugin);
+    CSeekStatusItem(CTvtPlay *pPlugin, bool fDrawTot);
     LPCTSTR GetName() const { return TEXT("シークバー"); };
     void Draw(HDC hdc, const RECT *pRect);
     void OnLButtonDown(int x, int y);
@@ -107,16 +116,18 @@ private:
     CTvtPlay *m_pPlugin;
     bool m_fDrawSeekPos, m_fDrawLeft;
     int m_seekPos;
+    bool m_fDrawTot;
 };
 
 class CPositionStatusItem : public CStatusItem
 {
 public:
-    CPositionStatusItem(CTvtPlay *pPlugin);
+    CPositionStatusItem(CTvtPlay *pPlugin, bool fDrawTot, int width);
     LPCTSTR GetName() const { return TEXT("再生位置"); };
     void Draw(HDC hdc, const RECT *pRect);
 private:
     CTvtPlay *m_pPlugin;
+    bool m_fDrawTot;
 };
 
 class CButtonStatusItem : public CStatusItem

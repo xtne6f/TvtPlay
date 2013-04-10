@@ -8,6 +8,7 @@ class CTsSender {
     static const int BUFFER_LEN = 192;
     static const int PCR_PER_MSEC = 45;
     static const int TS_SUPPOSED_RATE = 2 * 1024 * 1024;
+    static const int PCR_PIDS_MAX = 8;
 public:
     CTsSender();
     ~CTsSender();
@@ -27,6 +28,7 @@ public:
     int GetDuration() const;
     int GetPosition() const;
     int GetRate() const;
+    int GetBroadcastTime() const;
 private:
     bool ReadPacket();
     void ConsumeBuffer(bool fSend);
@@ -46,10 +48,15 @@ private:
     TCHAR m_pipeName[MAX_PATH];
     DWORD m_tick, m_baseTick, m_renewSizeTick;
     DWORD m_pcrCount;
-    DWORD m_pcr, m_basePcr, m_initPcr, m_pcrPool[3];
+    DWORD m_pcr, m_basePcr, m_initPcr;
     bool m_fPcr, m_fFixed, m_fPause;
+    int m_pcrPid, m_pcrPids[PCR_PIDS_MAX];
+    int m_pcrPidCounts[PCR_PIDS_MAX];
+    int m_pcrPidsLen;
     long long m_fileSize;
     int m_duration;
+    int m_totBase;
+    DWORD m_totBasePcr;
 };
 
 #endif // INCLUDE_TS_SENDER_H

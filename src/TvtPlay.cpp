@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-08-22
+// 最終更新: 2011-08-27
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -11,9 +11,11 @@
 
 
 #define WM_UPDATE_POSITION  (WM_APP + 1)
-#define WM_UPDATE_F_PAUSED  (WM_APP + 2)
-#define WM_QUERY_CLOSE      (WM_APP + 3)
-#define WM_QUERY_SEEK_BGN   (WM_APP + 4)
+#define WM_UPDATE_TOT_TIME  (WM_APP + 2)
+#define WM_UPDATE_F_PAUSED  (WM_APP + 3)
+#define WM_QUERY_CLOSE      (WM_APP + 4)
+#define WM_QUERY_SEEK_BGN   (WM_APP + 5)
+#define WM_QUERY_RESET_DROP (WM_APP + 6)
 
 #define WM_TS_SET_UDP       (WM_APP + 1)
 #define WM_TS_SET_PIPE      (WM_APP + 2)
@@ -85,15 +87,21 @@ CTvtPlay::CTvtPlay()
     , m_fFullScreen(false)
     , m_fHide(false)
     , m_fToBottom(false)
+    , m_fSeekDrawTot(false)
+    , m_fPosDrawTot(false)
+    , m_posItemWidth(0)
     , m_timeoutOnCmd(0)
     , m_timeoutOnMove(0)
     , m_dispCount(0)
+    , m_lastDropCount(0)
+    , m_resetDropInterval(0)
     , m_buttonNum(0)
     , m_hThread(NULL)
     , m_hThreadEvent(NULL)
     , m_threadID(0)
     , m_position(0)
     , m_duration(0)
+    , m_totTime(-1)
     , m_fFixed(false)
     , m_fPaused(false)
     , m_fHalt(false)
@@ -192,7 +200,11 @@ void CTvtPlay::LoadSettings()
     m_fAutoClose = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsAutoClose"), 0, m_szIniFileName) != 0;
     m_fAutoLoop = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsAutoLoop"), 0, m_szIniFileName) != 0;
     m_fResetAllOnSeek = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsResetAllOnSeek"), 0, m_szIniFileName) != 0;
+    m_resetDropInterval = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsResetDropInterval"), 1000, m_szIniFileName);
     m_fToBottom = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("ToBottom"), 1, m_szIniFileName) != 0;
+    m_fSeekDrawTot = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("DispTot"), 0, m_szIniFileName) != 0;
+    m_fPosDrawTot = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("DispTotOnStatus"), 0, m_szIniFileName) != 0;
+    m_posItemWidth = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("StatusItemWidth"), 112, m_szIniFileName);
     m_timeoutOnCmd = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnCommand"), 2000, m_szIniFileName);
     m_timeoutOnMove = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnMouseMove"), 0, m_szIniFileName);
     ::GetPrivateProfileString(TEXT("Settings"), TEXT("IconImage"), TEXT(""),
@@ -228,8 +240,9 @@ void CTvtPlay::LoadSettings()
 
     m_fSettingsLoaded = true;
 
-    // デフォルトの設定ファイルを出力するため
-    if (!::PathFileExists(m_szIniFileName)) SaveSettings();
+    // デフォルトの設定キーを出力するため
+    if (::GetPrivateProfileInt(TEXT("Settings"), TEXT("DispTot"), -1, m_szIniFileName) == -1)
+        SaveSettings();
 }
 
 
@@ -241,7 +254,11 @@ void CTvtPlay::SaveSettings() const
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TsAutoClose"), m_fAutoClose, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TsAutoLoop"), m_fAutoLoop, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TsResetAllOnSeek"), m_fResetAllOnSeek, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsResetDropInterval"), m_resetDropInterval, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("ToBottom"), m_fToBottom, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("DispTot"), m_fSeekDrawTot, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("DispTotOnStatus"), m_fPosDrawTot, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("StatusItemWidth"), m_posItemWidth, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnCommand"), m_timeoutOnCmd, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnMouseMove"), m_timeoutOnMove, m_szIniFileName);
     ::WritePrivateProfileString(TEXT("Settings"), TEXT("IconImage"), m_szIconFileName, m_szIniFileName);
@@ -302,8 +319,8 @@ bool CTvtPlay::InitializePlugin()
         m_buttonNum++;
     }
 
-    m_statusView.AddItem(new CSeekStatusItem(this));
-    m_statusView.AddItem(new CPositionStatusItem(this));
+    m_statusView.AddItem(new CSeekStatusItem(this, m_fSeekDrawTot));
+    m_statusView.AddItem(new CPositionStatusItem(this, m_fPosDrawTot, m_posItemWidth));
     
     m_fInitialized = true;
     return true;
@@ -458,7 +475,6 @@ void CTvtPlay::ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool
         ::WaitForSingleObject(m_hThreadEvent, 1000);
 
         // RESET_VIEWERのデッドロック対策のため先にリセットする
-        // 連続してシークを行う場合の対策としてRESET_ALLも可能にする
         m_pApp->Reset(fResetAll ? TVTest::RESET_ALL : TVTest::RESET_VIEWER);
         ::PostThreadMessage(m_threadID, Msg, wParam, lParam);
         m_fHalt = false;
@@ -509,7 +525,7 @@ void CTvtPlay::Resize()
             m_fHide = false;
             m_dispCount = 0;
             ::GetCursorPos(&m_lastCurPos);
-            ::SetTimer(m_hwndFrame, 0, STATUS_TIMER_INTERVAL, NULL);
+            ::SetTimer(m_hwndFrame, TIMER_ID_FULL_SCREEN, TIMER_FULL_SCREEN_INTERVAL, NULL);
             m_fFullScreen = true;
         }
     }
@@ -520,7 +536,7 @@ void CTvtPlay::Resize()
                            rect.right - rect.left, STATUS_HEIGHT + STATUS_MARGIN, SWP_NOZORDER);
         }
         if (m_fFullScreen) {
-            ::KillTimer(m_hwndFrame, 0);
+            ::KillTimer(m_hwndFrame, TIMER_ID_FULL_SCREEN);
             ::SetWindowPos(m_hwndFrame, m_pApp->GetAlwaysOnTop() ? HWND_TOPMOST : HWND_NOTOPMOST,
                            0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
             m_fFullScreen = false;
@@ -564,7 +580,7 @@ void CTvtPlay::OnCommand(int id)
         Seek(m_seekList[id - ID_COMMAND_SEEK_A]);
         break;
     }
-    m_dispCount = m_timeoutOnCmd / STATUS_TIMER_INTERVAL;
+    m_dispCount = m_timeoutOnCmd / TIMER_FULL_SCREEN_INTERVAL;
 }
 
 
@@ -600,6 +616,7 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         // FALL THROUGH!
     case TVTest::EVENT_STARTUPDONE:
         // 起動時の処理が終わった
+        // コマンドラインにパスが指定されていれば開く
         if (pThis->m_pApp->IsPluginEnabled() && pThis->m_szSpecFileName[0]) {
             pThis->Open(pThis->m_szSpecFileName);
             pThis->m_szSpecFileName[0] = 0;
@@ -646,17 +663,19 @@ BOOL CALLBACK CTvtPlay::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, L
 // CStatusViewの外枠ウインドウプロシージャ
 LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+    // WM_CREATEのとき不定
+    CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(::GetWindowLongPtr(hwnd, GWLP_USERDATA));
+
     switch (uMsg) {
     case WM_CREATE:
         {
             LPCREATESTRUCT pcs = reinterpret_cast<LPCREATESTRUCT>(lParam);
-            CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(pcs->lpCreateParams);
+            pThis = reinterpret_cast<CTvtPlay*>(pcs->lpCreateParams);
             ::SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pThis));
         }
         break;
     case WM_TIMER:
-        {
-            CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(::GetWindowLongPtr(hwnd, GWLP_USERDATA));
+        if (wParam == TIMER_ID_FULL_SCREEN) {
             RECT rect;
             POINT curPos;
 
@@ -672,7 +691,7 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
                     (curPos.x < lastPos.x-2 || lastPos.x+2 < curPos.x ||
                      curPos.y < lastPos.y-2 || lastPos.y+2 < curPos.y))
                 {
-                    pThis->m_dispCount = pThis->m_timeoutOnMove / STATUS_TIMER_INTERVAL;
+                    pThis->m_dispCount = pThis->m_timeoutOnMove / TIMER_FULL_SCREEN_INTERVAL;
                     pThis->m_lastCurPos = curPos;
                 }
 
@@ -692,21 +711,30 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
                 }
             }
         }
+        else if (wParam == TIMER_ID_RESET_DROP) {
+            TVTest::StatusInfo si;
+            // ドロップカウントが安定すればRESETSTATUSする
+            if (!pThis->m_pApp->GetStatus(&si) || si.DropPacketCount == pThis->m_lastDropCount) {
+                pThis->m_pApp->ResetStatus();
+                ::KillTimer(hwnd, TIMER_ID_RESET_DROP);
+            }
+            pThis->m_lastDropCount = si.DropPacketCount;
+        }
         break;
     case WM_SIZE:
         {
-            CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(::GetWindowLongPtr(hwnd, GWLP_USERDATA));
-            int margin = pThis->m_pApp->GetFullscreen() ? 0 : STATUS_MARGIN;
+            bool fFull = pThis->m_pApp->GetFullscreen();
+            int margin = fFull ? 0 : STATUS_MARGIN;
             
+            // シークバーをリサイズする
             CStatusItem *pItem = pThis->m_statusView.GetItemByID(STATUS_ITEM_SEEK);
-            if (pItem) pItem->SetWidth(LOWORD(lParam) - 8 - 2 - margin*2 - 120 - pThis->m_buttonNum * 24);
+            if (pItem) pItem->SetWidth(LOWORD(lParam) - 8 - 2 - margin*2 - pThis->m_posItemWidth - 8 - pThis->m_buttonNum * 24);
             pThis->m_statusView.SetPosition(margin, 0, LOWORD(lParam) - margin*2,
-                                            HIWORD(lParam) - margin + (pThis->m_fToBottom ? 1 : 0));
+                                            HIWORD(lParam) - margin + (fFull && pThis->m_fToBottom ? 1 : 0));
         }
         break;
     case WM_UPDATE_POSITION:
         {
-            CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(::GetWindowLongPtr(hwnd, GWLP_USERDATA));
             pThis->m_position = static_cast<int>(wParam);
             int dur = static_cast<int>(lParam);
             pThis->m_duration = dur < 0 ? -dur : dur;
@@ -715,24 +743,25 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             pThis->m_statusView.UpdateItem(STATUS_ITEM_POSITION);
         }
         break;
+    case WM_UPDATE_TOT_TIME:
+        pThis->m_totTime = static_cast<int>(lParam);
+        pThis->m_statusView.UpdateItem(STATUS_ITEM_SEEK);
+        break;
     case WM_UPDATE_F_PAUSED:
-        {
-            CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(::GetWindowLongPtr(hwnd, GWLP_USERDATA));
-            pThis->m_fPaused = static_cast<int>(wParam) ? true : false;
-            pThis->m_statusView.UpdateItem(STATUS_ITEM_SEEK);
-            pThis->m_statusView.UpdateItem(STATUS_ITEM_BUTTON + ID_COMMAND_PAUSE);
-        }
+        pThis->m_fPaused = static_cast<int>(wParam) ? true : false;
+        pThis->m_statusView.UpdateItem(STATUS_ITEM_SEEK);
+        pThis->m_statusView.UpdateItem(STATUS_ITEM_BUTTON + ID_COMMAND_PAUSE);
         break;
     case WM_QUERY_CLOSE:
-        {
-            CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(::GetWindowLongPtr(hwnd, GWLP_USERDATA));
-            pThis->Close();
-        }
+        pThis->Close();
         break;
     case WM_QUERY_SEEK_BGN:
-        {
-            CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(::GetWindowLongPtr(hwnd, GWLP_USERDATA));
-            pThis->SeekToBegin();
+        pThis->SeekToBegin();
+        break;
+    case WM_QUERY_RESET_DROP:
+        if (pThis->m_resetDropInterval > 0) {
+            pThis->m_lastDropCount = 0;
+            ::SetTimer(hwnd, TIMER_ID_RESET_DROP, pThis->m_resetDropInterval, NULL);
         }
         break;
     }
@@ -745,8 +774,13 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
 {
     MSG msg;
     CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(pParam);
-    int posSec = -1, durSec = -1;
+    int posSec = -1, durSec = -1, totSec = -1;
     bool fPrevFixed = false;
+    
+    // コントロールの表示をリセット
+    pThis->m_tsSender.Pause(false);
+    ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, 0, 0);
+    ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET_DROP, 0, 0);
 
     for (;;) {
         BOOL rv = ::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE);
@@ -773,17 +807,19 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                 break;
             case WM_TS_PAUSE:
                 pThis->m_tsSender.Pause(msg.wParam ? true : false);
-                ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED,
-                              pThis->m_tsSender.IsPaused() ? 1 : 0, 0);
+                ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, msg.wParam, 0);
                 break;
             case WM_TS_SEEK_BGN:
                 pThis->m_tsSender.SeekToBegin();
+                ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET_DROP, 0, 0);
                 break;
             case WM_TS_SEEK_END:
                 pThis->m_tsSender.SeekToEnd();
+                ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET_DROP, 0, 0);
                 break;
             case WM_TS_SEEK:
                 pThis->m_tsSender.Seek(msg.lParam);
+                ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET_DROP, 0, 0);
                 break;
             }
             ::TranslateMessage(&msg);
@@ -806,6 +842,7 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
 
         int pos = pThis->m_tsSender.GetPosition();
         int dur = pThis->m_tsSender.GetDuration();
+        int tot = pThis->m_tsSender.GetBroadcastTime();
         bool fFixed = pThis->m_tsSender.IsFixed();
 
         // 再生位置の更新を伝える
@@ -815,12 +852,19 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
             durSec = dur / 1000;
             fPrevFixed = fFixed;
         }
+        // 放送時刻情報の更新を伝える
+        if (totSec != tot) {
+            ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_TOT_TIME, 0, tot);
+            totSec = tot / 1000;
+        }
     }
     
+    // ファイルを閉じてコントロールの表示をリセット
     pThis->m_tsSender.Pause(false);
     pThis->m_tsSender.Close();
     ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, 0, 0);
     ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_POSITION, 0, 0);
+    ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_TOT_TIME, 0, -1);
     return 0;
 }
 
@@ -845,12 +889,13 @@ void CStatusViewEventHandler::OnMouseLeave()
 }
 
 
-CSeekStatusItem::CSeekStatusItem(CTvtPlay *pPlugin)
+CSeekStatusItem::CSeekStatusItem(CTvtPlay *pPlugin, bool fDrawTot)
     : CStatusItem(STATUS_ITEM_SEEK, 128)
     , m_pPlugin(pPlugin)
     , m_fDrawSeekPos(false)
 {
     m_MinWidth = 128;
+    m_fDrawTot = fDrawTot;
 }
 
 void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
@@ -863,22 +908,56 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
     HBRUSH hbr, hbrOld;
     RECT rcBar, rc;
 
+    // バーの最大矩形(外枠を含まない)
     rcBar.left   = pRect->left + 2;
     rcBar.top    = pRect->top + (pRect->bottom - pRect->top - 8) / 2 + 2;
     rcBar.right  = pRect->right - 2;
     rcBar.bottom = rcBar.top + 8 - 4;
 
+    // 実際に描画するバーの右端位置
     int barPos = min(rcBar.right, rcBar.left + (dur <= 0 ? 0 :
                  (int)((long long)(rcBar.right - rcBar.left) * pos / dur)));
     
-    int drawPosWidth = dur < 3600000 ? 44 : 58;
+    // シーク位置を描画するかどうか
     bool fDrawPos = m_fDrawSeekPos && rcBar.left <= m_seekPos && m_seekPos < rcBar.right;
+
+    // シーク位置を描画
+    int drawPosWidth = 64;
     int drawPos = 0;
     if (fDrawPos) {
+        TCHAR szText[128];
+        TCHAR szTotText[128];
+        int posSec = (int)((long long)(m_seekPos-rcBar.left) * dur / (rcBar.right-rcBar.left) / 1000);
+        
+        szTotText[0] = 0;
+        if (m_fDrawTot) {
+            int tot = m_pPlugin->GetTotTime();
+            int totSec = tot / 1000 + posSec;
+            if (tot < 0) ::lstrcpy(szTotText, TEXT("#不明"));
+            else ::wsprintf(szTotText, TEXT("#%02d:%02d:%02d"), totSec/60/60%24, totSec/60%60, totSec%60);
+        }
+
+        if (dur < 3600000) ::wsprintf(szText, TEXT("%02d:%02d%s"), posSec/60%60, posSec%60, szTotText);
+        else ::wsprintf(szText, TEXT("%02d:%02d:%02d%s"), posSec/60/60, posSec/60%60, posSec%60, szTotText);
+
+        // シーク位置の描画に必要な幅を取得する
+        rc.left = rc.top = rc.right = rc.bottom = 0;
+        if (::DrawText(hdc, szText, -1, &rc,
+                       DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_CALCRECT))
+            drawPosWidth = rc.right - rc.left + 10;
+        
         m_fDrawLeft = m_seekPos >= rcBar.left + drawPosWidth + 4 &&
                       (m_seekPos >= rcBar.right - drawPosWidth - 4 ||
                       m_seekPos < barPos - 3 || m_seekPos < barPos + 3 && m_fDrawLeft);
         drawPos = m_fDrawLeft ? m_seekPos - drawPosWidth - 4 : m_seekPos + 5;
+        
+        // シーク位置を描画
+        rc.left = drawPos + 5;
+        rc.top = pRect->top;
+        rc.right = drawPos + drawPosWidth;
+        rc.bottom = pRect->bottom;
+        ::DrawText(hdc, szText, -1, &rc,
+                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     }
 
     // バーの外枠を描画
@@ -919,21 +998,6 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
         ::FillRect(hdc, &rc, hbr);
     }
     ::DeleteObject(hbr);
-
-    if (fDrawPos) {
-        // シーク位置を秒単位で描画
-        int posSec = (int)((long long)(m_seekPos - rcBar.left) *
-                     dur / (rcBar.right - rcBar.left) / 1000);
-        TCHAR szText[128];
-        if (drawPosWidth == 44) ::wsprintf(szText, TEXT("%02d:%02d"), posSec/60%60, posSec%60);
-        else ::wsprintf(szText, TEXT("%02d:%02d:%02d"), posSec/60/60, posSec/60%60, posSec%60);
-
-        rc.left = drawPos + 6;
-        rc.top = pRect->top;
-        rc.right = drawPos + drawPosWidth;
-        rc.bottom = pRect->bottom;
-        DrawText(hdc, &rc, szText);
-    }
 }
 
 void CSeekStatusItem::OnLButtonDown(int x, int y)
@@ -976,27 +1040,38 @@ void CSeekStatusItem::SetDrawSeekPos(bool fDraw, int pos)
 }
 
 
-CPositionStatusItem::CPositionStatusItem(CTvtPlay *pPlugin)
-    : CStatusItem(STATUS_ITEM_POSITION, 112)
+CPositionStatusItem::CPositionStatusItem(CTvtPlay *pPlugin, bool fDrawTot, int width)
+    : CStatusItem(STATUS_ITEM_POSITION, width)
     , m_pPlugin(pPlugin)
 {
-    m_MinWidth = 112;
+    m_MinWidth = width;
+    m_fDrawTot = fDrawTot;
 }
 
-void CPositionStatusItem::Draw(HDC hdc,const RECT *pRect)
+void CPositionStatusItem::Draw(HDC hdc, const RECT *pRect)
 {
     TCHAR szText[128];
+    TCHAR szTotText[128];
     int posSec = m_pPlugin->GetPosition() / 1000;
     int durSec = m_pPlugin->GetDuration() / 1000;
+    
+    szTotText[0] = 0;
+    if (m_fDrawTot) {
+        int tot = m_pPlugin->GetTotTime();
+        int totSec = tot / 1000 + posSec;
+        if (tot < 0) ::lstrcpy(szTotText, TEXT("#不明"));
+        else ::wsprintf(szTotText, TEXT("#%02d:%02d:%02d"), totSec/60/60%24, totSec/60%60, totSec%60);
+    }
+
     if (durSec < 60 * 60 && posSec < 60 * 60) {
-        ::wsprintf(szText, TEXT("%02d:%02d/%02d:%02d%c"),
-                   posSec / 60 % 60, posSec % 60,
+        ::wsprintf(szText, TEXT("%02d:%02d%s/%02d:%02d%c"),
+                   posSec / 60 % 60, posSec % 60, szTotText,
                    durSec / 60 % 60, durSec % 60,
                    m_pPlugin->IsFixed() ? TEXT(' ') : TEXT('+'));
     }
     else {
-        ::wsprintf(szText, TEXT("%02d:%02d:%02d/%02d:%02d:%02d%c"),
-                   posSec / 60 / 60, posSec / 60 % 60, posSec % 60,
+        ::wsprintf(szText, TEXT("%02d:%02d:%02d%s/%02d:%02d:%02d%c"),
+                   posSec / 60 / 60, posSec / 60 % 60, posSec % 60, szTotText,
                    durSec / 60 / 60, durSec / 60 % 60, durSec % 60,
                    m_pPlugin->IsFixed() ? TEXT(' ') : TEXT('+'));
     }
@@ -1012,7 +1087,7 @@ CButtonStatusItem::CButtonStatusItem(CTvtPlay *pPlugin, int id, LPCTSTR iconFile
     m_MinWidth = 16;
 
     if (iconFileName && iconFileName[0])
-        m_icons.Load(g_hinstDLL, iconFileName, LR_CREATEDIBSECTION | LR_LOADFROMFILE);
+        m_icons.Load(NULL, iconFileName, LR_CREATEDIBSECTION | LR_LOADFROMFILE);
     
     if (!m_icons.IsCreated()) m_icons.Load(g_hinstDLL, IDB_BUTTONS);
 }

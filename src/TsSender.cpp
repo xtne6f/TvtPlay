@@ -25,8 +25,12 @@ CTsSender::CTsSender()
     , m_fPcr(false)
     , m_fFixed(false)
     , m_fPause(false)
+    , m_pcrPid(0)
+    , m_pcrPidsLen(0)
     , m_fileSize(0)
     , m_duration(0)
+    , m_totBase(0)
+    , m_totBasePcr(0)
 {
     m_udpAddr[0] = 0;
     m_pipeName[0] = 0;
@@ -51,7 +55,7 @@ bool CTsSender::Open(LPCTSTR name)
     }
 
     // TSパケットの単位を決定
-    BYTE buf[4096];
+    BYTE buf[8192];
     DWORD readBytes;
     if (!::ReadFile(m_hFile, buf, sizeof(buf), &readBytes, NULL)) goto ERROR_EXIT;
     m_unitSize = select_unit_size(buf, buf + readBytes);
@@ -67,15 +71,21 @@ bool CTsSender::Open(LPCTSTR name)
     m_renewSizeTick = ::GetTickCount();
     if ((m_fileSize = GetFileSize()) < 0) goto ERROR_EXIT;
     
+    // PCR参照PIDをクリア
+    m_pcrPid = m_pcrPidsLen = 0;
+
+    // TOT-PCR対応情報をクリア
+    m_totBase = -1;
+
     // ファイル先頭のPCRと動画の長さを取得
-    if (Seek(-TS_SUPPOSED_RATE, FILE_END) && m_pcrCount) {
+    if (Seek(-TS_SUPPOSED_RATE * 2, FILE_END) && m_pcrCount) {
         DWORD finPcr = m_pcr;
 
         if (!SeekToBegin() || !m_pcrCount) goto ERROR_EXIT;
         m_initPcr = m_pcr;
-        m_duration = (int)((finPcr - m_initPcr) / PCR_PER_MSEC) + 1000;
+        m_duration = (int)((finPcr - m_initPcr) / PCR_PER_MSEC) + 2000;
         m_duration = (int)((finPcr - m_initPcr) / PCR_PER_MSEC) +
-                     (int)((long long)TS_SUPPOSED_RATE * 1000 / GetRate());
+                     (int)((long long)TS_SUPPOSED_RATE * 2000 / GetRate());
     }
     else {
         if (!SeekToBegin() || !m_pcrCount) goto ERROR_EXIT;
@@ -318,6 +328,18 @@ int CTsSender::GetPosition() const
 }
 
 
+// TOT時刻から逆算した動画の放送時刻(ミリ秒)を取得する
+// 取得失敗時は負を返す
+int CTsSender::GetBroadcastTime() const
+{
+    if (m_totBase < 0) return -1;
+
+    int totInit = m_totBase - (int)((m_totBasePcr - m_initPcr) / PCR_PER_MSEC);
+    if (totInit < 0) totInit += 24 * 3600000; // 1日足す
+    return totInit;
+}
+
+
 // 動画全体のレート(Bytes/秒)を取得する
 // 正確でない場合がある
 // 極端な値は抑制される
@@ -365,41 +387,63 @@ bool CTsSender::ReadPacket()
     TS_HEADER header;
     extract_ts_header(&header, m_curr);
     
-    if (header.adaptation_field_control & 2) {
+    if (header.adaptation_field_control & 2 &&
+        !header.transport_error_indicator)
+    {
         // アダプテーションフィールドがある
         ADAPTATION_FIELD adapt;
         extract_adaptation_field(&adapt, m_curr + 4);
 
         if (adapt.pcr_flag) {
-            m_tick = ::GetTickCount();
+            // 参照PIDが決まっていないとき、最初に3回PCRが出現したPIDを参照PIDとする
+            // 参照PIDのPCRが現れることなく3回別のPCRが出現すれば、参照PIDを変更する
+            if (header.pid != m_pcrPid) {
+                bool fFound = false;
+                for (int i = 0; i < m_pcrPidsLen; i++) {
+                    if (m_pcrPids[i] == header.pid) {
+                        if (++m_pcrPidCounts[i] >= 3) m_pcrPid = header.pid;
+                        fFound = true;
+                        break;
+                    }
+                }
+                if (!fFound && m_pcrPidsLen < PCR_PIDS_MAX) {
+                    m_pcrPids[m_pcrPidsLen] = header.pid;
+                    m_pcrPidCounts[m_pcrPidsLen] = 1;
+                    m_pcrPidsLen++;
+                }
+            }
 
-            m_pcrPool[2] = m_pcrPool[1];
-            m_pcrPool[1] = m_pcrPool[0];
-            m_pcrPool[0] = (DWORD)adapt.pcr_45khz;
-
-            // 最近取得された3つのPCRの中央値を現在のPCRとする
-            if (m_pcrCount < 2) {
-                m_pcr = m_pcrPool[0];
-            }
-            else if (MSB(m_pcrPool[1] - m_pcrPool[0]) && MSB(m_pcrPool[0] - m_pcrPool[2]) ||
-                     MSB(m_pcrPool[2] - m_pcrPool[0]) && MSB(m_pcrPool[0] - m_pcrPool[1])) {
-                m_pcr = m_pcrPool[0];
-            }
-            else if (MSB(m_pcrPool[0] - m_pcrPool[1]) && MSB(m_pcrPool[1] - m_pcrPool[2]) ||
-                     MSB(m_pcrPool[2] - m_pcrPool[1]) && MSB(m_pcrPool[1] - m_pcrPool[0])) {
-                m_pcr = m_pcrPool[1];
-            }
-            else {
-                m_pcr = m_pcrPool[2];
-            }
+            // 参照PIDのときはPCRを取得する
+            if (header.pid == m_pcrPid) {
+                m_pcrPidsLen = 0;
+                m_tick = ::GetTickCount();
+                m_pcr = (DWORD)adapt.pcr_45khz;
             
-            if (m_pcrCount++ == 0) {
-                // 最初にTVTest側のストアを増やすため、少し引く
-                // ただし引きすぎるとPauseの挙動がもたつく
-                m_baseTick = m_tick - 300;
-                m_basePcr = m_pcr;
+                if (m_pcrCount++ == 0) {
+                    // 最初にTVTest側のストアを増やすため、少し引く
+                    // ただし引きすぎるとPauseの挙動がもたつく
+                    m_baseTick = m_tick - 300;
+                    m_basePcr = m_pcr;
+                }
+                m_fPcr = true;
             }
-            m_fPcr = true;
+        }
+    }
+
+    if (header.pid == 0x14 && m_pcrCount &&
+        !header.transport_error_indicator &&
+        header.payload_unit_start_indicator &&
+        header.adaptation_field_control == 1)
+    {
+        // TOT-PCR対応情報を取得する
+        int pointerField = m_curr[4];
+        BYTE *pTable = m_curr + 5 + pointerField;
+        if (pTable + 7 < m_curr + 188 && (pTable[0] == 0x73 || pTable[0] == 0x70)) {
+            // BCD解析(ARIB STD-B10)
+            m_totBase = ((pTable[5]>>4)*10 + (pTable[5]&0x0f)) * 3600000 +
+                        ((pTable[6]>>4)*10 + (pTable[6]&0x0f)) * 60000 +
+                        ((pTable[7]>>4)*10 + (pTable[7]&0x0f)) * 1000;
+            m_totBasePcr = m_pcr;
         }
     }
 
@@ -461,12 +505,12 @@ bool CTsSender::Seek(long long distanceToMove, DWORD dwMoveMethod)
     // シーク後はバッファを空にする
     m_curr = m_tail = m_pBuf;
     m_pcrCount = 0;
-    do {
+    for (int i = 0; i < 20000 && !m_pcrCount; i++) {
         if (!ReadPacket()) {
             ConsumeBuffer(false);
             if (!ReadPacket()) break;
         }
-    } while (!m_pcrCount);
+    }
 
     return true;
 }
