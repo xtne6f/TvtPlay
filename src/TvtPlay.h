@@ -6,6 +6,9 @@
 #include "StatusView.h"
 #include "TsSender.h"
 
+#define COMMAND_SEEK_MAX    8
+#define BUTTON_MAX          14
+
 class CStatusViewEventHandler : public CStatusView::CEventHandler
 {
 public:
@@ -18,31 +21,48 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     static const int STATUS_HEIGHT = 22;
     static const int STATUS_MARGIN = 2;
     static const int STATUS_TIMER_INTERVAL = 100;
-    static const int STATUS_HIDE_TIMEOUT = 30;
     bool m_fInitialized;
     bool m_fSettingsLoaded;
     bool m_fForceEnable;
+    TCHAR m_szIniFileName[MAX_PATH];
     TCHAR m_szSpecFileName[MAX_PATH];
+
+    // コントロール
     HWND m_hwndFrame;
+    bool m_fFullScreen, m_fHide, m_fToBottom;
+    int m_timeoutOnCmd, m_timeoutOnMove;
+    int m_dispCount;
+    POINT m_lastCurPos;
     CStatusView m_statusView;
     CStatusViewEventHandler m_eventHandler;
+    TCHAR m_szIconFileName[MAX_PATH];
+    int m_seekList[COMMAND_SEEK_MAX];
+    TCHAR m_buttonList[BUTTON_MAX][16];
+    int m_buttonNum;
+
+    // TS送信
     HANDLE m_hThread, m_hThreadEvent;
     DWORD m_threadID;
     CTsSender m_tsSender;
+    TCHAR m_szPrevFileName[MAX_PATH];
     int m_position;
     int m_duration;
     bool m_fFixed, m_fPaused;
-    bool m_fFullScreen, m_fHide;
-    int m_hideCount;
-    bool m_fHalt;
+    bool m_fHalt, m_fAutoClose, m_fAutoLoop;
+    bool m_fResetAllOnSeek;
 
     void AnalyzeCommandLine(LPCWSTR cmdLine);
     void LoadSettings();
+    void SaveSettings() const;
     bool InitializePlugin();
     bool EnablePlugin(bool fEnable);
-    void ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam);
+    bool Open(HWND hwndOwner);
+    bool ReOpen();
+    bool Open(LPCTSTR fileName);
+    void Close();
+    void SetUpDestination();
+    void ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll);
     void Resize();
-    void OnCommand(int id);
     static LRESULT CALLBACK EventCallback(UINT Event, LPARAM lParam1, LPARAM lParam2, void *pClientData);
     static BOOL CALLBACK WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pResult, void *pUserData);
     static LRESULT CALLBACK FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -52,34 +72,25 @@ public:
     virtual bool GetPluginInfo(TVTest::PluginInfo *pInfo);
     virtual bool Initialize();
     virtual bool Finalize();
-    bool Open(HWND hwndOwner);
-    bool Open(LPCTSTR fileName);
-    void Close();
-    int GetPosition() const;
-    int GetDuration() const;
-    bool IsFixed() const;
-    bool IsPaused() const;
-    void SetUpDestination();
+    bool IsOpen() const { return m_hThread ? true : false; }
+    int GetPosition() const { return m_position; }
+    int GetDuration() const { return m_duration; }
+    bool IsFixed() const { return m_fFixed; }
+    bool IsPaused() const { return m_fPaused; }
+    bool IsAutoLoop() const { return m_fAutoLoop; }
+
     void Pause(bool fPause);
     void SeekToBegin();
     void SeekToEnd();
     void Seek(int msec);
+    void SetAutoLoop(bool fAutoLoop);
+    void OnCommand(int id);
 };
 
 enum {
-    STATUS_ITEM_BUTTON_OPEN,
-    STATUS_ITEM_BUTTON_M60,
-    STATUS_ITEM_BUTTON_M15,
-    STATUS_ITEM_BUTTON_M05,
-    STATUS_ITEM_BUTTON_P05,
-    STATUS_ITEM_BUTTON_P15,
-    STATUS_ITEM_BUTTON_P60,
-    STATUS_ITEM_BUTTON_FIRST = STATUS_ITEM_BUTTON_OPEN,
-    STATUS_ITEM_BUTTON_LAST = STATUS_ITEM_BUTTON_P60,
     STATUS_ITEM_SEEK,
     STATUS_ITEM_POSITION,
-    STATUS_ITEM_FIRST = STATUS_ITEM_BUTTON_OPEN,
-    STATUS_ITEM_LAST = STATUS_ITEM_POSITION
+    STATUS_ITEM_BUTTON,
 };
 
 class CSeekStatusItem : public CStatusItem
@@ -111,13 +122,14 @@ private:
 class CButtonStatusItem : public CStatusItem
 {
 public:
-    CButtonStatusItem(CTvtPlay *pPlugin, int id);
+    CButtonStatusItem(CTvtPlay *pPlugin, int id, LPCTSTR iconFileName, int iconIndex);
     LPCTSTR GetName() const { return TEXT("ボタン"); }
     void Draw(HDC hdc, const RECT *pRect);
     void OnLButtonDown(int x, int y);
 private:
     CTvtPlay *m_pPlugin;
     DrawUtil::CBitmap m_icons;
+    int m_iconIndex;
 };
 
 #endif // INCLUDE_TVT_PLAY_H

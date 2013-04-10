@@ -3,6 +3,14 @@
 #include "Util.h"
 
 
+BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPCTSTR lpFileName)
+{
+    TCHAR szValue[32];
+    ::wsprintf(szValue, TEXT("%d"), value);
+    return ::WritePrivateProfileString(lpAppName, lpKeyName, szValue, lpFileName);
+}
+
+
 #if 1 // From: tsselect-0.1.8/tsselect.c (一部改変)
 int select_unit_size(unsigned char *head, unsigned char *tail)
 {

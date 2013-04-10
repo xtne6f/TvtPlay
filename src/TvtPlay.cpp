@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-08-19
+// 最終更新: 2011-08-22
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -12,6 +12,8 @@
 
 #define WM_UPDATE_POSITION  (WM_APP + 1)
 #define WM_UPDATE_F_PAUSED  (WM_APP + 2)
+#define WM_QUERY_CLOSE      (WM_APP + 3)
+#define WM_QUERY_SEEK_BGN   (WM_APP + 4)
 
 #define WM_TS_SET_UDP       (WM_APP + 1)
 #define WM_TS_SET_PIPE      (WM_APP + 2)
@@ -20,28 +22,59 @@
 #define WM_TS_SEEK_END      (WM_APP + 5)
 #define WM_TS_SEEK          (WM_APP + 6)
 
-enum {
-    ID_COMMAND_OPEN,
-    ID_COMMAND_PAUSE,
-    ID_COMMAND_SEEK_BGN,
-    ID_COMMAND_SEEK_END,
-    ID_COMMAND_SEEK_M05,
-    ID_COMMAND_SEEK_P05,
-    ID_COMMAND_SEEK_M15,
-    ID_COMMAND_SEEK_P15,
-    ID_COMMAND_SEEK_M30,
-    ID_COMMAND_SEEK_P30,
-    ID_COMMAND_SEEK_M60,
-    ID_COMMAND_SEEK_P60,
-    ID_COMMAND_SEEK_M5M,
-    ID_COMMAND_SEEK_P5M,
-    ID_COMMAND_NOP,
-    NUM_ID_COMMAND
-};
-
 #define TVTPLAY_FRAME_WINDOW_CLASS  TEXT("TvtPlay Frame")
 #define UDP_ADDR                    "127.0.0.1"
 #define PIPE_NAME                   TEXT("\\\\.\\pipe\\BonDriver_Pipe%02d")
+
+enum {
+    ID_COMMAND_OPEN,
+    ID_COMMAND_CLOSE,
+    ID_COMMAND_SEEK_BGN,
+    ID_COMMAND_SEEK_END,
+    ID_COMMAND_LOOP,
+    ID_COMMAND_PAUSE,
+    ID_COMMAND_NOP,
+    ID_COMMAND_SEEK_A,
+    ID_COMMAND_SEEK_B,
+    ID_COMMAND_SEEK_C,
+    ID_COMMAND_SEEK_D,
+    ID_COMMAND_SEEK_E,
+    ID_COMMAND_SEEK_F,
+    ID_COMMAND_SEEK_G,
+    ID_COMMAND_SEEK_H,
+};
+
+static const TVTest::CommandInfo COMMAND_LIST[] = {
+    {ID_COMMAND_OPEN, L"Open", L"ファイルを開く"},
+    {ID_COMMAND_CLOSE, L"Close", L"ファイルを閉じる"},
+    {ID_COMMAND_SEEK_BGN, L"SeekToBgn", L"シーク:先頭"},
+    {ID_COMMAND_SEEK_END, L"SeekToEnd", L"シーク:末尾"},
+    {ID_COMMAND_LOOP, L"Loop", L"ループする/しない"},
+    {ID_COMMAND_PAUSE, L"Pause", L"一時停止/再生"},
+    {ID_COMMAND_NOP, L"Nop", L"何もしない"},
+    {ID_COMMAND_SEEK_A, L"SeekA", L"シーク:A"},
+    {ID_COMMAND_SEEK_B, L"SeekB", L"シーク:B"},
+    {ID_COMMAND_SEEK_C, L"SeekC", L"シーク:C"},
+    {ID_COMMAND_SEEK_D, L"SeekD", L"シーク:D"},
+    {ID_COMMAND_SEEK_E, L"SeekE", L"シーク:E"},
+    {ID_COMMAND_SEEK_F, L"SeekF", L"シーク:F"},
+    {ID_COMMAND_SEEK_G, L"SeekG", L"シーク:G"},
+    {ID_COMMAND_SEEK_H, L"SeekH", L"シーク:H"},
+};
+
+static const int DEFAULT_SEEK_LIST[COMMAND_SEEK_MAX] = {
+    -60000, -30000, -15000, -5000, 4000, 14000, 29000, 59000
+};
+
+// NULL禁止
+static LPCTSTR DEFAULT_BUTTON_LIST[BUTTON_MAX] = {
+    TEXT("0,Open"), TEXT(";1,Close"), TEXT(";4,Loop"),
+    TEXT(";2,SeekToBgn"),
+    TEXT("8,SeekA"), TEXT(";9,SeekB"), TEXT("10,SeekC"), TEXT("11,SeekD"),
+    TEXT("6,Pause"),
+    TEXT("12,SeekE"), TEXT("13,SeekF"), TEXT(";14,SeekG"), TEXT("15,SeekH"),
+    TEXT("3,SeekToEnd")
+};
 
 
 CTvtPlay::CTvtPlay()
@@ -49,6 +82,13 @@ CTvtPlay::CTvtPlay()
     , m_fSettingsLoaded(false)
     , m_fForceEnable(false)
     , m_hwndFrame(NULL)
+    , m_fFullScreen(false)
+    , m_fHide(false)
+    , m_fToBottom(false)
+    , m_timeoutOnCmd(0)
+    , m_timeoutOnMove(0)
+    , m_dispCount(0)
+    , m_buttonNum(0)
     , m_hThread(NULL)
     , m_hThreadEvent(NULL)
     , m_threadID(0)
@@ -56,12 +96,15 @@ CTvtPlay::CTvtPlay()
     , m_duration(0)
     , m_fFixed(false)
     , m_fPaused(false)
-    , m_fFullScreen(false)
-    , m_fHide(false)
-    , m_hideCount(0)
     , m_fHalt(false)
+    , m_fAutoClose(false)
+    , m_fAutoLoop(false)
+    , m_fResetAllOnSeek(false)
 {
+    m_szIniFileName[0] = 0;
     m_szSpecFileName[0] = 0;
+    m_szIconFileName[0] = 0;
+    m_szPrevFileName[0] = 0;
     CStatusView::Initialize(g_hinstDLL);
 }
 
@@ -118,24 +161,7 @@ bool CTvtPlay::Initialize()
     // 初期化処理
 
     // コマンドを登録
-    static const TVTest::CommandInfo commandList[] = {
-        {ID_COMMAND_OPEN, L"Open", L"ファイルを開く"},
-        {ID_COMMAND_PAUSE, L"Pause", L"一時停止/再生"},
-        {ID_COMMAND_SEEK_BGN, L"SeekToBgn", L"シーク:先頭"},
-        {ID_COMMAND_SEEK_END, L"SeekToEnd", L"シーク:末尾"},
-        {ID_COMMAND_SEEK_M05, L"Seek-05", L"シーク:-5秒"},
-        {ID_COMMAND_SEEK_P05, L"Seek+05", L"シーク:+5秒"},
-        {ID_COMMAND_SEEK_M15, L"Seek-15", L"シーク:-15秒"},
-        {ID_COMMAND_SEEK_P15, L"Seek+15", L"シーク:+15秒"},
-        {ID_COMMAND_SEEK_M30, L"Seek-30", L"シーク:-30秒"},
-        {ID_COMMAND_SEEK_P30, L"Seek+30", L"シーク:+30秒"},
-        {ID_COMMAND_SEEK_M60, L"Seek-60", L"シーク:-60秒"},
-        {ID_COMMAND_SEEK_P60, L"Seek+60", L"シーク:+60秒"},
-        {ID_COMMAND_SEEK_M5M, L"Seek-5m", L"シーク:-5分"},
-        {ID_COMMAND_SEEK_P5M, L"Seek+5m", L"シーク:+5分"},
-        {ID_COMMAND_NOP, L"Nop", L"何もしない"},
-    };
-    m_pApp->RegisterCommand(commandList, ARRAY_SIZE(commandList));
+    m_pApp->RegisterCommand(COMMAND_LIST, ARRAY_SIZE(COMMAND_LIST));
 
     // イベントコールバック関数を登録
     m_pApp->SetEventCallback(EventCallback, this);
@@ -160,6 +186,33 @@ void CTvtPlay::LoadSettings()
 {
     if (m_fSettingsLoaded) return;
     
+    if (!::GetModuleFileName(g_hinstDLL, m_szIniFileName, ARRAY_SIZE(m_szIniFileName)) ||
+        !::PathRenameExtension(m_szIniFileName, TEXT(".ini"))) m_szIniFileName[0] = 0;
+
+    m_fAutoClose = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsAutoClose"), 0, m_szIniFileName) != 0;
+    m_fAutoLoop = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsAutoLoop"), 0, m_szIniFileName) != 0;
+    m_fResetAllOnSeek = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsResetAllOnSeek"), 0, m_szIniFileName) != 0;
+    m_fToBottom = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("ToBottom"), 1, m_szIniFileName) != 0;
+    m_timeoutOnCmd = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnCommand"), 2000, m_szIniFileName);
+    m_timeoutOnMove = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnMouseMove"), 0, m_szIniFileName);
+    ::GetPrivateProfileString(TEXT("Settings"), TEXT("IconImage"), TEXT(""),
+                              m_szIconFileName, ARRAY_SIZE(m_szIconFileName), m_szIniFileName);
+
+    // シークコマンドのシーク量設定を取得
+    for (int i = 0; i < COMMAND_SEEK_MAX; i++) {
+        TCHAR key[16];
+        ::wsprintf(key, TEXT("Seek%c"), (TCHAR)i + TEXT('A'));
+        m_seekList[i] = ::GetPrivateProfileInt(TEXT("Settings"), key, DEFAULT_SEEK_LIST[i], m_szIniFileName);
+    }
+
+    // ボタンアイテムの配置設定を取得
+    for (int i = 0; i < BUTTON_MAX; i++) {
+        TCHAR key[16];
+        ::wsprintf(key, TEXT("Button%02d"), i);
+        ::GetPrivateProfileString(TEXT("Settings"), key, DEFAULT_BUTTON_LIST[i],
+                                  m_buttonList[i], ARRAY_SIZE(m_buttonList[0]), m_szIniFileName);
+    }
+
     CColorScheme scheme;
     WCHAR szAppIniPath[MAX_PATH];
     if (m_pApp->GetSetting(L"IniFilePath", szAppIniPath, MAX_PATH) > 0)
@@ -174,6 +227,36 @@ void CTvtPlay::LoadSettings()
     m_statusView.SetTheme(&theme);
 
     m_fSettingsLoaded = true;
+
+    // デフォルトの設定ファイルを出力するため
+    if (!::PathFileExists(m_szIniFileName)) SaveSettings();
+}
+
+
+// 設定の保存
+void CTvtPlay::SaveSettings() const
+{
+    if (!m_fSettingsLoaded) return;
+
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsAutoClose"), m_fAutoClose, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsAutoLoop"), m_fAutoLoop, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsResetAllOnSeek"), m_fResetAllOnSeek, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("ToBottom"), m_fToBottom, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnCommand"), m_timeoutOnCmd, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnMouseMove"), m_timeoutOnMove, m_szIniFileName);
+    ::WritePrivateProfileString(TEXT("Settings"), TEXT("IconImage"), m_szIconFileName, m_szIniFileName);
+    
+    for (int i = 0; i < COMMAND_SEEK_MAX; i++) {
+        TCHAR key[16];
+        ::wsprintf(key, TEXT("Seek%c"), (TCHAR)i + TEXT('A'));
+        WritePrivateProfileInt(TEXT("Settings"), key, m_seekList[i], m_szIniFileName);
+    }
+
+    for (int i = 0; i < BUTTON_MAX; i++) {
+        TCHAR key[16];
+        ::wsprintf(key, TEXT("Button%02d"), i);
+        ::WritePrivateProfileString(TEXT("Settings"), key, m_buttonList[i], m_szIniFileName);
+    }
 }
 
 
@@ -196,14 +279,32 @@ bool CTvtPlay::InitializePlugin()
     wc.lpszClassName    = TVTPLAY_FRAME_WINDOW_CLASS;
     if (!::RegisterClass(&wc)) return false;
     
-    for (int id = STATUS_ITEM_BUTTON_FIRST; id <= STATUS_ITEM_BUTTON_LAST; id++) {
-        m_statusView.AddItem(new CButtonStatusItem(this, id));
+    LoadSettings();
+    
+    // 文字列解析してボタンアイテムを生成
+    m_buttonNum = 0;
+    for (int i = 0; i < BUTTON_MAX; i++) {
+        if (m_buttonList[i][0] == TEXT(';')) continue;
+
+        int iconIndex = ::StrToInt(m_buttonList[i]);
+
+        int commandID = -1;
+        LPCTSTR cmd = ::StrChr(m_buttonList[i], TEXT(','));
+        for (int j = 0; cmd && j < ARRAY_SIZE(COMMAND_LIST); j++) {
+            if (!::lstrcmpi(&cmd[1], COMMAND_LIST[j].pszText)) {
+                commandID = COMMAND_LIST[j].ID;
+                break;
+            }
+        }
+        if (commandID == -1) continue;
+
+        m_statusView.AddItem(new CButtonStatusItem(this, STATUS_ITEM_BUTTON + commandID, m_szIconFileName, iconIndex));
+        m_buttonNum++;
     }
+
     m_statusView.AddItem(new CSeekStatusItem(this));
     m_statusView.AddItem(new CPositionStatusItem(this));
     
-    LoadSettings();
-
     m_fInitialized = true;
     return true;
 }
@@ -271,22 +372,25 @@ bool CTvtPlay::Open(HWND hwndOwner)
 }
 
 
+// 開いているor閉じたファイルを開きなおす
+bool CTvtPlay::ReOpen()
+{
+    if (!m_szPrevFileName[0]) return false;
+    return Open(m_szPrevFileName);
+}
+
+
 bool CTvtPlay::Open(LPCTSTR fileName)
 {
     Close();
-    m_statusView.SetSingleText(TEXT("ファイルを開いています"));
     
-    if (!m_tsSender.Open(fileName)) {
-        m_statusView.SetSingleText(NULL);
-        return false;
-    }
+    if (!m_tsSender.Open(fileName)) return false;
 
     m_pApp->Reset(TVTest::RESET_VIEWER);
 
-    m_hThreadEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+    m_hThreadEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
     if (!m_hThreadEvent) {
         m_tsSender.Close();
-        m_statusView.SetSingleText(NULL);
         return false;
     }
 
@@ -295,54 +399,32 @@ bool CTvtPlay::Open(LPCTSTR fileName)
         ::CloseHandle(m_hThreadEvent);
         m_hThreadEvent = NULL;
         m_tsSender.Close();
-        m_statusView.SetSingleText(NULL);
         return false;
     }
 
     // メセージキューができるまで待つ
     ::WaitForSingleObject(m_hThreadEvent, INFINITE);
-    ::CloseHandle(m_hThreadEvent);
-    m_hThreadEvent = NULL;
 
+    // TSデータの送り先を設定
     SetUpDestination();
-
-    m_statusView.SetSingleText(NULL);
+    
+    ::lstrcpy(m_szPrevFileName, fileName);
     return true;
 }
 
 
 void CTvtPlay::Close()
 {
-    m_statusView.SetSingleText(TEXT("ファイルを閉じています"));
     if (m_hThread) {
         ::PostThreadMessage(m_threadID, WM_QUIT, 0, 0);
         ::WaitForSingleObject(m_hThread, INFINITE);
         ::CloseHandle(m_hThread);
         m_hThread = NULL;
+        ::CloseHandle(m_hThreadEvent);
+        m_hThreadEvent = NULL;
     }
-    m_statusView.SetSingleText(NULL);
 }
 
-
-int CTvtPlay::GetPosition() const
-{
-    return m_position;
-}
-
-int CTvtPlay::GetDuration() const
-{
-    return m_duration;
-}
-
-bool CTvtPlay::IsFixed() const
-{
-    return m_fFixed;
-}
-
-bool CTvtPlay::IsPaused() const
-{
-    return m_fPaused;
-}
 
 // ドライバの状態に応じてTSデータの転送先を設定する
 void CTvtPlay::SetUpDestination()
@@ -368,38 +450,46 @@ void CTvtPlay::SetUpDestination()
     }
 }
 
-void CTvtPlay::Pause(bool fPause)
+void CTvtPlay::ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll)
 {
-    if (fPause) {
-        if (m_hThread) ::PostThreadMessage(m_threadID, WM_TS_PAUSE, 1, 0);
-    }
-    else {
-        ResetAndPostToSender(WM_TS_PAUSE, 0, 0);
+    if (m_hThread) {
+        // 転送停止するまで待つ
+        m_fHalt = true;
+        ::WaitForSingleObject(m_hThreadEvent, 1000);
+
+        // RESET_VIEWERのデッドロック対策のため先にリセットする
+        // 連続してシークを行う場合の対策としてRESET_ALLも可能にする
+        m_pApp->Reset(fResetAll ? TVTest::RESET_ALL : TVTest::RESET_VIEWER);
+        ::PostThreadMessage(m_threadID, Msg, wParam, lParam);
+        m_fHalt = false;
     }
 }
 
-void CTvtPlay::ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam)
+void CTvtPlay::Pause(bool fPause)
 {
-    if (m_hThread) {
-        m_fHalt = true;
-        m_pApp->Reset(TVTest::RESET_VIEWER);
-        if (!::PostThreadMessage(m_threadID, Msg, wParam, lParam)) m_fHalt = false;
-    }
+    ResetAndPostToSender(WM_TS_PAUSE, fPause ? 1 : 0, 0, false);
 }
 
 void CTvtPlay::SeekToBegin()
 {
-    ResetAndPostToSender(WM_TS_SEEK_BGN, 0, 0);
+    ResetAndPostToSender(WM_TS_SEEK_BGN, 0, 0, m_fResetAllOnSeek);
 }
 
 void CTvtPlay::SeekToEnd()
 {
-    ResetAndPostToSender(WM_TS_SEEK_END, 0, 0);
+    ResetAndPostToSender(WM_TS_SEEK_END, 0, 0, m_fResetAllOnSeek);
 }
 
 void CTvtPlay::Seek(int msec)
 {
-    ResetAndPostToSender(WM_TS_SEEK, 0, msec);
+    ResetAndPostToSender(WM_TS_SEEK, 0, msec, m_fResetAllOnSeek);
+}
+
+void CTvtPlay::SetAutoLoop(bool fAutoLoop)
+{
+    m_fAutoLoop = fAutoLoop;
+    m_statusView.UpdateItem(STATUS_ITEM_BUTTON + ID_COMMAND_LOOP);
+    SaveSettings();
 }
 
 
@@ -412,12 +502,13 @@ void CTvtPlay::Resize()
 
         if (::GetMonitorInfo(hMon, &mi)) {
             ::SetWindowPos(m_hwndFrame, NULL,
-                           mi.rcMonitor.left, mi.rcMonitor.bottom - STATUS_HEIGHT * 2,
+                           mi.rcMonitor.left, mi.rcMonitor.bottom - (m_fToBottom ? STATUS_HEIGHT : STATUS_HEIGHT*2),
                            mi.rcMonitor.right - mi.rcMonitor.left, STATUS_HEIGHT, SWP_NOZORDER);
         }
         if (!m_fFullScreen) {
             m_fHide = false;
-            m_hideCount = 0;
+            m_dispCount = 0;
+            ::GetCursorPos(&m_lastCurPos);
             ::SetTimer(m_hwndFrame, 0, STATUS_TIMER_INTERVAL, NULL);
             m_fFullScreen = true;
         }
@@ -442,10 +533,10 @@ void CTvtPlay::OnCommand(int id)
 {
     switch (id) {
     case ID_COMMAND_OPEN:
-        if (m_hwndFrame) Open(m_hwndFrame);
+        Open(m_hwndFrame);
         break;
-    case ID_COMMAND_PAUSE:
-        Pause(!IsPaused());
+    case ID_COMMAND_CLOSE:
+        Close();
         break;
     case ID_COMMAND_SEEK_BGN:
         SeekToBegin();
@@ -453,18 +544,27 @@ void CTvtPlay::OnCommand(int id)
     case ID_COMMAND_SEEK_END:
         SeekToEnd();
         break;
-    case ID_COMMAND_SEEK_M05: Seek(-5000); break;
-    case ID_COMMAND_SEEK_P05: Seek( 4000); break;
-    case ID_COMMAND_SEEK_M15: Seek(-15000); break;
-    case ID_COMMAND_SEEK_P15: Seek( 14000); break;
-    case ID_COMMAND_SEEK_M30: Seek(-30000); break;
-    case ID_COMMAND_SEEK_P30: Seek( 29000); break;
-    case ID_COMMAND_SEEK_M60: Seek(-60000); break;
-    case ID_COMMAND_SEEK_P60: Seek( 59000); break;
-    case ID_COMMAND_SEEK_M5M: Seek(-300000); break;
-    case ID_COMMAND_SEEK_P5M: Seek( 299000); break;
+    case ID_COMMAND_LOOP:
+        SetAutoLoop(!IsAutoLoop());
+        break;
+    case ID_COMMAND_PAUSE:
+        if (!IsOpen()) ReOpen();
+        else Pause(!IsPaused());
+        break;
+    case ID_COMMAND_NOP:
+        break;
+    case ID_COMMAND_SEEK_A:
+    case ID_COMMAND_SEEK_B:
+    case ID_COMMAND_SEEK_C:
+    case ID_COMMAND_SEEK_D:
+    case ID_COMMAND_SEEK_E:
+    case ID_COMMAND_SEEK_F:
+    case ID_COMMAND_SEEK_G:
+    case ID_COMMAND_SEEK_H:
+        Seek(m_seekList[id - ID_COMMAND_SEEK_A]);
+        break;
     }
-    m_hideCount = STATUS_HIDE_TIMEOUT;
+    m_dispCount = m_timeoutOnCmd / STATUS_TIMER_INTERVAL;
 }
 
 
@@ -563,15 +663,26 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             if (::GetWindowRect(::GetDesktopWindow(), &rect) && ::GetCursorPos(&curPos)) {
                 HMONITOR hMonApp = ::MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
                 HMONITOR hMonCur = ::MonitorFromPoint(curPos, MONITOR_DEFAULTTOPRIMARY);
-                bool isHovered = hMonApp == hMonCur && rect.bottom - STATUS_HEIGHT * 2 < curPos.y;
-                
-                if (pThis->m_hideCount > 0 || isHovered) {
+                bool isHoverd = hMonApp == hMonCur && rect.bottom -
+                                (pThis->m_fToBottom ? STATUS_HEIGHT : STATUS_HEIGHT*2) < curPos.y;
+
+                // カーソルが移動したときに表示する
+                POINT lastPos = pThis->m_lastCurPos;
+                if (pThis->m_timeoutOnMove > 0 && hMonApp == hMonCur &&
+                    (curPos.x < lastPos.x-2 || lastPos.x+2 < curPos.x ||
+                     curPos.y < lastPos.y-2 || lastPos.y+2 < curPos.y))
+                {
+                    pThis->m_dispCount = pThis->m_timeoutOnMove / STATUS_TIMER_INTERVAL;
+                    pThis->m_lastCurPos = curPos;
+                }
+
+                if (pThis->m_dispCount > 0 || isHoverd) {
                     if (pThis->m_fHide) {
                         ::SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
                         pThis->m_fHide = false;
                     }
-                    if (isHovered) pThis->m_hideCount = 0;
-                    else pThis->m_hideCount--;
+                    if (isHoverd) pThis->m_dispCount = 0;
+                    else pThis->m_dispCount--;
                 }
                 else {
                     if (!pThis->m_fHide) {
@@ -588,9 +699,9 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             int margin = pThis->m_pApp->GetFullscreen() ? 0 : STATUS_MARGIN;
             
             CStatusItem *pItem = pThis->m_statusView.GetItemByID(STATUS_ITEM_SEEK);
-            if (pItem) pItem->SetWidth(LOWORD(lParam) - 8 - 2 - margin*2 - 120 -
-                                       24*(STATUS_ITEM_BUTTON_LAST-STATUS_ITEM_BUTTON_FIRST+1));
-            pThis->m_statusView.SetPosition(margin, 0, LOWORD(lParam) - margin*2, HIWORD(lParam) - margin);
+            if (pItem) pItem->SetWidth(LOWORD(lParam) - 8 - 2 - margin*2 - 120 - pThis->m_buttonNum * 24);
+            pThis->m_statusView.SetPosition(margin, 0, LOWORD(lParam) - margin*2,
+                                            HIWORD(lParam) - margin + (pThis->m_fToBottom ? 1 : 0));
         }
         break;
     case WM_UPDATE_POSITION:
@@ -609,6 +720,19 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(::GetWindowLongPtr(hwnd, GWLP_USERDATA));
             pThis->m_fPaused = static_cast<int>(wParam) ? true : false;
             pThis->m_statusView.UpdateItem(STATUS_ITEM_SEEK);
+            pThis->m_statusView.UpdateItem(STATUS_ITEM_BUTTON + ID_COMMAND_PAUSE);
+        }
+        break;
+    case WM_QUERY_CLOSE:
+        {
+            CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(::GetWindowLongPtr(hwnd, GWLP_USERDATA));
+            pThis->Close();
+        }
+        break;
+    case WM_QUERY_SEEK_BGN:
+        {
+            CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(::GetWindowLongPtr(hwnd, GWLP_USERDATA));
+            pThis->SeekToBegin();
         }
         break;
     }
@@ -624,12 +748,10 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
     int posSec = -1, durSec = -1;
     bool fPrevFixed = false;
 
-    ::PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE);
-    ::SetEvent(pThis->m_hThreadEvent);
-
-    pThis->m_fHalt = false;
     for (;;) {
-        if (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+        BOOL rv = ::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE);
+        ::SetEvent(pThis->m_hThreadEvent);
+        if (rv) {
             if (msg.message == WM_QUIT) break;
 
             switch (msg.message) {
@@ -653,19 +775,15 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                 pThis->m_tsSender.Pause(msg.wParam ? true : false);
                 ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED,
                               pThis->m_tsSender.IsPaused() ? 1 : 0, 0);
-                pThis->m_fHalt = false;
                 break;
             case WM_TS_SEEK_BGN:
                 pThis->m_tsSender.SeekToBegin();
-                pThis->m_fHalt = false;
                 break;
             case WM_TS_SEEK_END:
                 pThis->m_tsSender.SeekToEnd();
-                pThis->m_fHalt = false;
                 break;
             case WM_TS_SEEK:
                 pThis->m_tsSender.Seek(msg.lParam);
-                pThis->m_fHalt = false;
                 break;
             }
             ::TranslateMessage(&msg);
@@ -675,22 +793,34 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
             ::Sleep(10);
         }
         else {
-            int pos = pThis->m_tsSender.GetPosition();
-            int dur = pThis->m_tsSender.GetDuration();
-            bool fFixed = pThis->m_tsSender.IsFixed();
-
-            if (posSec != pos / 1000 || durSec != dur / 1000 || fPrevFixed != fFixed) {
-                ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_POSITION, pos, fFixed ? -dur : dur);
-                posSec = pos / 1000;
-                durSec = dur / 1000;
-                fPrevFixed = fFixed;
+            bool fRead = pThis->m_tsSender.Send();
+            if (!fRead) {
+                if (pThis->m_tsSender.IsFixed()) {
+                    // ループ再生時に閉じてはいけない
+                    if (pThis->m_fAutoLoop) ::PostMessage(pThis->m_hwndFrame, WM_QUERY_SEEK_BGN, 0, 0);
+                    else if (pThis->m_fAutoClose) ::PostMessage(pThis->m_hwndFrame, WM_QUERY_CLOSE, 0, 0);
+                }
             }
+            if (!fRead || pThis->m_tsSender.IsPaused()) ::Sleep(100);
+        }
 
-            if (!pThis->m_tsSender.Send() || pThis->m_tsSender.IsPaused()) ::Sleep(100);
+        int pos = pThis->m_tsSender.GetPosition();
+        int dur = pThis->m_tsSender.GetDuration();
+        bool fFixed = pThis->m_tsSender.IsFixed();
+
+        // 再生位置の更新を伝える
+        if (posSec != pos / 1000 || durSec != dur / 1000 || fPrevFixed != fFixed) {
+            ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_POSITION, pos, fFixed ? -dur : dur);
+            posSec = pos / 1000;
+            durSec = dur / 1000;
+            fPrevFixed = fFixed;
         }
     }
-
+    
+    pThis->m_tsSender.Pause(false);
     pThis->m_tsSender.Close();
+    ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, 0, 0);
+    ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_POSITION, 0, 0);
     return 0;
 }
 
@@ -874,43 +1004,33 @@ void CPositionStatusItem::Draw(HDC hdc,const RECT *pRect)
 }
 
 
-CButtonStatusItem::CButtonStatusItem(CTvtPlay *pPlugin, int id)
+CButtonStatusItem::CButtonStatusItem(CTvtPlay *pPlugin, int id, LPCTSTR iconFileName, int iconIndex)
     : CStatusItem(id, 16)
     , m_pPlugin(pPlugin)
+    , m_iconIndex(iconIndex)
 {
     m_MinWidth = 16;
+
+    if (iconFileName && iconFileName[0])
+        m_icons.Load(g_hinstDLL, iconFileName, LR_CREATEDIBSECTION | LR_LOADFROMFILE);
+    
+    if (!m_icons.IsCreated()) m_icons.Load(g_hinstDLL, IDB_BUTTONS);
 }
 
 void CButtonStatusItem::Draw(HDC hdc, const RECT *pRect)
 {
-    if (!m_icons.IsCreated())
-        m_icons.Load(g_hinstDLL, IDB_BUTTONS);
-    DrawIcon(hdc, pRect, m_icons.GetHandle(), (m_ID - STATUS_ITEM_BUTTON_FIRST) * 16);
+    // PauseとLoopは特別扱い
+    if ((m_ID-STATUS_ITEM_BUTTON == ID_COMMAND_PAUSE && (!m_pPlugin->IsOpen() || m_pPlugin->IsPaused())) ||
+        (m_ID-STATUS_ITEM_BUTTON == ID_COMMAND_LOOP && m_pPlugin->IsAutoLoop()))
+    {
+        DrawIcon(hdc, pRect, m_icons.GetHandle(), (m_iconIndex + 1) * 16);
+    }
+    else {
+        DrawIcon(hdc, pRect, m_icons.GetHandle(), m_iconIndex * 16);
+    }
 }
 
 void CButtonStatusItem::OnLButtonDown(int x, int y)
 {
-    switch (m_ID) {
-    case STATUS_ITEM_BUTTON_OPEN:
-        m_pPlugin->Open(m_pStatus->GetHandle());
-        break;
-    case STATUS_ITEM_BUTTON_M60:
-        m_pPlugin->Seek(-60000);
-        break;
-    case STATUS_ITEM_BUTTON_M15:
-        m_pPlugin->Seek(-15000);
-        break;
-    case STATUS_ITEM_BUTTON_M05:
-        m_pPlugin->Seek(-5000);
-        break;
-    case STATUS_ITEM_BUTTON_P05:
-        m_pPlugin->Seek(4000);
-        break;
-    case STATUS_ITEM_BUTTON_P15:
-        m_pPlugin->Seek(14000);
-        break;
-    case STATUS_ITEM_BUTTON_P60:
-        m_pPlugin->Seek(59000);
-        break;
-    }
+    m_pPlugin->OnCommand(m_ID - STATUS_ITEM_BUTTON);
 }

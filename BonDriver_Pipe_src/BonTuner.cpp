@@ -516,8 +516,8 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 		// ドライバオープン
 		TCHAR szName[MAX_PATH];
 		::wsprintf(szName, PIPE_NAME, dwChannel);
-		m_hPipe = ::CreateNamedPipe(szName, PIPE_ACCESS_INBOUND | FILE_FLAG_OVERLAPPED,
-		                            PIPE_TYPE_BYTE, 1, 0, 0, 3000, NULL);
+		m_hPipe = ::CreateNamedPipe(szName, PIPE_ACCESS_INBOUND | FILE_FLAG_OVERLAPPED, PIPE_TYPE_BYTE, 1,
+		                            sizeof(m_pIoReqBuff->RxdBuff), sizeof(m_pIoReqBuff->RxdBuff), 3000, NULL);
 		if (m_hPipe == INVALID_HANDLE_VALUE) {
 			::OutputDebugString(TEXT("BonDriver_Pipe: CBonTuner::OpenTuner() CreateNamedPipe error\n"));
 			throw 1UL;
