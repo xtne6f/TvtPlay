@@ -173,6 +173,7 @@
     <ClInclude Include="BasicWindow.h" />
     <ClInclude Include="ColorScheme.h" />
     <ClInclude Include="DrawUtil.h" />
+    <ClInclude Include="Playlist.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="Settings.h" />
     <ClInclude Include="StatusView.h" />
@@ -188,6 +189,7 @@
     <ClCompile Include="BasicWindow.cpp" />
     <ClCompile Include="ColorScheme.cpp" />
     <ClCompile Include="DrawUtil.cpp" />
+    <ClCompile Include="Playlist.cpp" />
     <ClCompile Include="Settings.cpp" />
     <ClCompile Include="StatusView.cpp" />
     <ClCompile Include="Theme.cpp" />

@@ -7,8 +7,10 @@
 LRESULT ASFilterSendMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 
+#define READ_FILE_MAX_SIZE (256 * 1024)
 #define ICON_SIZE 16
 
+WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName);
 bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTSTR pIdxList);
 int CompareTStrI(const void *str1, const void *str2);
 int CompareTStrIX(const void *str1, const void *str2);

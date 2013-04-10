@@ -4,8 +4,6 @@
 #define TVTEST_PLUGIN_CLASS_IMPLEMENT
 #define TVTEST_PLUGIN_VERSION TVTEST_PLUGIN_VERSION_(0,0,13)
 #include "TVTestPlugin.h"
-#include "StatusView.h"
-#include "TsSender.h"
 
 #define COMMAND_SEEK_MAX        8
 #define COMMAND_STRETCH_MAX     4
@@ -20,7 +18,6 @@ public:
 // プラグインクラス
 class CTvtPlay : public TVTest::CTVTestPlugin
 {
-    static const int STATUS_HEIGHT = 22;
     static const int TIMER_ID_FULL_SCREEN = 1;
     static const int TIMER_ID_RESET_DROP = 2;
     static const int TIMER_FULL_SCREEN_INTERVAL = 100;
@@ -31,13 +28,14 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     bool m_fForceEnable, m_fIgnoreExt;
     bool m_fAutoEnUdp, m_fAutoEnPipe;
     bool m_fEventExecute;
+    bool m_fPausedOnPreviewChange;
     TCHAR m_szIniFileName[MAX_PATH];
     TCHAR m_szSpecFileName[MAX_PATH];
 
     // コントロール
     HWND m_hwndFrame;
     bool m_fFullScreen, m_fHide, m_fToBottom;
-    int m_statusMargin;
+    int m_statusHeight, m_statusMargin;
     bool m_fSeekDrawTot, m_fPosDrawTot;
     int m_posItemWidth;
     int m_timeoutOnCmd, m_timeoutOnMove;
@@ -61,13 +59,13 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     DWORD m_threadID;
     int m_threadPriority;
     CTsSender m_tsSender;
-    TCHAR m_szPrevFileName[MAX_PATH];
     int m_position;
     int m_duration;
     int m_totTime;
     int m_speed;
     bool m_fFixed, m_fSpecialExt, m_fPaused;
-    bool m_fHalt, m_fAutoClose, m_fAutoLoop;
+    bool m_fHalt, m_fAllRepeat, m_fSingleRepeat;
+    int m_waitOnStop;
     bool m_fResetAllOnSeek;
     int m_stretchMode, m_noMuteMax, m_noMuteMin;
     bool m_fConvTo188;
@@ -80,19 +78,24 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     };
     std::list<HASH_INFO> m_hashList;
 
+    // 再生リスト
+    CPlaylist m_playlist;
+
     void AnalyzeCommandLine(LPCWSTR cmdLine);
     void LoadSettings();
+    void LoadTVTestSettings();
     void SaveSettings() const;
     bool InitializePlugin();
     bool EnablePlugin(bool fEnable);
-    bool Open(HWND hwndOwner);
-    bool ReOpen();
+    bool OpenWithDialog(HWND hwndOwner);
+    bool OpenCurrent();
     bool Open(LPCTSTR fileName);
     void Close();
     void SetUpDestination();
     void ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll);
     void Resize();
     void EnablePluginByDriverName();
+    void OnPreviewChange(bool fPreview);
     static LRESULT CALLBACK EventCallback(UINT Event, LPARAM lParam1, LPARAM lParam2, void *pClientData);
     static BOOL CALLBACK WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pResult, void *pUserData);
     static LRESULT CALLBACK FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -108,14 +111,16 @@ public:
     int GetTotTime() const { return m_totTime; }
     bool IsFixed(bool *pfSpecialExt = NULL) const { if (pfSpecialExt) *pfSpecialExt=m_fSpecialExt; return m_fFixed; }
     bool IsPaused() const { return m_fPaused; }
-    bool IsAutoLoop() const { return m_fAutoLoop; }
+    bool IsAllRepeat() const { return m_fAllRepeat; }
+    bool IsSingleRepeat() const { return m_fSingleRepeat; }
 
-    bool Open(const POINT &pt, UINT flags);
+    bool OpenWithPopup(const POINT &pt, UINT flags);
+    bool OpenWithPlayListPopup(const POINT &pt, UINT flags);
     void Pause(bool fPause);
     void SeekToBegin();
     void SeekToEnd();
     void Seek(int msec);
-    void SetAutoLoop(bool fAutoLoop);
+    void SetRepeatFlags(bool fAllRepeat, bool fSingleRepeat);
     int GetStretchID() const;
     void Stretch(int stretchID);
     void OnCommand(int id);

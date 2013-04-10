@@ -1,24 +1,29 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-10-19
+// 最終更新: 2011-10-29
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
 #include <Shlwapi.h>
 #include <list>
+#include <vector>
 #include "Util.h"
 #include "Settings.h"
 #include "ColorScheme.h"
-#include "TvtPlay.h"
+#include "StatusView.h"
+#include "TsSender.h"
+#include "Playlist.h"
 #include "resource.h"
+#include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.0.9r3)";
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.0)";
+static const int INFO_VERSION = 10;
 
 #define WM_UPDATE_POSITION  (WM_APP + 1)
 #define WM_UPDATE_TOT_TIME  (WM_APP + 2)
 #define WM_UPDATE_F_PAUSED  (WM_APP + 3)
 #define WM_UPDATE_SPEED     (WM_APP + 4)
-#define WM_QUERY_CLOSE      (WM_APP + 5)
+#define WM_QUERY_CLOSE_NEXT (WM_APP + 5)
 #define WM_QUERY_SEEK_BGN   (WM_APP + 6)
 #define WM_QUERY_RESET      (WM_APP + 7)
 
@@ -38,7 +43,9 @@ static LPCTSTR PIPE_NAME = TEXT("\\\\.\\pipe\\BonDriver_Pipe%02d");
 enum {
     ID_COMMAND_OPEN,
     ID_COMMAND_OPEN_POPUP,
+    ID_COMMAND_LIST_POPUP,
     ID_COMMAND_CLOSE,
+    ID_COMMAND_PREV,
     ID_COMMAND_SEEK_BGN,
     ID_COMMAND_SEEK_END,
     ID_COMMAND_LOOP,
@@ -61,10 +68,12 @@ enum {
 static const TVTest::CommandInfo COMMAND_LIST[] = {
     {ID_COMMAND_OPEN, L"Open", L"ファイルを開く"},
     {ID_COMMAND_OPEN_POPUP, L"OpenPopup", L"ファイルを開く(ポップアップ)"},
+    {ID_COMMAND_LIST_POPUP, L"ListPopup", L"再生リストを開く(ポップアップ)"},
     {ID_COMMAND_CLOSE, L"Close", L"ファイルを閉じる"},
-    {ID_COMMAND_SEEK_BGN, L"SeekToBgn", L"シーク:先頭"},
-    {ID_COMMAND_SEEK_END, L"SeekToEnd", L"シーク:末尾"},
-    {ID_COMMAND_LOOP, L"Loop", L"ループする/しない"},
+    {ID_COMMAND_PREV, L"Prev", L"前のファイル/先頭にシーク"},
+    {ID_COMMAND_SEEK_BGN, L"SeekToBgn", L"先頭にシーク"},
+    {ID_COMMAND_SEEK_END, L"SeekToEnd", L"次のファイル/末尾にシーク"},
+    {ID_COMMAND_LOOP, L"Loop", L"全体/シングル/リピートしない"},
     {ID_COMMAND_PAUSE, L"Pause", L"一時停止/再生"},
     {ID_COMMAND_NOP, L"Nop", L"何もしない"},
     {ID_COMMAND_SEEK_A, L"SeekA", L"シーク:A"},
@@ -91,8 +100,8 @@ static const int DEFAULT_STRETCH_LIST[COMMAND_STRETCH_MAX] = {
 
 // NULL禁止
 static LPCTSTR DEFAULT_BUTTON_LIST[BUTTON_MAX] = {
-    TEXT("0,Open"), TEXT(";1,Close"), TEXT(";4,Loop"),
-    TEXT(";2,SeekToBgn"),
+    TEXT("0,Open"), TEXT(";1,Close"), TEXT("4:5:14,Loop"),
+    TEXT(";9,Prev  2,SeekToBgn"),
     TEXT("'-'6'0,SeekA"), TEXT(";'-'3'0,SeekB"),
     TEXT("'-'1'5,SeekC"), TEXT("'-' '5,SeekD"),
     TEXT("6,Pause"),
@@ -112,10 +121,12 @@ CTvtPlay::CTvtPlay()
     , m_fAutoEnUdp(false)
     , m_fAutoEnPipe(false)
     , m_fEventExecute(false)
+    , m_fPausedOnPreviewChange(false)
     , m_hwndFrame(NULL)
     , m_fFullScreen(false)
     , m_fHide(false)
     , m_fToBottom(false)
+    , m_statusHeight(0)
     , m_statusMargin(0)
     , m_fSeekDrawTot(false)
     , m_fPosDrawTot(false)
@@ -140,8 +151,9 @@ CTvtPlay::CTvtPlay()
     , m_fSpecialExt(false)
     , m_fPaused(false)
     , m_fHalt(false)
-    , m_fAutoClose(false)
-    , m_fAutoLoop(false)
+    , m_fAllRepeat(false)
+    , m_fSingleRepeat(false)
+    , m_waitOnStop(0)
     , m_fResetAllOnSeek(false)
     , m_stretchMode(0)
     , m_noMuteMax(0)
@@ -154,7 +166,7 @@ CTvtPlay::CTvtPlay()
     m_szSpecFileName[0] = 0;
     m_szIconFileName[0] = 0;
     m_szPopupPattern[0] = 0;
-    m_szPrevFileName[0] = 0;
+    m_lastCurPos.x = m_lastCurPos.y = 0;
     CStatusView::Initialize(g_hinstDLL);
 }
 
@@ -193,7 +205,9 @@ void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine)
                 LPCTSTR ext = ::PathFindExtension(argv[argc-1]);
                 if (ext && (!::lstrcmpi(ext, TEXT(".ts")) ||
                             !::lstrcmpi(ext, TEXT(".m2t")) ||
-                            !::lstrcmpi(ext, TEXT(".m2ts"))))
+                            !::lstrcmpi(ext, TEXT(".m2ts")) ||
+                            !::lstrcmpi(ext, TEXT(".m3u")) ||
+                            !::lstrcmpi(ext, TEXT(".tslist"))))
                 {
                     m_fForceEnable = true;
                     fSpec = true;
@@ -243,8 +257,10 @@ void CTvtPlay::LoadSettings()
     int defMargin = m_pApp->GetVersion() >= TVTest::MakeVersion(0,7,21) ? 1 : 2; // 0.7.21以降は細くなった
     int defSalt = (::GetTickCount()>>16)^(::GetTickCount()&0xffff);
 
-    m_fAutoClose = ::GetPrivateProfileInt(SETTINGS, TEXT("TsAutoClose"), 0, m_szIniFileName) != 0;
-    m_fAutoLoop = ::GetPrivateProfileInt(SETTINGS, TEXT("TsAutoLoop"), 0, m_szIniFileName) != 0;
+    m_fAllRepeat = ::GetPrivateProfileInt(SETTINGS, TEXT("TsRepeatAll"), 0, m_szIniFileName) != 0;
+    m_fSingleRepeat = ::GetPrivateProfileInt(SETTINGS, TEXT("TsRepeatSingle"), 0, m_szIniFileName) != 0;
+    m_waitOnStop = ::GetPrivateProfileInt(SETTINGS, TEXT("TsWaitOnStop"), 800, m_szIniFileName);
+    m_waitOnStop = max(m_waitOnStop, 0);
     m_fResetAllOnSeek = ::GetPrivateProfileInt(SETTINGS, TEXT("TsResetAllOnSeek"), 0, m_szIniFileName) != 0;
     m_resetDropInterval = ::GetPrivateProfileInt(SETTINGS, TEXT("TsResetDropInterval"), 1000, m_szIniFileName);
     m_threadPriority = ::GetPrivateProfileInt(SETTINGS, TEXT("TsThreadPriority"), THREAD_PRIORITY_NORMAL, m_szIniFileName);
@@ -328,18 +344,78 @@ void CTvtPlay::LoadSettings()
 
     m_fSettingsLoaded = true;
 
-    // デフォルトの設定キーを出力するため
-    if (::GetPrivateProfileInt(SETTINGS, TEXT("PopupDesc"), -1, m_szIniFileName) == -1)
+    int iniVer = ::GetPrivateProfileInt(SETTINGS, TEXT("Version"), 0, m_szIniFileName);
+    if (iniVer < 10) {
+        // Button02が変更されていない場合はデフォルトに置換する
+        if (!::lstrcmpi(m_buttonList[2], TEXT(";4,Loop")) ||
+            !::lstrcmpi(m_buttonList[2], TEXT("4,Loop")))
+        {
+            ::lstrcpy(m_buttonList[2], DEFAULT_BUTTON_LIST[2]);
+        }
+    }
+    if (iniVer < INFO_VERSION) {
+        // デフォルトの設定キーを出力するため
+        WritePrivateProfileInt(SETTINGS, TEXT("Version"), INFO_VERSION, m_szIniFileName);
         SaveSettings();
+    }
 
+    LoadTVTestSettings();
+}
+
+
+static void LoadFontSetting(LOGFONT *pFont, LPCTSTR iniFileName)
+{
+    TCHAR szFont[LF_FACESIZE];
+    ::GetPrivateProfileString(TEXT("Status"), TEXT("FontName"), TEXT(""), szFont, ARRAY_SIZE(szFont), iniFileName);
+    if (szFont[0]) {
+        ::lstrcpy(pFont->lfFaceName, szFont);
+        pFont->lfEscapement     = 0;
+        pFont->lfOrientation    = 0;
+        pFont->lfUnderline      = 0;
+        pFont->lfStrikeOut      = 0;
+        pFont->lfCharSet        = DEFAULT_CHARSET;
+        pFont->lfOutPrecision   = OUT_DEFAULT_PRECIS;
+        pFont->lfClipPrecision  = CLIP_DEFAULT_PRECIS;
+        pFont->lfQuality        = DRAFT_QUALITY;
+        pFont->lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE;
+    }
+
+    int val = ::GetPrivateProfileInt(TEXT("Status"), TEXT("FontSize"), INT_MAX, iniFileName);
+    if (val != INT_MAX) {
+        pFont->lfHeight = val;
+        pFont->lfWidth  = 0;
+    }
+    val = ::GetPrivateProfileInt(TEXT("Status"), TEXT("FontWeight"), INT_MAX, iniFileName);
+    if (val != INT_MAX) pFont->lfWeight = val;
+    val = ::GetPrivateProfileInt(TEXT("Status"), TEXT("FontItalic"), INT_MAX, iniFileName);
+    if (val != INT_MAX) pFont->lfItalic = static_cast<BYTE>(val);
+}
+
+
+// TVTest本体から設定を読み込む
+void CTvtPlay::LoadTVTestSettings()
+{
+    LOGFONT logFont;
     CColorScheme scheme;
+    bool fFontLoaded = false;
+    bool fColorLoaded = false;
     TCHAR val[2];
+
+    // 各セクションがプラグインiniにあれば、そちらを読む(本体仕様変更への保険)
+    m_statusView.GetFont(&logFont);
+    ::GetPrivateProfileString(TEXT("Status"), TEXT("FontName"), TEXT("!"), val, ARRAY_SIZE(val), m_szIniFileName);
+    if (val[0] != TEXT('!')) {
+        LoadFontSetting(&logFont, m_szIniFileName);
+        fFontLoaded = true;
+    }
     ::GetPrivateProfileString(TEXT("ColorScheme"), TEXT("Name"), TEXT("!"), val, ARRAY_SIZE(val), m_szIniFileName);
     if (val[0] != TEXT('!')) {
-        // ColorSchemeセクションがあればプラグインiniを使う(本体仕様変更への保険)
         scheme.Load(m_szIniFileName);
+        fColorLoaded = true;
     }
-    else {
+
+    // TVTest本体のiniを読む
+    if (!fFontLoaded || !fColorLoaded) {
         TVTest::HostInfo hostInfo;
         WCHAR szAppIniPath[MAX_PATH];
         if (m_pApp->GetHostInfo(&hostInfo) &&
@@ -357,13 +433,17 @@ void CTvtPlay::LoadSettings()
             CGlobalLock fileLock;
             if (fileLock.Create(szMutexName)) {
                 if (fileLock.Wait(5000)) {
-                    scheme.Load(szAppIniPath);
+                    if (!fFontLoaded) LoadFontSetting(&logFont, szAppIniPath);
+                    if (!fColorLoaded) scheme.Load(szAppIniPath);
                     fileLock.Release();
                 }
                 fileLock.Close();
             }
         }
     }
+
+    // フォントを適用
+    m_statusView.SetFont(&logFont);
 
     // 配色
     CStatusView::ThemeInfo theme;
@@ -372,6 +452,9 @@ void CTvtPlay::LoadSettings()
     scheme.GetStyle(CColorScheme::STYLE_STATUSHIGHLIGHTITEM, &theme.HighlightItemStyle);
     scheme.GetBorderInfo(CColorScheme::BORDER_STATUS, &theme.Border);
     m_statusView.SetTheme(&theme);
+
+    // コントロールの高さを算出
+    m_statusHeight = m_statusView.CalcHeight(0);
 }
 
 
@@ -380,8 +463,9 @@ void CTvtPlay::SaveSettings() const
 {
     if (!m_fSettingsLoaded) return;
 
-    WritePrivateProfileInt(SETTINGS, TEXT("TsAutoClose"), m_fAutoClose, m_szIniFileName);
-    WritePrivateProfileInt(SETTINGS, TEXT("TsAutoLoop"), m_fAutoLoop, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsRepeatAll"), m_fAllRepeat, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsRepeatSingle"), m_fSingleRepeat, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsWaitOnStop"), m_waitOnStop, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsResetAllOnSeek"), m_fResetAllOnSeek, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsResetDropInterval"), m_resetDropInterval, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsThreadPriority"), m_threadPriority, m_szIniFileName);
@@ -426,7 +510,7 @@ void CTvtPlay::SaveSettings() const
     LPTSTR tail = str;
     tail[0] = tail[1] = 0;
     std::list<HASH_INFO>::const_iterator it = m_hashList.begin();
-    for (int i = 0; it != m_hashList.end(); i++, it++) {
+    for (int i = 0; it != m_hashList.end(); ++i, ++it) {
         tail += ::wsprintf(tail, TEXT("Hash%d=0x%06x%08x"), i, (DWORD)((*it).hash>>32), (DWORD)((*it).hash)) + 1;
         tail += ::wsprintf(tail, TEXT("Resume%d=%d"), i, (*it).resumePos) + 1;
     }
@@ -465,7 +549,7 @@ bool CTvtPlay::InitializePlugin()
         if (!iconMap.Load(g_hinstDLL, IDB_BUTTONS)) return false;
 
     DrawUtil::CBitmap icon;
-    if (!icon.Create(ICON_SIZE * 2, ICON_SIZE, 1)) return false;
+    if (!icon.Create(ICON_SIZE * 3, ICON_SIZE, 1)) return false;
 
     HDC hdcMem = ::CreateCompatibleDC(NULL);
     if (!hdcMem) return false;
@@ -553,7 +637,7 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
 
 
 // ダイアログ選択でファイルを開く
-bool CTvtPlay::Open(HWND hwndOwner)
+bool CTvtPlay::OpenWithDialog(HWND hwndOwner)
 {
     TCHAR fileName[MAX_PATH];
     fileName[0] = 0;
@@ -561,19 +645,20 @@ bool CTvtPlay::Open(HWND hwndOwner)
     OPENFILENAME ofn = {0};
     ofn.lStructSize = sizeof(OPENFILENAME);
     ofn.hwndOwner   = hwndOwner;
-    ofn.lpstrFilter = TEXT("MPEG-2 TS(*.ts;*.m2t;*.m2ts)\0*.ts;*.m2t;*.m2ts\0すべてのファイル\0*.*\0");
+    ofn.lpstrFilter = TEXT("再生可能なメディア(*.ts;*.m2t;*.m2ts;*.m3u;*.tslist)\0*.ts;*.m2t;*.m2ts;*.m3u;*.tslist\0すべてのファイル\0*.*\0");
     ofn.lpstrFile   = fileName;
     ofn.nMaxFile    = ARRAY_SIZE(fileName);
-    ofn.lpstrTitle  = TEXT("TSファイルを開く");
+    ofn.lpstrTitle  = TEXT("ファイルを開く");
     ofn.Flags       = OFN_HIDEREADONLY | OFN_FILEMUSTEXIST;
 
     if (!::GetOpenFileName(&ofn)) return false;
-    return Open(fileName);
+
+    return m_playlist.PushBackListOrFile(fileName, true) >= 0 ? OpenCurrent() : false;
 }
 
 
-// コントロールからのポップアップメニュー選択でファイルを開く
-bool CTvtPlay::Open(const POINT &pt, UINT flags)
+// ポップアップメニュー選択でファイルを開く
+bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
 {
     if (m_popupMax <= 0 || m_fPopuping) return false;
 
@@ -642,15 +727,122 @@ bool CTvtPlay::Open(const POINT &pt, UINT flags)
     }
 
     delete [] findList;
-    return fileName[0] ? Open(fileName) : false;
+    if (!fileName[0]) return false;
+
+    return m_playlist.PushBackListOrFile(fileName, true) >= 0 ? OpenCurrent() : false;
 }
 
 
-// 開いているor閉じたファイルを開きなおす
-bool CTvtPlay::ReOpen()
+// ポップアップメニュー選択で再生リストのファイルを開く
+bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
 {
-    if (!m_szPrevFileName[0]) return false;
-    return Open(m_szPrevFileName);
+    if (m_fPopuping) return false;
+
+    // メニュー生成
+    int selID = 0, cmdID = 1;
+    HMENU hmenu = ::CreatePopupMenu();
+    if (hmenu) {
+        if (m_playlist.empty()) {
+            ::AppendMenu(hmenu, MF_STRING | MF_GRAYED, 0, TEXT("(なし)"));
+        }
+        else {
+            CPlaylist::const_iterator it = m_playlist.begin();
+            for (; it != m_playlist.end(); ++cmdID, ++it) {
+                TCHAR str[64];
+                ::lstrcpyn(str, PathFindFileName((*it).path), 64);
+                if (::lstrlen(str) == 63) ::lstrcpy(&str[60], TEXT("..."));
+                // プレフィクス対策
+                for (LPTSTR p = str; *p; ++p)
+                    if (*p == TEXT('&')) *p = TEXT('_');
+
+                MENUITEMINFO mi;
+                mi.cbSize = sizeof(MENUITEMINFO);
+                mi.fMask = MIIM_ID | MIIM_STATE | MIIM_TYPE;
+                mi.wID = cmdID;
+                mi.fState = cmdID-1==(int)m_playlist.GetPosition() ? MFS_DEFAULT | MFS_CHECKED : 0;
+                mi.fType = MFT_STRING | MFT_RADIOCHECK;
+                mi.dwTypeData = str;
+                ::InsertMenuItem(hmenu, cmdID - 1, TRUE, &mi);
+            }
+            ::AppendMenu(hmenu, MF_SEPARATOR, 0, NULL);
+            ::AppendMenu(hmenu, MF_STRING, cmdID + 0, TEXT("現在のファイルを前へ移動(&B)"));
+            ::AppendMenu(hmenu, MF_STRING, cmdID + 1, TEXT("現在のファイルを次へ移動(&N)"));
+            ::AppendMenu(hmenu, MF_STRING, cmdID + 2, TEXT("現在のファイルをリストから削除(&X)"));
+            HMENU hSubMenu = ::CreatePopupMenu();
+            if (hSubMenu) {
+                ::AppendMenu(hSubMenu, MF_STRING, cmdID + 3, TEXT("リストをクリア"));
+                ::AppendMenu(hSubMenu, MF_STRING, cmdID + 4, TEXT("昇順にソート"));
+                ::AppendMenu(hSubMenu, MF_STRING, cmdID + 5, TEXT("降順にソート"));
+                ::AppendMenu(hSubMenu, MF_SEPARATOR, 0, NULL);
+                ::AppendMenu(hSubMenu, MF_STRING, cmdID + 6, TEXT("コピー"));
+                ::AppendMenu(hSubMenu, MF_STRING, cmdID + 7, TEXT("コピー(ファイル名のみ)"));
+                ::AppendMenu(hmenu, MF_SEPARATOR, 0, NULL);
+                ::AppendMenu(hmenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSubMenu), TEXT("その他の操作(&O)"));
+            }
+        }
+
+        m_fPopuping = true;
+        // まずコントロールを表示させておく
+        if (m_pApp->GetFullscreen()) {
+            ::SendMessage(m_hwndFrame, WM_TIMER, TIMER_ID_FULL_SCREEN, 0);
+        }
+        selID = (int)::TrackPopupMenu(hmenu, flags | TPM_NONOTIFY | TPM_RETURNCMD,
+                                      pt.x, pt.y, 0, m_hwndFrame, NULL);
+        ::DestroyMenu(hmenu);
+        m_fPopuping = false;
+    }
+
+    if (selID >= cmdID || selID - 1 < 0 || (int)m_playlist.size() <= selID - 1) {
+        if (selID == cmdID + 0) {
+            m_playlist.MoveCurrentToPrev();
+        }
+        else if (selID == cmdID + 1) {
+            m_playlist.MoveCurrentToNext();
+        }
+        else if (selID == cmdID + 2) {
+            // ファイルが開かれていれば閉じる
+            Close();
+            m_playlist.EraseCurrent();
+        }
+        else if (selID == cmdID + 3) {
+            m_playlist.ClearWithoutCurrent();
+        }
+        else if (selID == cmdID + 4 || selID == cmdID + 5) {
+            m_playlist.Sort(selID==cmdID+5);
+        }
+        else if (selID == cmdID + 6 || selID == cmdID + 7) {
+            // 出力文字数を算出
+            int size = m_playlist.ToString(NULL, 0, selID==cmdID+7);
+            // クリップボードにコピー
+            if (size > 1 && ::OpenClipboard(m_hwndFrame)) {
+                if (::EmptyClipboard()) {
+                    HGLOBAL hg = ::GlobalAlloc(GMEM_MOVEABLE, size * sizeof(TCHAR));
+                    if (hg) {
+                        LPTSTR clip = reinterpret_cast<LPTSTR>(::GlobalLock(hg));
+                        if (clip) {
+                            m_playlist.ToString(clip, size, selID==cmdID+7);
+                            ::GlobalUnlock(hg);
+                            if (!::SetClipboardData(CF_UNICODETEXT, hg)) ::GlobalFree(hg);
+                        }
+                        else ::GlobalFree(hg);
+                    }
+                }
+                ::CloseClipboard();
+            }
+        }
+        return false;
+    }
+
+    m_playlist.SetPosition(selID - 1);
+    return OpenCurrent();
+}
+
+
+// プレイリストの現在位置のファイルを開く
+bool CTvtPlay::OpenCurrent()
+{
+    size_t pos = m_playlist.GetPosition();
+    return pos < m_playlist.size() ? Open(m_playlist[pos].path) : false;
 }
 
 
@@ -663,7 +855,7 @@ bool CTvtPlay::Open(LPCTSTR fileName)
     // レジューム情報があればその地点までシーク
     LONGLONG hash = m_tsSender.GetFileHash();
     std::list<HASH_INFO>::const_iterator it = m_hashList.begin();
-    for (; it != m_hashList.end(); it++) {
+    for (; it != m_hashList.end(); ++it) {
         if ((*it).hash == hash) {
             // 先頭or終端から5秒の範囲はレジュームしない
             if (5000 < (*it).resumePos && (*it).resumePos < m_tsSender.GetDuration() - 5000) {
@@ -701,7 +893,6 @@ bool CTvtPlay::Open(LPCTSTR fileName)
     // TSデータの送り先を設定
     SetUpDestination();
 
-    ::lstrcpy(m_szPrevFileName, fileName);
     return true;
 }
 
@@ -720,7 +911,7 @@ void CTvtPlay::Close()
         HASH_INFO hashInfo = {0};
         hashInfo.hash = m_tsSender.GetFileHash();
         std::list<HASH_INFO>::iterator it = m_hashList.begin();
-        for (; it != m_hashList.end(); it++) {
+        for (; it != m_hashList.end(); ++it) {
             if ((*it).hash == hashInfo.hash) {
                 hashInfo = *it;
                 m_hashList.erase(it);
@@ -803,9 +994,10 @@ void CTvtPlay::Seek(int msec)
     ResetAndPostToSender(WM_TS_SEEK, 0, msec, m_fResetAllOnSeek);
 }
 
-void CTvtPlay::SetAutoLoop(bool fAutoLoop)
+void CTvtPlay::SetRepeatFlags(bool fAllRepeat, bool fSingleRepeat)
 {
-    m_fAutoLoop = fAutoLoop;
+    m_fAllRepeat = fAllRepeat;
+    m_fSingleRepeat = fSingleRepeat;
     m_statusView.UpdateItem(STATUS_ITEM_BUTTON + ID_COMMAND_LOOP);
     SaveSettings();
 }
@@ -838,8 +1030,8 @@ void CTvtPlay::Resize()
 
         if (::GetMonitorInfo(hMon, &mi)) {
             ::SetWindowPos(m_hwndFrame, NULL,
-                           mi.rcMonitor.left, mi.rcMonitor.bottom - (m_fToBottom ? STATUS_HEIGHT : STATUS_HEIGHT*2),
-                           mi.rcMonitor.right - mi.rcMonitor.left, STATUS_HEIGHT, SWP_NOZORDER | SWP_NOACTIVATE);
+                           mi.rcMonitor.left, mi.rcMonitor.bottom - (m_fToBottom ? m_statusHeight : m_statusHeight*2),
+                           mi.rcMonitor.right - mi.rcMonitor.left, m_statusHeight, SWP_NOZORDER | SWP_NOACTIVATE);
         }
         if (!m_fFullScreen) {
             // フルスクリーン表示への遷移
@@ -855,8 +1047,8 @@ void CTvtPlay::Resize()
         if (::GetWindowRect(m_pApp->GetAppWindow(), &rect)) {
             bool fMaximize = (::GetWindowLong(m_pApp->GetAppWindow(), GWL_STYLE) & WS_MAXIMIZE) != 0;
             ::SetWindowPos(m_hwndFrame, NULL, rect.left,
-                           fMaximize ? rect.bottom - (STATUS_HEIGHT + m_statusMargin) : rect.bottom,
-                           rect.right - rect.left, STATUS_HEIGHT + m_statusMargin, SWP_NOZORDER | SWP_NOACTIVATE);
+                           fMaximize ? rect.bottom - (m_statusHeight + m_statusMargin) : rect.bottom,
+                           rect.right - rect.left, m_statusHeight + m_statusMargin, SWP_NOZORDER | SWP_NOACTIVATE);
         }
         if (m_fFullScreen) {
             // 通常表示への遷移
@@ -886,36 +1078,74 @@ void CTvtPlay::EnablePluginByDriverName()
 }
 
 
+void CTvtPlay::OnPreviewChange(bool fPreview)
+{
+    if (!fPreview) {
+        // TVTest再生オフで一時停止する
+        m_fPausedOnPreviewChange = false;
+        if (IsOpen() && !IsPaused()) {
+            Pause(true);
+            m_fPausedOnPreviewChange = true;
+        }
+    }
+    else {
+        if (m_fPausedOnPreviewChange && IsOpen() && IsPaused()) {
+            Pause(false);
+        }
+        m_fPausedOnPreviewChange = false;
+    }
+}
+
+
 void CTvtPlay::OnCommand(int id)
 {
     switch (id) {
     case ID_COMMAND_OPEN:
-        Open(m_hwndFrame);
+        OpenWithDialog(m_hwndFrame);
         break;
     case ID_COMMAND_OPEN_POPUP:
+    case ID_COMMAND_LIST_POPUP:
         if (m_fPopuping) {
             ::PostMessage(m_hwndFrame, WM_KEYDOWN, VK_ESCAPE, 0);
             ::PostMessage(m_hwndFrame, WM_KEYUP, VK_ESCAPE, 0);
         }
         else {
-            CStatusItem *pItem = m_statusView.GetItemByID(STATUS_ITEM_BUTTON + ID_COMMAND_OPEN);
+            CStatusItem *pItem;
+            if (id == ID_COMMAND_OPEN_POPUP) {
+                pItem = m_statusView.GetItemByID(STATUS_ITEM_BUTTON + ID_COMMAND_OPEN);
+            }
+            else {
+                pItem = m_statusView.GetItemByID(STATUS_ITEM_BUTTON + ID_COMMAND_PREV);
+                if (!pItem) pItem = m_statusView.GetItemByID(STATUS_ITEM_BUTTON + ID_COMMAND_SEEK_END);
+            }
             if (pItem) pItem->OnRButtonDown(0, 0);
         }
         break;
     case ID_COMMAND_CLOSE:
         Close();
         break;
+    case ID_COMMAND_PREV:
+        if (m_playlist.Prev(IsAllRepeat())) OpenCurrent();
+        else SeekToBegin();
+        break;
     case ID_COMMAND_SEEK_BGN:
         SeekToBegin();
         break;
     case ID_COMMAND_SEEK_END:
-        SeekToEnd();
+        if (m_playlist.Next(IsAllRepeat())) OpenCurrent();
+        else SeekToEnd();
         break;
     case ID_COMMAND_LOOP:
-        SetAutoLoop(!IsAutoLoop());
+        if (!IsAllRepeat() && !IsSingleRepeat())
+            SetRepeatFlags(true, false);
+        else if (IsAllRepeat() && !IsSingleRepeat())
+            SetRepeatFlags(true, true);
+        else
+            SetRepeatFlags(false, false);
         break;
     case ID_COMMAND_PAUSE:
-        if (!IsOpen()) ReOpen();
+        // 閉じたファイルを開きなおす
+        if (!IsOpen()) OpenCurrent();
         else Pause(!IsPaused());
         break;
     case ID_COMMAND_NOP:
@@ -986,7 +1216,9 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
 
         // コマンドラインにパスが指定されていれば開く
         if (pThis->m_pApp->IsPluginEnabled() && pThis->m_szSpecFileName[0]) {
-            pThis->Open(pThis->m_szSpecFileName);
+            if (pThis->m_playlist.PushBackListOrFile(pThis->m_szSpecFileName, true) >= 0) {
+                pThis->OpenCurrent();
+            }
             pThis->m_szSpecFileName[0] = 0;
         }
         break;
@@ -994,6 +1226,11 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         // チャンネルが変更された
         if (pThis->m_pApp->IsPluginEnabled())
             pThis->SetUpDestination();
+        break;
+    case TVTest::EVENT_PREVIEWCHANGE:
+        // プレビュー表示状態が変化した
+        if (pThis->m_pApp->IsPluginEnabled())
+            pThis->OnPreviewChange(lParam1 != 0);
         break;
     case TVTest::EVENT_COMMAND:
         // コマンドが選択された
@@ -1011,7 +1248,9 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         pThis->EnablePluginByDriverName();
         // コマンドラインにパスが指定されていれば開く
         if (pThis->m_pApp->IsPluginEnabled() && pThis->m_szSpecFileName[0]) {
-            pThis->Open(pThis->m_szSpecFileName);
+            if (pThis->m_playlist.PushBackListOrFile(pThis->m_szSpecFileName, true) >= 0) {
+                pThis->OpenCurrent();
+            }
             pThis->m_szSpecFileName[0] = 0;
         }
         break;
@@ -1041,10 +1280,16 @@ BOOL CALLBACK CTvtPlay::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, L
         break;
     case WM_DROPFILES:
         {
+            bool fAdded = false;
             TCHAR fileName[MAX_PATH];
-            if (::DragQueryFile((HDROP)wParam, 0, fileName, ARRAY_SIZE(fileName)) != 0) {
-                pThis->Open(fileName);
+            int num = ::DragQueryFile((HDROP)wParam, 0xFFFFFFFF, fileName, ARRAY_SIZE(fileName));
+            for (int i = 0; i < num; ++i) {
+                if (::DragQueryFile((HDROP)wParam, i, fileName, ARRAY_SIZE(fileName)) != 0) {
+                    if (pThis->m_playlist.PushBackListOrFile(fileName, !fAdded) >= 0) fAdded = true;
+                }
             }
+            // 少なくとも1ファイルが再生リストに追加されればそのファイルを開く
+            if (fAdded) pThis->OpenCurrent();
             ::DragFinish((HDROP)wParam);
         }
         return TRUE;
@@ -1078,7 +1323,7 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
                 HMONITOR hMonCur = ::MonitorFromPoint(curPos, MONITOR_DEFAULTTONULL);
                 // mi.rcMonitorとcurPosはともに仮想スクリーン座標系
                 bool isHoverd = hMonApp == hMonCur && mi.rcMonitor.bottom -
-                                (pThis->m_fToBottom ? STATUS_HEIGHT : STATUS_HEIGHT*2) < curPos.y;
+                                (pThis->m_fToBottom ? pThis->m_statusHeight : pThis->m_statusHeight*2) < curPos.y;
 
                 // カーソルが移動したときに表示する
                 POINT lastPos = pThis->m_lastCurPos;
@@ -1154,8 +1399,9 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
         for (int i = 0; i < COMMAND_STRETCH_MAX; i++) 
             pThis->m_statusView.UpdateItem(STATUS_ITEM_BUTTON + ID_COMMAND_STRETCH_A + i);
         break;
-    case WM_QUERY_CLOSE:
+    case WM_QUERY_CLOSE_NEXT:
         pThis->Close();
+        if (pThis->m_playlist.Next(pThis->IsAllRepeat())) pThis->OpenCurrent();
         break;
     case WM_QUERY_SEEK_BGN:
         pThis->SeekToBegin();
@@ -1272,12 +1518,10 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
             }
             if (!fRead) {
                 if (pThis->m_tsSender.IsFixed()) {
-                    // ループ再生時に閉じてはいけない
-                    if (pThis->m_fAutoLoop) {
-                        ::Sleep(800);
-                        ::PostMessage(pThis->m_hwndFrame, WM_QUERY_SEEK_BGN, 0, 0);
-                    }
-                    else if (pThis->m_fAutoClose) ::PostMessage(pThis->m_hwndFrame, WM_QUERY_CLOSE, 0, 0);
+                    ::Sleep(pThis->m_waitOnStop);
+                    ::PostMessage(pThis->m_hwndFrame,
+                                  pThis->m_fSingleRepeat ? WM_QUERY_SEEK_BGN : WM_QUERY_CLOSE_NEXT,
+                                  0, 0);
                 }
             }
             if (!fRead || pThis->m_tsSender.IsPaused()) {
@@ -1551,10 +1795,13 @@ void CButtonStatusItem::Draw(HDC hdc, const RECT *pRect)
 {
     // PauseとLoopとStretchは特別扱い
     int cmdID = m_ID - STATUS_ITEM_BUTTON;
-    if ((cmdID == ID_COMMAND_PAUSE && (!m_pPlugin->IsOpen() || m_pPlugin->IsPaused())) ||
-        (cmdID == ID_COMMAND_LOOP && m_pPlugin->IsAutoLoop()) ||
-        (ID_COMMAND_STRETCH_A <= cmdID && cmdID <= ID_COMMAND_STRETCH_D &&
-         m_pPlugin->GetStretchID() == cmdID - ID_COMMAND_STRETCH_A))
+    if (cmdID == ID_COMMAND_LOOP && m_pPlugin->IsSingleRepeat()) {
+        DrawIcon(hdc, pRect, m_icon.GetHandle(), ICON_SIZE * 2);
+    }
+    else if ((cmdID == ID_COMMAND_PAUSE && (!m_pPlugin->IsOpen() || m_pPlugin->IsPaused())) ||
+             (cmdID == ID_COMMAND_LOOP && m_pPlugin->IsAllRepeat()) ||
+             (ID_COMMAND_STRETCH_A <= cmdID && cmdID <= ID_COMMAND_STRETCH_D &&
+              m_pPlugin->GetStretchID() == cmdID - ID_COMMAND_STRETCH_A))
     {
         DrawIcon(hdc, pRect, m_icon.GetHandle(), ICON_SIZE);
     }
@@ -1570,12 +1817,20 @@ void CButtonStatusItem::OnLButtonDown(int x, int y)
 
 void CButtonStatusItem::OnRButtonDown(int x, int y)
 {
-    // Openは特別扱い
-    if (m_ID-STATUS_ITEM_BUTTON == ID_COMMAND_OPEN) {
+    // OpenとPrevとSeekToEndは特別扱い
+    if (m_ID-STATUS_ITEM_BUTTON == ID_COMMAND_OPEN ||
+        m_ID-STATUS_ITEM_BUTTON == ID_COMMAND_PREV ||
+        m_ID-STATUS_ITEM_BUTTON == ID_COMMAND_SEEK_END)
+    {
         POINT pt;
         UINT flags;
         if (GetMenuPos(&pt, &flags)) {
-            m_pPlugin->Open(pt, flags);
+            if (m_ID-STATUS_ITEM_BUTTON == ID_COMMAND_OPEN) {
+                m_pPlugin->OpenWithPopup(pt, flags);
+            }
+            else {
+                m_pPlugin->OpenWithPlayListPopup(pt, flags);
+            }
         }
     }
 }

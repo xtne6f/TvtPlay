@@ -1,5 +1,4 @@
 ﻿#include <Windows.h>
-#include <stdio.h>
 #include <Shlwapi.h>
 #include <tchar.h>
 #include "Util.h"
@@ -27,6 +26,65 @@ BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
     return hwnd ? ::PostMessage(hwnd, Msg, wParam, lParam) : FALSE;
 }
 #endif
+
+
+// UTF-16またはUTF-8テキストファイルを文字列として全て読む
+// 成功するとnewされた配列のポインタが返るので、必ずdeleteすること
+WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName)
+{
+    BYTE *pBuf = NULL;
+    WCHAR *pRet = NULL;
+
+    HANDLE hFile = ::CreateFile(fileName, GENERIC_READ, FILE_SHARE_READ,
+                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) goto EXIT;
+
+    DWORD fileBytes = ::GetFileSize(hFile, NULL);
+    if (fileBytes == 0xFFFFFFFF || fileBytes >= READ_FILE_MAX_SIZE) goto EXIT;
+
+    pBuf = new BYTE[fileBytes + 2];
+    DWORD readBytes;
+    if (!::ReadFile(hFile, pBuf, fileBytes, &readBytes, NULL)) goto EXIT;
+    pBuf[readBytes] = pBuf[readBytes+1] = 0;
+
+    // BOM付きUTF-16LE、UTF-16BE、UTF-8、またはBOM無しUTF-8を判別する
+    int codeType = pBuf[0]==0xFF && pBuf[1]==0xFE ? 1 :
+                   pBuf[0]==0xFE && pBuf[1]==0xFF ? 2 : 0;
+    int bomOffset = codeType ? 2 : pBuf[0]==0xEF && pBuf[1]==0xBB && pBuf[2]==0xBF ? 3 : 0;
+
+    // 出力サイズ算出
+    int retSize;
+    if (codeType) {
+        retSize = ::lstrlenW(reinterpret_cast<LPCWSTR>(pBuf+bomOffset)) + 1;
+    }
+    else {
+        retSize = ::MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<LPCSTR>(pBuf+bomOffset), -1, NULL, 0);
+    }
+    if (retSize <= 0) goto EXIT;
+
+    // 文字コード変換
+    pRet = new WCHAR[retSize];
+    if (codeType == 1) {
+        ::lstrcpyW(pRet, reinterpret_cast<LPCWSTR>(pBuf+bomOffset));
+    }
+    else if (codeType == 2) {
+        for (int i = 0; i < retSize; ++i) {
+            pRet[i] = (pBuf[bomOffset+i*2] << 8) | pBuf[bomOffset+i*2+1];
+        }
+    }
+    else {
+        if (!::MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<LPCSTR>(pBuf+bomOffset), -1, pRet, retSize)) {
+            delete [] pRet;
+            pRet = NULL;
+            goto EXIT;
+        }
+    }
+
+EXIT:
+    if (hFile != INVALID_HANDLE_VALUE) ::CloseHandle(hFile);
+    delete [] pBuf;
+    return pRet;
+}
 
 
 static void IconIndexToPos(int *pX, int *pW, HDC hdc, int idx)
