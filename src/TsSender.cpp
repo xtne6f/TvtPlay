@@ -13,6 +13,8 @@ CTsSender::CTsSender()
     , m_tail(NULL)
     , m_unitSize(0)
     , m_sock(NULL)
+    , m_udpPort(0)
+    , m_hPipe(NULL)
     , m_tick(0)
     , m_baseTick(0)
     , m_renewSizeTick(0)
@@ -26,6 +28,8 @@ CTsSender::CTsSender()
     , m_fileSize(0)
     , m_duration(0)
 {
+    m_udpAddr[0] = 0;
+    m_pipeName[0] = 0;
 }
 
 
@@ -35,7 +39,7 @@ CTsSender::~CTsSender()
 }
 
 
-bool CTsSender::Open(LPCTSTR name, LPCSTR addr, unsigned short port)
+bool CTsSender::Open(LPCTSTR name)
 {
     Close();
     
@@ -45,15 +49,17 @@ bool CTsSender::Open(LPCTSTR name, LPCSTR addr, unsigned short port)
         m_hFile = NULL;
         return false;
     }
-    // バッファの生滅はファイルハンドルと同期
-    m_pBuf = new BYTE[BUFFER_SIZE];
-    
+
     // TSパケットの単位を決定
+    BYTE buf[4096];
     DWORD readBytes;
-    if (!::ReadFile(m_hFile, m_pBuf, BUFFER_SIZE, &readBytes, NULL)) goto ERROR_EXIT;
-    m_unitSize = select_unit_size(m_pBuf, m_pBuf + readBytes);
+    if (!::ReadFile(m_hFile, buf, sizeof(buf), &readBytes, NULL)) goto ERROR_EXIT;
+    m_unitSize = select_unit_size(buf, buf + readBytes);
     if (m_unitSize < 188) goto ERROR_EXIT;
     
+    // バッファ確保
+    m_pBuf = new BYTE[m_unitSize * BUFFER_LEN];
+
     // ファイルサイズは拡大中であると仮定
     m_fFixed = false;
 
@@ -77,11 +83,6 @@ bool CTsSender::Open(LPCTSTR name, LPCSTR addr, unsigned short port)
         m_duration = 0;
     }
 
-    WSADATA wsaData;
-    if (::WSAStartup(MAKEWORD(2,0), &wsaData) != 0) goto ERROR_EXIT;
-    m_sock = ::socket(AF_INET, SOCK_DGRAM, 0);
-    SetAddress(addr, port);
-
     return true;
 ERROR_EXIT:
     Close();
@@ -89,38 +90,80 @@ ERROR_EXIT:
 }
 
 
-void CTsSender::SetAddress(LPCSTR addr, unsigned short port)
+void CTsSender::SetUdpAddress(LPCSTR addr, unsigned short port)
 {
-    m_addr.sin_family = AF_INET;
-    m_addr.sin_port = htons(port);
-    m_addr.sin_addr.S_un.S_addr = inet_addr(addr);
+    // パイプ転送を停止
+    ClosePipe();
+    m_pipeName[0] = 0;
+
+    if (!addr[0]) CloseSocket();
+    ::lstrcpynA(m_udpAddr, addr, MAX_URI);
+    m_udpPort = port;
+}
+
+
+void CTsSender::SetPipeName(LPCTSTR name)
+{
+    // UDP転送を停止
+    CloseSocket();
+    m_udpAddr[0] = 0;
+
+    if (::lstrcmp(m_pipeName, name)) {
+        ClosePipe();
+        ::lstrcpyn(m_pipeName, name, MAX_PATH-1);
+    }
 }
 
 
 void CTsSender::Close()
 {
     if (m_hFile) {
-        CloseHandle(m_hFile);
+        ::CloseHandle(m_hFile);
         m_hFile = NULL;
+    }
+    if (m_pBuf) {
         delete [] m_pBuf;
         m_pBuf = NULL;
     }
-    if (m_sock) {
-        closesocket(m_sock);
-        m_sock = NULL;
-        WSACleanup();
-    }
+    CloseSocket();
+    ClosePipe();
+    m_udpAddr[0] = 0;
+    m_pipeName[0] = 0;
 }
 
 
+// TSパケットを読んで、一度だけ転送する
+// ファイルの終端に達した場合はfalseを返す
+// 適当にレート制御される
 bool CTsSender::Send()
 {
-    if (!m_fPause) {
+    // 動画の長さ情報を更新
+    DWORD tick = ::GetTickCount();
+    DWORD diff = tick - m_renewSizeTick;
+    if (2000 <= diff) {
+        long long fileSize;
+        if ((fileSize = GetFileSize()) >= 0) {
+            if (fileSize == m_fileSize) {
+                m_fFixed = true;
+            }
+            else {
+                m_fFixed = false;
+                m_fileSize = fileSize;
+                m_duration += diff;
+            }
+        }
+        m_renewSizeTick = tick;
+    }
+
+    if (m_fPause) return true;
+
+    // パケットの読み込みと転送
+    for (bool fSent = false; !fSent;) {
         if (!ReadPacket()) {
             ConsumeBuffer(true);
             if (!ReadPacket()) return false;
+            fSent = true;
         }
-
         // 転送レート制御
         if (m_fPcr) {
             DWORD tickDiff = m_tick - m_baseTick;
@@ -136,42 +179,26 @@ bool CTsSender::Send()
             else if (msec > 0) ::Sleep(msec);
         }
     }
-
-    // 動画の長さ情報を更新
-    DWORD tick = ::GetTickCount();
-    DWORD diff = tick - m_renewSizeTick;
-    if (2000 <= diff && !MSB(diff)) {
-        long long fileSize;
-        if ((fileSize = GetFileSize()) >= 0) {
-            if (fileSize == m_fileSize) {
-                m_fFixed = true;
-            }
-            else {
-                m_fFixed = false;
-                m_fileSize = fileSize;
-                m_duration += diff;
-            }
-        }
-        m_renewSizeTick = tick;
-    }
     return true;
 }
 
 
+// ファイルの先頭にシークする
 bool CTsSender::SeekToBegin()
 {
     return Seek(0, FILE_BEGIN);
 }
 
 
+// ファイルの末尾から約2秒前にシークする
 bool CTsSender::SeekToEnd()
 {
-    return Seek(-GetRate(), FILE_END);
+    return Seek(-GetRate()*2, FILE_END);
 }
 
 
 // 現在の再生位置からmsecだけシークする
-// シーク可能範囲を超えるor下回る場合は先頭or末尾までシークする
+// シーク可能範囲を超えるor下回る場合は先頭or末尾の約2秒前までシークする
 // シークできなかったorシークが打ち切られたときはfalseを返す
 bool CTsSender::Seek(int msec)
 {
@@ -188,10 +215,10 @@ bool CTsSender::Seek(int msec)
 
         // 前方or後方にこれ以上シークできない場合
         if (msec < 0 && pos <= rate ||
-            msec > 0 && pos >= size - rate) return true;
+            msec > 0 && pos >= size - rate*2) return true;
 
         long long approx = pos + rate * msec / 1000;
-        if (approx > size - rate) approx = size - rate;
+        if (approx > size - rate*2) approx = size - rate*2;
         if (approx < 0) approx = 0;
         
         DWORD prevPcr = m_pcr;
@@ -221,7 +248,7 @@ bool CTsSender::Seek(int msec)
         // 10ループまでに収束しなければ失敗
         for (int i = 0; i < 10 && msec > 500; i++) {
             if ((pos = GetFilePosition()) < 0) return false;
-            if (pos >= size - rate) return true;
+            if (pos >= size - rate*2) return true;
 
             DWORD prevPcr = m_pcr;
             if (!Seek(rate, FILE_CURRENT) || !m_pcrCount || MSB(m_pcr-prevPcr)) return false;
@@ -280,7 +307,7 @@ long long CTsSender::GetFilePosition() const
 // ファイルサイズが拡大中の場合は等速での増加を仮定
 int CTsSender::GetDuration() const
 {
-    return m_duration;
+    return m_duration < 0 ? 0 : m_duration;
 }
 
 
@@ -309,10 +336,10 @@ int CTsSender::GetRate() const
 // TSパケットを1つ読む
 bool CTsSender::ReadPacket()
 {
-    if (!m_hFile) return false;
+    if (!m_hFile || !m_pBuf) return false;
 
     if (m_curr + m_unitSize >= m_tail) {
-        int n = m_pBuf + BUFFER_SIZE - m_tail;
+        int n = m_pBuf + m_unitSize * BUFFER_LEN - m_tail;
         if (n > 0) {
             DWORD readBytes;
             if (!::ReadFile(m_hFile, m_tail, n, &readBytes, NULL)) return false;
@@ -367,7 +394,9 @@ bool CTsSender::ReadPacket()
             }
             
             if (m_pcrCount++ == 0) {
-                m_baseTick = m_tick;
+                // 最初にTVTest側のストアを増やすため、少し引く
+                // ただし引きすぎるとPauseの挙動がもたつく
+                m_baseTick = m_tick - 300;
                 m_basePcr = m_pcr;
             }
             m_fPcr = true;
@@ -384,9 +413,32 @@ void CTsSender::ConsumeBuffer(bool fSend)
 {
     if (!m_pBuf) return;
 
-    if (fSend && m_sock && m_curr > m_pBuf) {
-        ::sendto(m_sock, (const char*)m_pBuf, m_curr - m_pBuf,
-                 0, (struct sockaddr*)&m_addr, sizeof(m_addr));
+    if (fSend && m_curr > m_pBuf) {
+        if (m_udpAddr[0]) {
+            if (!m_sock) OpenSocket();
+            if (m_sock) {
+                // UDP転送
+                struct sockaddr_in addr;
+                addr.sin_family = AF_INET;
+                addr.sin_port = htons(m_udpPort);
+                addr.sin_addr.S_un.S_addr = inet_addr(m_udpAddr);
+                if (::sendto(m_sock, (const char*)m_pBuf, m_curr - m_pBuf,
+                             0, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
+                {
+                    CloseSocket();
+                }
+            }
+        }
+        if (m_pipeName[0]) {
+            if (!m_hPipe) OpenPipe();
+            if (m_hPipe) {
+                // パイプ転送
+                DWORD written;
+                if (!::WriteFile(m_hPipe, m_pBuf, m_curr - m_pBuf, &written, NULL)) {
+                    ClosePipe();
+                }
+            }
+        }
     }
     int n = m_tail - m_curr;
     if (n > 0) memcpy(m_pBuf, m_curr, n);
@@ -417,4 +469,52 @@ bool CTsSender::Seek(long long distanceToMove, DWORD dwMoveMethod)
     } while (!m_pcrCount);
 
     return true;
+}
+
+
+void CTsSender::OpenSocket()
+{
+    CloseSocket();
+
+    WSADATA wsaData;
+    if (::WSAStartup(MAKEWORD(2,0), &wsaData) == 0) {
+        m_sock = ::socket(AF_INET, SOCK_DGRAM, 0);
+        if (m_sock == INVALID_SOCKET) {
+            m_sock = NULL;
+            ::WSACleanup();
+        }
+    }
+}
+
+
+void CTsSender::CloseSocket()
+{
+    if (m_sock) {
+        ::closesocket(m_sock);
+        m_sock = NULL;
+        ::WSACleanup();
+    }
+}
+
+
+void CTsSender::OpenPipe()
+{
+    if (!m_pipeName[0]) return;
+    ClosePipe();
+
+    if (::WaitNamedPipe(m_pipeName, NMPWAIT_USE_DEFAULT_WAIT)) {
+        m_hPipe = ::CreateFile(m_pipeName, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+        if (m_hPipe == INVALID_HANDLE_VALUE) {
+            m_hPipe = NULL;
+        }
+    }
+}
+
+
+void CTsSender::ClosePipe()
+{
+    if (m_hPipe) {
+        ::CloseHandle(m_hPipe);
+        m_hPipe = NULL;
+    }
 }

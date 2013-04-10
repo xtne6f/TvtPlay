@@ -26,24 +26,23 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     HWND m_hwndFrame;
     CStatusView m_statusView;
     CStatusViewEventHandler m_eventHandler;
-    HANDLE m_threadHandle;
+    HANDLE m_hThread, m_hThreadEvent;
     DWORD m_threadID;
     CTsSender m_tsSender;
     int m_position;
     int m_duration;
-    bool m_fPaused;
+    bool m_fFixed, m_fPaused;
     bool m_fFullScreen, m_fHide;
     int m_hideCount;
     bool m_fHalt;
-    
+
+    void AnalyzeCommandLine(LPCWSTR cmdLine);
     void LoadSettings();
     bool InitializePlugin();
     bool EnablePlugin(bool fEnable);
-    unsigned short GetCurrentPort();
     void ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam);
     void Resize();
     void OnCommand(int id);
-    void OnStartUpDone();
     static LRESULT CALLBACK EventCallback(UINT Event, LPARAM lParam1, LPARAM lParam2, void *pClientData);
     static BOOL CALLBACK WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pResult, void *pUserData);
     static LRESULT CALLBACK FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -58,8 +57,9 @@ public:
     void Close();
     int GetPosition() const;
     int GetDuration() const;
+    bool IsFixed() const;
     bool IsPaused() const;
-    void ChangePort(unsigned short port);
+    void SetUpDestination();
     void Pause(bool fPause);
     void SeekToBegin();
     void SeekToEnd();

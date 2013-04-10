@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.0.2(人柱版)
+﻿TVTest TvtPlay Plugin ver.0.3(人柱版) + BonDriver_Pipe.dll(テスト版)
 
 ■概要
 TVTest付属のBonDriver_UDPを使ってローカルTSファイルを再生するプラグインです。
@@ -10,7 +10,8 @@ BonDriver_File+TVTestPluginのUDP版みたいなものです。作ってから�
 ・TVTest ver.0.7.6(32bit)以降(たぶん)、or対応するTVH264
 
 ■使い方
-TVTestのPluginsフォルダにTvtPlay.tvtpを入れてください。
+TVTestのPluginsフォルダにTvtPlay.tvtpを入れてください。BonDriver_Pipe.dllは使用
+しないならば捨ててください(後述の「BonDriver_Pipe.dllについて」を参照)。
 TVTest起動オプションに/tvtplayを含むか、最後のオプションに拡張子.ts .m2t .m2ts
 いずれかのファイルパスを付加するとプラグインは有効になり、起動時にそのファイルを
 開きます。/tvtplayを含む場合はファイルパスの有無、拡張子は任意です。
@@ -38,6 +39,12 @@ TVTest起動オプションに/tvtplayを含むか、最後のオプションに
 ・追っかけ再生中の総再生時間は推計です
 ・勢いでつくったので不具合もけっこうあるかも
 
+■BonDriver_Pipe.dllについて
+導入には Visual C++ 2005 SP1 再頒布可能パッケージが必要です(TVTestが使えているな
+ら入ってるはず)。BonDriver_UDPのプロセス間通信方式をパイプに改変したものです。興
+味のある方は使ってみてください。TVTestに対してはBonDriver_UDPのフリをするので、
+BonDriver_UDPと同じ要領で使ってください。BonDriver_UDPと同時使用もできます。
+
 ■ソースについて
 当プラグインの作成に当たり、EpgDataCap_BonのEpgTimerPlugInを参考にしました。また
 、TSファイルの同期・解析のために、tsselect-0.1.8(
@@ -62,6 +69,15 @@ http://www.marumo.ne.jp/junk/tsselect-0.1.8.lzh)よりソースコードを改�
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.0.3 (2011-08-20)
+・スレッドの要望をもとに3点を追加した
+  ・複数起動禁止時に複数起動されたとき、ファイルを開きなおすようにした
+  ・追っかけ再生時、総再生時間の右端に'+'を付けた
+  ・1時間未満の時刻表示を簡略化
+・ストリームのアンダーランを抑制する微調整
+・一時停止からの復帰時にカクつく場合があったのを修正
+・BonDriver_Pipeつくってみた
+・マルチディスプレイに対応できてなかったようなので修正(できたかな…)
 ver.0.2 (2011-08-16)
 ・下記の修正では修正できてなかったため、さらに差し替えました
   ・修正分は"diff_02r1_02r2.txt"を参照
