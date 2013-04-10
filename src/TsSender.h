@@ -7,16 +7,18 @@ class CTsSender {
     static const int MAX_URI = 256;
     static const int BUFFER_LEN = 192;
     static const int PCR_PER_MSEC = 45;
-    static const int BASE_DIFF_MSEC = 300;
     static const int TS_SUPPOSED_RATE = 2 * 1024 * 1024;
     static const int PCR_PIDS_MAX = 8;
     static const int RESYNC_FAILURE_LIMIT = 5;
+    static const int RENEW_SIZE_INTERVAL = 3000;
+    static const int INITIAL_STORE_MSEC = 500;
 public:
     CTsSender();
     ~CTsSender();
     bool Open(LPCTSTR name, DWORD salt);
     void SetUdpAddress(LPCSTR addr, unsigned short port);
     void SetPipeName(LPCTSTR name);
+    void SetConvTo188(bool fConvTo188);
     void Close();
     bool Send();
     bool SeekToBegin();
@@ -48,12 +50,13 @@ private:
     HANDLE m_hFile;
     BYTE *m_pBuf, *m_curr, *m_tail;
     int m_unitSize;
+    bool m_fConvTo188, m_fTrimPacket;
     SOCKET m_sock;
     CHAR m_udpAddr[MAX_URI];
     unsigned short m_udpPort;
     HANDLE m_hPipe;
     TCHAR m_pipeName[MAX_PATH];
-    DWORD m_baseTick, m_renewSizeTick;
+    DWORD m_baseTick, m_renewSizeTick, m_renewDurTick;
     DWORD m_pcrCount;
     DWORD m_pcr, m_basePcr, m_initPcr;
     bool m_fPcr, m_fShareWrite, m_fFixed, m_fPause;
@@ -66,6 +69,7 @@ private:
     DWORD m_totBasePcr;
     long long m_hash;
     int m_speedNum, m_speedDen;
+    DWORD m_initStore;
     bool m_fSpecialExtending;
     int m_specialExtendInitRate;
 };

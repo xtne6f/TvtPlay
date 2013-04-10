@@ -4,17 +4,20 @@
 ---
 > #include <Windows.h>
 diff BonDriver_UDP/BonTuner.cpp ./BonTuner.cpp
-5,6c5,6
+5,7c5,6
 < #include "stdafx.h"
 < #include <InitGuid.h>
+< #include "BonTuner.h"
+---
+> // BonDriver_UDP互換のパイプ版BonDriver
+> // クライアントはASYNCBUFFTIME秒以上のパイプ書き込みの遅延を回復すべきでない
+9c8,10
+< #pragma comment(lib, "ws2_32.lib")
 ---
 > #include <Windows.h>
 > #include <assert.h>
-9c9
-< #pragma comment(lib, "ws2_32.lib")
----
-> static void DebugMessageBox(LPCTSTR format, ...);
-11,19c11
+> #include "BonTuner.h"
+11,19c12
 < #define UDP_PORT_NUM		10
 < #define UDP_PORT_NO_START	1234
 < #define BITRATE_CALC_TIME	500		//ms
@@ -26,31 +29,31 @@ diff BonDriver_UDP/BonTuner.cpp ./BonTuner.cpp
 < }
 ---
 > #define PIPE_NODE_NUM		10
-26c18,21
+26c19,22
 < #define MUTEX_NAME			TEXT("BonDriver_UDP")
 ---
 > #define MUTEX_NAME			TEXT("BonDriver_Pipe")
 > 
 > // パイプ名
 > #define PIPE_NAME			TEXT("\\\\.\\pipe\\BonDriver_Pipe%02lu")
-64,65c59
+64,65c60
 < 	: m_bTunerOpen(false)
 < 	, m_hMutex(NULL)
 ---
 > 	: m_hMutex(NULL)
-77,80c71
+77,80c72
 < 	, m_sock(INVALID_SOCKET)
 < 	, m_fBitRate(0.0f)
 < 	, m_dwRecvBytes(0UL)
 < 	, m_dwLastCalcTick(0UL)
 ---
 > 	, m_hPipe(INVALID_HANDLE_VALUE)
-96,99d86
+96,99d87
 < 	// Winsock終了
 < 	if (m_bTunerOpen)
 < 		WSACleanup();
 < 
-105,112d91
+105,112d92
 < 	if (!m_bTunerOpen) {
 < 		// Winsock初期化
 < 		WSADATA stWsa;
@@ -59,15 +62,15 @@ diff BonDriver_UDP/BonTuner.cpp ./BonTuner.cpp
 < 		m_bTunerOpen = true;
 < 	}
 < 
-134c113
+134c114
 < 			::OutputDebugString(TEXT("BonDriver_UDP: CBonTuner::CloseTuner() ::TerminateThread(m_hPushIoThread)\n"));
 ---
 > 			::OutputDebugString(TEXT("BonDriver_Pipe: CBonTuner::CloseTuner() ::TerminateThread(m_hPushIoThread)\n"));
-145c124
+145c125
 < 			::OutputDebugString(TEXT("BonDriver_UDP: CBonTuner::CloseTuner() ::TerminateThread(m_hPopIoThread)\n"));
 ---
 > 			::OutputDebugString(TEXT("BonDriver_Pipe: CBonTuner::CloseTuner() ::TerminateThread(m_hPopIoThread)\n"));
-164,166c143,145
+164,166c144,146
 < 	if(m_sock != INVALID_SOCKET){
 < 		closesocket(m_sock);
 < 		m_sock = INVALID_SOCKET;
@@ -75,32 +78,32 @@ diff BonDriver_UDP/BonTuner.cpp ./BonTuner.cpp
 > 	if(m_hPipe != INVALID_HANDLE_VALUE){
 > 		::CloseHandle(m_hPipe);
 > 		m_hPipe = INVALID_HANDLE_VALUE;
-179,181d157
+179,181d158
 < 
 < 	m_fBitRate = 0.0f;
 < 	m_dwRecvBytes = 0UL;
-285c261
+285c262
 < 	return TEXT("UDP/IPv4");
 ---
 > 	return TEXT("UDP/Compat");
-306c282
+306c283
 < 	// 使用可能なチューニング空間を返す(IPv6はまだ実装していない)
 ---
 > 	// 使用可能なチューニング空間を返す
-308,309c284
+308,309c285
 < 		case 0UL :	return TEXT("UDP/IPv4");
 < 	//	case 1UL :	return TEXT("UDP/IPv6");
 ---
 > 		case 0UL :	return TEXT("UDP/Compat");
-317c292
+317c293
 < 	if(dwSpace > 0 || (dwChannel >= UDP_PORT_NUM))return NULL;
 ---
 > 	if(dwSpace > 0 || (dwChannel >= PIPE_NODE_NUM))return NULL;
-319c294
+319c295
 < 	wsprintf(buf,TEXT("ポート番号 %d") , UDP_PORT_NO_START + dwChannel);
 ---
 > 	wsprintf(buf,TEXT("Pipe番号 %lu") , dwChannel);
-364a340,354
+364a341,355
 > static bool CheckPipeConnection(HANDLE hPipe, HANDLE hEvent, OVERLAPPED *pOl, bool *pbWait)
 > {
 > 	if (!*pbWait) {
@@ -116,63 +119,74 @@ diff BonDriver_UDP/BonTuner.cpp ./BonTuner.cpp
 > 	return false;
 > }
 > 
-368,371c358,363
-< 
-< 	DWORD dwLastTime = ::GetTickCount();
-< 
-< //	::OutputDebugString("CBonTuner::PushIoThread() Start!\n");
----
+367a359,363
 > 	bool bConnect = false;
 > 	bool bWait = false;
 > 	HANDLE hEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
 > 	OVERLAPPED ol;
-> 	
-> 	assert(pThis->m_hPipe != INVALID_HANDLE_VALUE);
-374c366
-< 	while(pThis->m_bLoopIoThread){
+> 	DWORD dwForceSleep = 0;
+369,371c365
+< 	DWORD dwLastTime = ::GetTickCount();
+< 
+< //	::OutputDebugString("CBonTuner::PushIoThread() Start!\n");
 ---
-> 	while (pThis->m_bLoopIoThread) {
-376,377c368,369
+> 	assert(pThis->m_hPipe != INVALID_HANDLE_VALUE);
+374,384c368,392
+< 	while(pThis->m_bLoopIoThread){
+< 
 < 		// リクエスト処理待ちが規定未満なら追加する
 < 		if(pThis->m_dwBusyReqNum < REQRESERVNUM){
----
-> 		// クライアントの接続を調べる
-> 		if (!bConnect) bConnect = CheckPipeConnection(pThis->m_hPipe, hEvent, &ol, &bWait);
-379,383c371,372
+< 
 < 			// ドライバにTSデータリクエストを発行する(UDPなので受信要求のみ)
 < 			if(!pThis->PushIoRequest(pThis->m_sock)){
 < 				// エラー発生
 < 				break;
 < 				}
+< 
 ---
-> 		// リクエスト処理待ちが規定未満なら追加する
-> 		if(bConnect && pThis->m_dwBusyReqNum < REQRESERVNUM){
-384a374,379
+> 	while (pThis->m_bLoopIoThread) {
+> 		// クライアントの接続を調べる
+> 		if (!bConnect) bConnect = CheckPipeConnection(pThis->m_hPipe, hEvent, &ol, &bWait);
+> 
+> 		::EnterCriticalSection(&pThis->m_CriticalSection);
+> 		DWORD dwReady = pThis->m_dwReadyReqNum;
+> 		DWORD dwBusy = pThis->m_dwBusyReqNum;
+> 		::LeaveCriticalSection(&pThis->m_CriticalSection);
+> 
+> 		if (dwReady >= ASYNCBUFFSIZE - REQRESERVNUM) {
+> 			// バッファが溢れそうなのでウェイト
+> 			dwForceSleep = (ASYNCBUFFTIME * 1000 + 500) / 100;
+> 		}
+> 
+> 		if (dwForceSleep) {
+> 			::Sleep(100);
+> 			dwForceSleep--;
+> 		} else if (bConnect && dwBusy < REQRESERVNUM) {
+> 			// リクエスト処理待ちが規定未満なら追加する
 > 			// ドライバにTSデータリクエストを発行する
-> 			if(!pThis->PushIoRequest()){
+> 			if (!pThis->PushIoRequest()) {
 > 				// 接続を解除する
 > 				::DisconnectNamedPipe(pThis->m_hPipe);
 > 				bConnect = false;
 > 			}
-391c386,387
+391c399,400
 < //	::OutputDebugString("CBonTuner::PushIoThread() End!\n");
 ---
 > 	if (bConnect) ::DisconnectNamedPipe(pThis->m_hPipe);
 > 	::CloseHandle(hEvent);
-398c394
-< 
----
-> 	
-400c396,397
+397a407
+> 	DWORD dwBusy;
+400c410,414
 < 	while(pThis->m_bLoopIoThread){
 ---
 > 	// リクエスト処理待ちが無くなるまでは脱出しない
-> 	while (pThis->m_bLoopIoThread || pThis->m_dwBusyReqNum) {
-403c400
+> 	do {
+> 		::EnterCriticalSection(&pThis->m_CriticalSection);
+> 		dwBusy = pThis->m_dwBusyReqNum;
+> 		::LeaveCriticalSection(&pThis->m_CriticalSection);
+403,410c417,419
 < 		if(pThis->m_dwBusyReqNum){
----
-> 		if (!pThis->m_dwBusyReqNum || !pThis->PopIoRequest()) {
-405,410c402,403
+< 
 < 			// リクエストを完了する
 < 			if(!pThis->PopIoRequest(pThis->m_sock)){
 < 				// エラー発生
@@ -180,27 +194,25 @@ diff BonDriver_UDP/BonTuner.cpp ./BonTuner.cpp
 < 				}
 < 			}
 ---
+> 		if (!dwBusy || !pThis->PopIoRequest()) {
 > 			// リクエスト処理待ちがないor処理未完了の場合はウェイト
 > 			::Sleep(REQPOLLINGWAIT);
-412c405,406
-< 
----
-> 	}
-> 	
-416c410
+411a421
+> 	} while (pThis->m_bLoopIoThread || dwBusy);
+416c426
 < const BOOL CBonTuner::PushIoRequest(SOCKET sock)
 ---
 > const BOOL CBonTuner::PushIoRequest()
-420,421c414
+420,421c430
 < 	// オープンチェック
 < 	if(sock == INVALID_SOCKET)return FALSE;
 ---
 > 	assert(m_hPipe != INVALID_HANDLE_VALUE);
-427c420
+427c436
 < 	::ZeroMemory(&m_pIoPushReq->OverLapped, sizeof(WSAOVERLAPPED));
 ---
 > 	::ZeroMemory(&m_pIoPushReq->OverLapped, sizeof(OVERLAPPED));
-429,441c422,430
+429,441c438,446
 < 
 < 	// UDP受信を要求スルニダ！
 < 	DWORD Flags=0;
@@ -224,27 +236,27 @@ diff BonDriver_UDP/BonTuner.cpp ./BonTuner.cpp
 > 		return FALSE;
 > 	}
 > 	
-453c442
+453c458
 < const BOOL CBonTuner::PopIoRequest(SOCKET sock)
 ---
 > const BOOL CBonTuner::PopIoRequest()
-457,458c446
+457,458c462
 < 	// オープンチェック
 < 	if(sock == INVALID_SOCKET)return FALSE;
 ---
 > 	assert(m_hPipe != INVALID_HANDLE_VALUE);
-467,468c455
+467,468c471
 < 	DWORD Flags=0;
 < 	const BOOL bRet = ::WSAGetOverlappedResult(sock, &m_pIoPopReq->OverLapped, &m_pIoPopReq->dwRxdSize, FALSE,&Flags);
 ---
 > 	BOOL bRet = ::GetOverlappedResult(m_hPipe, &m_pIoPopReq->OverLapped, &m_pIoPopReq->dwRxdSize, FALSE);
-472,473c459,460
+472,473c475,476
 < 		int sock_err = WSAGetLastError();
 < 		if(sock_err == ERROR_IO_INCOMPLETE){
 ---
 > 		int err = ::GetLastError();
 > 		if(err == ERROR_IO_INCOMPLETE){
-475,477c462,464
+475,477c478,480
 < 			::Sleep(REQPOLLINGWAIT);
 < 			return TRUE;
 < 			}
@@ -252,7 +264,7 @@ diff BonDriver_UDP/BonTuner.cpp ./BonTuner.cpp
 > 			return FALSE;
 > 		} else {
 > 			m_pIoPopReq->dwRxdSize = 0;
-479,485c466
+479,485c482
 < 
 < 	// 総受信サイズ加算
 < 	m_dwRecvBytes += m_pIoPopReq->dwRxdSize;
@@ -262,21 +274,21 @@ diff BonDriver_UDP/BonTuner.cpp ./BonTuner.cpp
 < 		CalcBitRate();
 ---
 > 	}
-490,494d470
+490,494d486
 < 	if(!bRet){
 < 		// エラー発生
 < 		return FALSE;
 < 		}
 < 
-503c479
+503c495
 < 
 ---
 > 	
-521c497
+521c513
 < 	if(dwSpace > 0 || (dwChannel >= UDP_PORT_NUM))
 ---
 > 	if(dwSpace > 0 || (dwChannel >= PIPE_NODE_NUM))
-541,553c517,522
+541,553c533,538
 < 		m_sock = socket(AF_INET,SOCK_DGRAM,0);
 < 		if(m_sock==INVALID_SOCKET) throw 1UL;
 < 
@@ -297,35 +309,24 @@ diff BonDriver_UDP/BonTuner.cpp ./BonTuner.cpp
 > 		                            sizeof(m_pIoReqBuff->RxdBuff), sizeof(m_pIoReqBuff->RxdBuff), 3000, NULL);
 > 		if (m_hPipe == INVALID_HANDLE_VALUE) {
 > 			::OutputDebugString(TEXT("BonDriver_Pipe: CBonTuner::OpenTuner() CreateNamedPipe error\n"));
-591c560
+591c576
 < 		::wsprintf(szDebugOut, TEXT("BonDriver_UDP: CBonTuner::OpenTuner() dwErrorStep = %lu\n"), dwErrorStep);
 ---
 > 		::wsprintf(szDebugOut, TEXT("BonDriver_Pipe: CBonTuner::OpenTuner() dwErrorStep = %lu\n"), dwErrorStep);
-608c577
+608c593
 < // 信号レベル(ビットレート)取得
 ---
 > // 信号レベル取得(常に0)
-611,612c580
+611,625c596
 < 	CalcBitRate();
 < 	return m_fBitRate;
----
-> 	return 0;
-615c583
+< }
+< 
 < void CBonTuner::CalcBitRate()
----
-> static void DebugMessageBox(LPCTSTR format, ...)
-617,618c585,591
+< {
 < 	DWORD dwCurrentTick=GetTickCount();
 < 	DWORD Span=DiffTime(m_dwLastCalcTick,dwCurrentTick);
----
-> #ifdef _DEBUG
-> 	va_list ap;
-> 	TCHAR str[512];
-> 
-> 	va_start(ap, format);
-> 	::wvsprintf(str, format, ap);
-> 	va_end(ap);
-620,625c593,594
+< 
 < 	if (Span>=BITRATE_CALC_TIME) {
 < 		m_fBitRate=(float)(((double)m_dwRecvBytes*(8*1000))/((double)Span*(1024*1024)));
 < 		m_dwRecvBytes=0;
@@ -333,8 +334,7 @@ diff BonDriver_UDP/BonTuner.cpp ./BonTuner.cpp
 < 	}
 < 	return;
 ---
-> 	::MessageBox(NULL, str, TEXT("BonDriver_Pipe"), 0);
-> #endif
+> 	return 0;
 diff BonDriver_UDP/BonTuner.h ./BonTuner.h
 60c60
 < 		WSAOVERLAPPED OverLapped;

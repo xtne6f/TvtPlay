@@ -2,11 +2,12 @@
 //
 //////////////////////////////////////////////////////////////////////
 
+// BonDriver_UDP互換のパイプ版BonDriver
+// クライアントはASYNCBUFFTIME秒以上のパイプ書き込みの遅延を回復すべきでない
+
 #include <Windows.h>
 #include <assert.h>
 #include "BonTuner.h"
-
-static void DebugMessageBox(LPCTSTR format, ...);
 
 #define PIPE_NODE_NUM		10
 
@@ -359,20 +360,32 @@ DWORD WINAPI CBonTuner::PushIoThread(LPVOID pParam)
 	bool bWait = false;
 	HANDLE hEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
 	OVERLAPPED ol;
-	
+	DWORD dwForceSleep = 0;
+
 	assert(pThis->m_hPipe != INVALID_HANDLE_VALUE);
 
 	// ドライバにTSデータリクエストを発行する
 	while (pThis->m_bLoopIoThread) {
-
 		// クライアントの接続を調べる
 		if (!bConnect) bConnect = CheckPipeConnection(pThis->m_hPipe, hEvent, &ol, &bWait);
 
-		// リクエスト処理待ちが規定未満なら追加する
-		if(bConnect && pThis->m_dwBusyReqNum < REQRESERVNUM){
+		::EnterCriticalSection(&pThis->m_CriticalSection);
+		DWORD dwReady = pThis->m_dwReadyReqNum;
+		DWORD dwBusy = pThis->m_dwBusyReqNum;
+		::LeaveCriticalSection(&pThis->m_CriticalSection);
 
+		if (dwReady >= ASYNCBUFFSIZE - REQRESERVNUM) {
+			// バッファが溢れそうなのでウェイト
+			dwForceSleep = (ASYNCBUFFTIME * 1000 + 500) / 100;
+		}
+
+		if (dwForceSleep) {
+			::Sleep(100);
+			dwForceSleep--;
+		} else if (bConnect && dwBusy < REQRESERVNUM) {
+			// リクエスト処理待ちが規定未満なら追加する
 			// ドライバにTSデータリクエストを発行する
-			if(!pThis->PushIoRequest()){
+			if (!pThis->PushIoRequest()) {
 				// 接続を解除する
 				::DisconnectNamedPipe(pThis->m_hPipe);
 				bConnect = false;
@@ -391,19 +404,22 @@ DWORD WINAPI CBonTuner::PushIoThread(LPVOID pParam)
 DWORD WINAPI CBonTuner::PopIoThread(LPVOID pParam)
 {
 	CBonTuner *pThis = (CBonTuner *)pParam;
-	
+	DWORD dwBusy;
+
 	// 処理済リクエストをポーリングしてリクエストを完了させる
 	// リクエスト処理待ちが無くなるまでは脱出しない
-	while (pThis->m_bLoopIoThread || pThis->m_dwBusyReqNum) {
+	do {
+		::EnterCriticalSection(&pThis->m_CriticalSection);
+		dwBusy = pThis->m_dwBusyReqNum;
+		::LeaveCriticalSection(&pThis->m_CriticalSection);
 
 		// 処理済データがあればリクエストを完了する
-		if (!pThis->m_dwBusyReqNum || !pThis->PopIoRequest()) {
-
+		if (!dwBusy || !pThis->PopIoRequest()) {
 			// リクエスト処理待ちがないor処理未完了の場合はウェイト
 			::Sleep(REQPOLLINGWAIT);
 		}
-	}
-	
+	} while (pThis->m_bLoopIoThread || dwBusy);
+
 	return 0;
 }
 
@@ -578,18 +594,4 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 const float CBonTuner::GetSignalLevel(void)
 {
 	return 0;
-}
-
-static void DebugMessageBox(LPCTSTR format, ...)
-{
-#ifdef _DEBUG
-	va_list ap;
-	TCHAR str[512];
-
-	va_start(ap, format);
-	::wvsprintf(str, format, ap);
-	va_end(ap);
-
-	::MessageBox(NULL, str, TEXT("BonDriver_Pipe"), 0);
-#endif
 }

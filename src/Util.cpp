@@ -1,5 +1,6 @@
 ﻿#include <Windows.h>
 #include <stdio.h>
+#include <Shlwapi.h>
 #include "Util.h"
 
 
@@ -27,9 +28,102 @@ BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
 #endif
 
 
+static void IconIndexToPos(int *pX, int *pW, HDC hdc, int idx)
+{
+    *pX = 0;
+    *pW = ICON_SIZE;
+    for (int x=0, i=0; i <= idx; i++) {
+        if (::GetPixel(hdc, x, 0) == RGB(0,0,0)) {
+            *pW = 1;
+            while (*pW < ICON_SIZE && ::GetPixel(hdc, x + (*pW)++, 0) == RGB(0,0,0));
+        }
+        else {
+            *pW = ICON_SIZE;
+        }
+        *pX = x;
+        x += *pW;
+    }
+}
+
+
+static int DrawMonoColorIcon(HDC hdcDest, int destX, int destY, HDC hdcSrc, int idx, bool fInvert)
+{
+    int x, width;
+    IconIndexToPos(&x, &width, hdcSrc, idx);
+    int ofsY = width == ICON_SIZE ? 0 : 1;
+
+    if (fInvert) {
+        ::BitBlt(hdcDest, destX, destY+ofsY, width, ICON_SIZE-ofsY, hdcSrc, x, ofsY, MERGEPAINT);
+    }
+    else {
+        ::PatBlt(hdcDest, destX, destY+ofsY, width, ICON_SIZE-ofsY, DSTINVERT);
+        ::BitBlt(hdcDest, destX, destY+ofsY, width, ICON_SIZE-ofsY, hdcSrc, x, ofsY, MERGEPAINT);
+        ::PatBlt(hdcDest, destX, destY+ofsY, width, ICON_SIZE-ofsY, DSTINVERT);
+    }
+    return width;
+}
+
+
+bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTSTR pIdxList)
+{
+    if (!hdcDest || !hbm) return false;
+
+    HDC hdcMem = ::CreateCompatibleDC(hdcDest);
+    if (!hdcMem) return false;
+    HGDIOBJ hgdiOld = ::SelectObject(hdcMem, hbm);
+
+    LPCTSTR p = pIdxList + ::StrCSpn(pIdxList, TEXT(",:-~'"));
+    if (!*p || *p == TEXT(',')) {
+        // indexが1つだけ指定されている場合
+        int idx = ::StrToInt(pIdxList);
+        ::PatBlt(hdcDest, destX, destY, ICON_SIZE, ICON_SIZE, WHITENESS);
+        DrawMonoColorIcon(hdcDest, destX, destY, hdcMem, min(max(idx,0),255), false);
+
+        ::PatBlt(hdcDest, destX+ICON_SIZE, destY, ICON_SIZE, ICON_SIZE, WHITENESS);
+        DrawMonoColorIcon(hdcDest, destX+ICON_SIZE, destY, hdcMem, min(max(idx+1,0),255), false);
+    }
+    else {
+        p = pIdxList;
+        for (int i = 0; *p && *p != TEXT(','); i++) {
+            bool fInvert = false;
+            int x = destX + i * ICON_SIZE;
+            ::PatBlt(hdcDest, x, destY, ICON_SIZE, ICON_SIZE, WHITENESS);
+            while (*p && *p != TEXT(',') && *p != TEXT(':')) {
+                int idx, width;
+                if (*p == TEXT('~')) {
+                    fInvert = !fInvert;
+                    p++;
+                }
+                if (*p == TEXT('\'')) {
+                    idx = (int)*(++p);
+                    if (*p) p++;
+                }
+                else {
+                    idx = ::StrToInt(p);
+                    p += ::StrCSpn(p, TEXT(",:-~'"));
+                }
+                width = DrawMonoColorIcon(hdcDest, x, destY, hdcMem, min(max(idx,0),255), fInvert);
+                x += width == ICON_SIZE ? 0 : width - 1;
+                if (*p == TEXT('-')) p++;
+            }
+            if (*p == TEXT(':')) p++;
+        }
+    }
+    ::SelectObject(hdcMem, hgdiOld);
+    ::DeleteDC(hdcMem);
+    return true;
+}
+
+
 int CompareTStrI(const void *str1, const void *str2)
 {
     return ::lstrcmpi(*(LPCTSTR*)str1, *(LPCTSTR*)str2);
+}
+
+
+int CompareTStrIX(const void *str1, const void *str2)
+{
+    return ::lstrcmpi(*(LPCTSTR*)str2, *(LPCTSTR*)str1);
 }
 
 

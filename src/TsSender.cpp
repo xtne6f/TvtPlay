@@ -12,11 +12,14 @@ CTsSender::CTsSender()
     , m_curr(NULL)
     , m_tail(NULL)
     , m_unitSize(0)
+    , m_fConvTo188(false)
+    , m_fTrimPacket(false)
     , m_sock(NULL)
     , m_udpPort(0)
     , m_hPipe(NULL)
     , m_baseTick(0)
     , m_renewSizeTick(0)
+    , m_renewDurTick(0)
     , m_pcrCount(0)
     , m_pcr(0)
     , m_basePcr(0)
@@ -34,6 +37,7 @@ CTsSender::CTsSender()
     , m_hash(0)
     , m_speedNum(100)
     , m_speedDen(100)
+    , m_initStore(INITIAL_STORE_MSEC)
     , m_fSpecialExtending(false)
     , m_specialExtendInitRate(0)
 {
@@ -75,6 +79,9 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt)
     if (!::ReadFile(m_hFile, buf, sizeof(buf), &readBytes, NULL)) goto ERROR_EXIT;
     m_unitSize = select_unit_size(buf, buf + readBytes);
     if (m_unitSize < 188) goto ERROR_EXIT;
+
+    // 転送時にパケットを188Byteに詰めるかどうか
+    m_fTrimPacket = m_fConvTo188 && m_unitSize == 192;
 
     // 識別情報としてファイル先頭のハッシュ値をとる
     m_hash = CalcHash(buf, min(readBytes, 2048), salt);
@@ -130,7 +137,7 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt)
 
     // 定期的にファイルサイズの更新状況を取得するため
     if (m_fShareWrite) {
-        m_renewSizeTick = ::GetTickCount();
+        m_renewSizeTick = m_renewDurTick = ::GetTickCount();
         m_fileSize = fileSize;
     }
 
@@ -166,6 +173,14 @@ void CTsSender::SetPipeName(LPCTSTR name)
 }
 
 
+// 転送時に188ByteTSに変換するかどうか
+// パケットがTimestampedTS(192Byte)の場合のみ変換する
+void CTsSender::SetConvTo188(bool fConvTo188)
+{
+    m_fConvTo188 = fConvTo188;
+}
+
+
 void CTsSender::Close()
 {
     if (m_hFile) {
@@ -192,7 +207,7 @@ bool CTsSender::Send()
     if (m_fShareWrite) {
         DWORD tick = ::GetTickCount();
         DWORD diff = tick - m_renewSizeTick;
-        if (2000 <= diff) {
+        if (diff >= RENEW_SIZE_INTERVAL) {
             long long fileSize = GetFileSize();
             if (fileSize >= 0) {
                 if (m_fSpecialExtending && fileSize < m_fileSize) {
@@ -201,16 +216,19 @@ bool CTsSender::Send()
                     m_fSpecialExtending = false;
                 }
                 else if (!m_fSpecialExtending && fileSize == m_fileSize) {
+                    // 伸ばしすぎた分を戻す
+                    if (!m_fFixed) m_duration -= RENEW_SIZE_INTERVAL;
                     m_fFixed = true;
                 }
                 else {
                     m_fFixed = false;
-                    m_duration += diff;
                 }
                 m_fileSize = fileSize;
             }
             m_renewSizeTick = tick;
         }
+        if (!m_fFixed) m_duration += tick - m_renewDurTick;
+        m_renewDurTick = tick;
     }
 
     if (m_fPause) return true;
@@ -225,7 +243,6 @@ bool CTsSender::Send()
         // 転送レート制御
         if (m_fPcr) {
             DWORD tickDiff = ::GetTickCount() - m_baseTick;
-            if (MSB(tickDiff)) tickDiff = 0;
 
             DWORD pcrDiff = m_pcr - m_basePcr;
             if (MSB(pcrDiff)) pcrDiff = 0;
@@ -234,9 +251,9 @@ bool CTsSender::Send()
             int msec = (int)((long long)pcrDiff * m_speedDen / m_speedNum / PCR_PER_MSEC) - tickDiff;
 
             // 制御しきれない場合は一度リセット
-            if (msec < -2000 || 2000 < msec) {
-                // 基準PCRを設定(TVTest側のストアを増やすため少し引く)
-                m_baseTick = ::GetTickCount() - BASE_DIFF_MSEC;
+            if (msec < -2000 || 2000 * m_speedDen / m_speedNum < msec) {
+                // 基準PCRを設定(受信側のストアを増やすため少し引く)
+                m_baseTick = ::GetTickCount() - m_initStore;
                 m_basePcr = m_pcr;
             }
             else if (msec > 0) ::Sleep(msec);
@@ -329,8 +346,8 @@ bool CTsSender::Seek(int msec)
 void CTsSender::Pause(bool fPause)
 {
     if (m_fPause && !fPause) {
-        // 基準PCRを設定(TVTest側のストアを増やすため少し引く)
-        m_baseTick = ::GetTickCount() - BASE_DIFF_MSEC;
+        // 基準PCRを設定(受信側のストアを増やすため少し引く)
+        m_baseTick = ::GetTickCount() - m_initStore;
         m_basePcr = m_pcr;
     }
     m_fPause = fPause;
@@ -338,12 +355,12 @@ void CTsSender::Pause(bool fPause)
 
 
 // 等速に対する再生速度比を分子分母で指定
-// 負の値は想定していない
-// denに0を与えてはいけない
+// 0以下の値を与えてはいけない
 void CTsSender::SetSpeed(int num, int den)
 {
     m_speedNum = num;
     m_speedDen = den;
+    m_initStore = min(INITIAL_STORE_MSEC * den / num, INITIAL_STORE_MSEC);
     // 基準PCRを設定
     m_baseTick = ::GetTickCount();
     m_basePcr = m_pcr;
@@ -491,8 +508,8 @@ bool CTsSender::ReadPacket(int count)
                 m_pcr = (DWORD)adapt.pcr_45khz;
             
                 if (m_pcrCount++ == 0) {
-                    // 基準PCRを設定(TVTest側のストアを増やすため少し引く)
-                    m_baseTick = ::GetTickCount() - BASE_DIFF_MSEC;
+                    // 基準PCRを設定(受信側のストアを増やすため少し引く)
+                    m_baseTick = ::GetTickCount() - m_initStore;
                     m_basePcr = m_pcr;
                 }
                 m_fPcr = true;
@@ -528,6 +545,20 @@ void CTsSender::ConsumeBuffer(bool fSend)
     if (!m_pBuf) return;
 
     if (fSend && m_curr > m_pBuf) {
+        if (m_fTrimPacket) {
+            // 転送する部分だけを188Byte単位に詰める
+            BYTE *p = m_pBuf;
+            BYTE *q = m_pBuf;
+            while (p <= m_curr - m_unitSize) {
+                memmove(q, p, 188);
+                p += m_unitSize;
+                q += 188;
+            }
+            memmove(q, p, m_tail - p);
+            m_curr -= p - q;
+            m_tail -= p - q;
+        }
+
         if (m_udpAddr[0]) {
             if (!m_sock) OpenSocket();
             if (m_sock) {

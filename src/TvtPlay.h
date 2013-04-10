@@ -50,11 +50,11 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     TCHAR m_szIconFileName[MAX_PATH];
     int m_seekList[COMMAND_SEEK_MAX];
     int m_stretchList[COMMAND_STRETCH_MAX];
-    TCHAR m_buttonList[BUTTON_MAX][16];
+    TCHAR m_buttonList[BUTTON_MAX][64];
     int m_buttonNum;
     int m_popupMax;
     TCHAR m_szPopupPattern[MAX_PATH];
-    bool m_fPopuping;
+    bool m_fPopupDesc, m_fPopuping;
 
     // TS送信
     HANDLE m_hThread, m_hThreadEvent;
@@ -70,6 +70,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     bool m_fHalt, m_fAutoClose, m_fAutoLoop;
     bool m_fResetAllOnSeek;
     int m_stretchMode, m_noMuteMax, m_noMuteMin;
+    bool m_fConvTo188;
 
     // ファイルごとの固有情報
     int m_salt, m_hashListMax;
@@ -157,15 +158,14 @@ private:
 class CButtonStatusItem : public CStatusItem
 {
 public:
-    CButtonStatusItem(CTvtPlay *pPlugin, int id, LPCTSTR iconFileName, int iconIndex);
+    CButtonStatusItem(CTvtPlay *pPlugin, int id, const DrawUtil::CBitmap &icon);
     LPCTSTR GetName() const { return TEXT("ボタン"); }
     void Draw(HDC hdc, const RECT *pRect);
     void OnLButtonDown(int x, int y);
     void OnRButtonDown(int x, int y);
 private:
     CTvtPlay *m_pPlugin;
-    DrawUtil::CBitmap m_icons;
-    int m_iconIndex;
+    DrawUtil::CBitmap m_icon;
 };
 
 #endif // INCLUDE_TVT_PLAY_H

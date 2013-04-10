@@ -7,7 +7,11 @@
 LRESULT ASFilterSendMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 
+#define ICON_SIZE 16
+
+bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTSTR pIdxList);
 int CompareTStrI(const void *str1, const void *str2);
+int CompareTStrIX(const void *str1, const void *str2);
 BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPCTSTR lpFileName);
 LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt);
 

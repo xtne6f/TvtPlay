@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-09-20
+// 最終更新: 2011-10-01
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -9,7 +9,6 @@
 #include "ColorScheme.h"
 #include "TvtPlay.h"
 #include "resource.h"
-
 
 #define WM_UPDATE_POSITION  (WM_APP + 1)
 #define WM_UPDATE_TOT_TIME  (WM_APP + 2)
@@ -27,13 +26,16 @@
 #define WM_TS_SEEK          (WM_APP + 6)
 #define WM_TS_SET_SPEED     (WM_APP + 7)
 
-#define TVTPLAY_FRAME_WINDOW_CLASS  TEXT("TvtPlay Frame")
-#define UDP_ADDR                    "127.0.0.1"
-#define PIPE_NAME                   TEXT("\\\\.\\pipe\\BonDriver_Pipe%02d")
+static LPCTSTR SETTINGS = TEXT("Settings");
+static LPCTSTR TVTPLAY_FRAME_WINDOW_CLASS = TEXT("TvtPlay Frame");
+static LPCSTR UDP_ADDR = "127.0.0.1";
+static LPCTSTR PIPE_NAME = TEXT("\\\\.\\pipe\\BonDriver_Pipe%02d");
 
 enum {
     ID_COMMAND_OPEN,
     ID_COMMAND_OPEN_POPUP,
+    ID_COMMAND_SELECT_POPUP,
+    ID_COMMAND_CANCEL_POPUP,
     ID_COMMAND_CLOSE,
     ID_COMMAND_SEEK_BGN,
     ID_COMMAND_SEEK_END,
@@ -57,6 +59,8 @@ enum {
 static const TVTest::CommandInfo COMMAND_LIST[] = {
     {ID_COMMAND_OPEN, L"Open", L"ファイルを開く"},
     {ID_COMMAND_OPEN_POPUP, L"OpenPopup", L"ファイルを開く(ポップアップ)"},
+    {ID_COMMAND_SELECT_POPUP, L"SelectPopup", L"選択(ポップアップ)"},
+    {ID_COMMAND_CANCEL_POPUP, L"CancelPopup", L"キャンセル(ポップアップ)"},
     {ID_COMMAND_CLOSE, L"Close", L"ファイルを閉じる"},
     {ID_COMMAND_SEEK_BGN, L"SeekToBgn", L"シーク:先頭"},
     {ID_COMMAND_SEEK_END, L"SeekToEnd", L"シーク:末尾"},
@@ -89,11 +93,14 @@ static const int DEFAULT_STRETCH_LIST[COMMAND_STRETCH_MAX] = {
 static LPCTSTR DEFAULT_BUTTON_LIST[BUTTON_MAX] = {
     TEXT("0,Open"), TEXT(";1,Close"), TEXT(";4,Loop"),
     TEXT(";2,SeekToBgn"),
-    TEXT("8,SeekA"), TEXT(";9,SeekB"), TEXT("10,SeekC"), TEXT("11,SeekD"),
+    TEXT("'-'6'0,SeekA"), TEXT(";'-'3'0,SeekB"),
+    TEXT("'-'1'5,SeekC"), TEXT("'-' '5,SeekD"),
     TEXT("6,Pause"),
-    TEXT("12,SeekE"), TEXT("13,SeekF"), TEXT(";14,SeekG"), TEXT("15,SeekH"),
+    TEXT("'+' '5,SeekE"), TEXT("'+'1'5,SeekF"),
+    TEXT(";'+'3'0,SeekG"), TEXT("'+'6'0,SeekH"),
     TEXT("3,SeekToEnd"),
-    TEXT("16,StretchB"), TEXT("18,StretchC")
+    TEXT("'*'2'.'0:30~'*'2'.'0,StretchB"),
+    TEXT("'*'0'.'5:30~'*'0'.'5,StretchC")
 };
 
 
@@ -120,6 +127,7 @@ CTvtPlay::CTvtPlay()
     , m_resetDropInterval(0)
     , m_buttonNum(0)
     , m_popupMax(0)
+    , m_fPopupDesc(false)
     , m_fPopuping(false)
     , m_hThread(NULL)
     , m_hThreadEvent(NULL)
@@ -138,6 +146,7 @@ CTvtPlay::CTvtPlay()
     , m_stretchMode(0)
     , m_noMuteMax(0)
     , m_noMuteMin(0)
+    , m_fConvTo188(false)
     , m_salt(0)
     , m_hashListMax(0)
 {
@@ -234,45 +243,47 @@ void CTvtPlay::LoadSettings()
     int defMargin = m_pApp->GetVersion() >= TVTest::MakeVersion(0,7,21) ? 1 : 2; // 0.7.21以降は細くなった
     int defSalt = (::GetTickCount()>>16)^(::GetTickCount()&0xffff);
 
-    m_fAutoClose = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsAutoClose"), 0, m_szIniFileName) != 0;
-    m_fAutoLoop = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsAutoLoop"), 0, m_szIniFileName) != 0;
-    m_fResetAllOnSeek = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsResetAllOnSeek"), 0, m_szIniFileName) != 0;
-    m_resetDropInterval = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsResetDropInterval"), 1000, m_szIniFileName);
-    m_threadPriority = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsThreadPriority"), THREAD_PRIORITY_NORMAL, m_szIniFileName);
-    m_stretchMode = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsStretchMode"), 3, m_szIniFileName);
-    m_noMuteMax = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsStretchNoMuteMax"), 800, m_szIniFileName);
-    m_noMuteMin = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsStretchNoMuteMin"), 50, m_szIniFileName);
-    m_fToBottom = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("ToBottom"), 1, m_szIniFileName) != 0;
-    m_statusMargin = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("Margin"), defMargin, m_szIniFileName);
-    m_fSeekDrawTot = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("DispTot"), 0, m_szIniFileName) != 0;
-    m_fPosDrawTot = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("DispTotOnStatus"), 0, m_szIniFileName) != 0;
-    m_posItemWidth = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("StatusItemWidth"), 112, m_szIniFileName);
-    m_timeoutOnCmd = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnCommand"), 2000, m_szIniFileName);
-    m_timeoutOnMove = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnMouseMove"), 0, m_szIniFileName);
-    m_salt = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("Salt"), defSalt, m_szIniFileName);
-    m_hashListMax = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("FileInfoMax"), 0, m_szIniFileName);
+    m_fAutoClose = ::GetPrivateProfileInt(SETTINGS, TEXT("TsAutoClose"), 0, m_szIniFileName) != 0;
+    m_fAutoLoop = ::GetPrivateProfileInt(SETTINGS, TEXT("TsAutoLoop"), 0, m_szIniFileName) != 0;
+    m_fResetAllOnSeek = ::GetPrivateProfileInt(SETTINGS, TEXT("TsResetAllOnSeek"), 0, m_szIniFileName) != 0;
+    m_resetDropInterval = ::GetPrivateProfileInt(SETTINGS, TEXT("TsResetDropInterval"), 1000, m_szIniFileName);
+    m_threadPriority = ::GetPrivateProfileInt(SETTINGS, TEXT("TsThreadPriority"), THREAD_PRIORITY_NORMAL, m_szIniFileName);
+    m_stretchMode = ::GetPrivateProfileInt(SETTINGS, TEXT("TsStretchMode"), 3, m_szIniFileName);
+    m_noMuteMax = ::GetPrivateProfileInt(SETTINGS, TEXT("TsStretchNoMuteMax"), 800, m_szIniFileName);
+    m_noMuteMin = ::GetPrivateProfileInt(SETTINGS, TEXT("TsStretchNoMuteMin"), 50, m_szIniFileName);
+    m_fConvTo188 = ::GetPrivateProfileInt(SETTINGS, TEXT("TsConvTo188"), 1, m_szIniFileName) != 0;
+    m_fToBottom = ::GetPrivateProfileInt(SETTINGS, TEXT("ToBottom"), 1, m_szIniFileName) != 0;
+    m_statusMargin = ::GetPrivateProfileInt(SETTINGS, TEXT("Margin"), defMargin, m_szIniFileName);
+    m_fSeekDrawTot = ::GetPrivateProfileInt(SETTINGS, TEXT("DispTot"), 0, m_szIniFileName) != 0;
+    m_fPosDrawTot = ::GetPrivateProfileInt(SETTINGS, TEXT("DispTotOnStatus"), 0, m_szIniFileName) != 0;
+    m_posItemWidth = ::GetPrivateProfileInt(SETTINGS, TEXT("StatusItemWidth"), 112, m_szIniFileName);
+    m_timeoutOnCmd = ::GetPrivateProfileInt(SETTINGS, TEXT("TimeoutOnCommand"), 2000, m_szIniFileName);
+    m_timeoutOnMove = ::GetPrivateProfileInt(SETTINGS, TEXT("TimeoutOnMouseMove"), 0, m_szIniFileName);
+    m_salt = ::GetPrivateProfileInt(SETTINGS, TEXT("Salt"), defSalt, m_szIniFileName);
+    m_hashListMax = ::GetPrivateProfileInt(SETTINGS, TEXT("FileInfoMax"), 0, m_szIniFileName);
     m_hashListMax = min(m_hashListMax, HASH_LIST_MAX_MAX);
-    m_popupMax = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("PopupMax"), 30, m_szIniFileName);
+    m_popupMax = ::GetPrivateProfileInt(SETTINGS, TEXT("PopupMax"), 30, m_szIniFileName);
     m_popupMax = min(m_popupMax, POPUP_MAX_MAX);
+    m_fPopupDesc = ::GetPrivateProfileInt(SETTINGS, TEXT("PopupDesc"), 0, m_szIniFileName) != 0;
 
-    ::GetPrivateProfileString(TEXT("Settings"), TEXT("PopupPattern"), TEXT("%RecordFolder%*.ts"),
+    ::GetPrivateProfileString(SETTINGS, TEXT("PopupPattern"), TEXT("%RecordFolder%*.ts"),
                               m_szPopupPattern, ARRAY_SIZE(m_szPopupPattern), m_szIniFileName);
 
-    ::GetPrivateProfileString(TEXT("Settings"), TEXT("IconImage"), TEXT(""),
+    ::GetPrivateProfileString(SETTINGS, TEXT("IconImage"), TEXT(""),
                               m_szIconFileName, ARRAY_SIZE(m_szIconFileName), m_szIniFileName);
 
     // シークコマンドのシーク量設定を取得
     for (int i = 0; i < COMMAND_SEEK_MAX; i++) {
         TCHAR key[16];
         ::wsprintf(key, TEXT("Seek%c"), (TCHAR)i + TEXT('A'));
-        m_seekList[i] = ::GetPrivateProfileInt(TEXT("Settings"), key, DEFAULT_SEEK_LIST[i], m_szIniFileName);
+        m_seekList[i] = ::GetPrivateProfileInt(SETTINGS, key, DEFAULT_SEEK_LIST[i], m_szIniFileName);
     }
     
     // 早送りコマンドの倍率(25%～800%)設定を取得
     for (int i = 0; i < COMMAND_STRETCH_MAX; i++) {
         TCHAR key[16];
         ::wsprintf(key, TEXT("Stretch%c"), (TCHAR)i + TEXT('A'));
-        int r = ::GetPrivateProfileInt(TEXT("Settings"), key, DEFAULT_STRETCH_LIST[i], m_szIniFileName);
+        int r = ::GetPrivateProfileInt(SETTINGS, key, DEFAULT_STRETCH_LIST[i], m_szIniFileName);
         m_stretchList[i] = min(max(r, 25), 800);
     }
 
@@ -280,7 +291,7 @@ void CTvtPlay::LoadSettings()
     for (int i = 0; i < BUTTON_MAX; i++) {
         TCHAR key[16];
         ::wsprintf(key, TEXT("Button%02d"), i);
-        ::GetPrivateProfileString(TEXT("Settings"), key, DEFAULT_BUTTON_LIST[i],
+        ::GetPrivateProfileString(SETTINGS, key, DEFAULT_BUTTON_LIST[i],
                                   m_buttonList[i], ARRAY_SIZE(m_buttonList[0]), m_szIniFileName);
     }
 
@@ -301,10 +312,18 @@ void CTvtPlay::LoadSettings()
     }
 
     CColorScheme scheme;
-    WCHAR szAppIniPath[MAX_PATH];
-    if (m_pApp->GetSetting(L"IniFilePath", szAppIniPath, MAX_PATH) > 0)
-        scheme.Load(szAppIniPath);
-    
+    TCHAR val[2];
+    ::GetPrivateProfileString(TEXT("ColorScheme"), TEXT("Name"), TEXT("!"), val, ARRAY_SIZE(val), m_szIniFileName);
+    if (val[0] != TEXT('!')) {
+        // ColorSchemeセクションがあればプラグインiniを使う(本体仕様変更への保険)
+        scheme.Load(m_szIniFileName);
+    }
+    else {
+        WCHAR szAppIniPath[MAX_PATH];
+        if (m_pApp->GetSetting(L"IniFilePath", szAppIniPath, MAX_PATH) > 0)
+            scheme.Load(szAppIniPath);
+    }
+
     // 配色
     CStatusView::ThemeInfo theme;
     scheme.GetStyle(CColorScheme::STYLE_STATUSITEM, &theme.ItemStyle);
@@ -316,7 +335,7 @@ void CTvtPlay::LoadSettings()
     m_fSettingsLoaded = true;
 
     // デフォルトの設定キーを出力するため
-    if (::GetPrivateProfileInt(TEXT("Settings"), TEXT("PopupMax"), -1, m_szIniFileName) == -1)
+    if (::GetPrivateProfileInt(SETTINGS, TEXT("PopupDesc"), -1, m_szIniFileName) == -1)
         SaveSettings();
 }
 
@@ -326,43 +345,45 @@ void CTvtPlay::SaveSettings() const
 {
     if (!m_fSettingsLoaded) return;
 
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsAutoClose"), m_fAutoClose, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsAutoLoop"), m_fAutoLoop, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsResetAllOnSeek"), m_fResetAllOnSeek, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsResetDropInterval"), m_resetDropInterval, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsThreadPriority"), m_threadPriority, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsStretchMode"), m_stretchMode, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsStretchNoMuteMax"), m_noMuteMax, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsStretchNoMuteMin"), m_noMuteMin, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("ToBottom"), m_fToBottom, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("Margin"), m_statusMargin, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("DispTot"), m_fSeekDrawTot, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("DispTotOnStatus"), m_fPosDrawTot, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("StatusItemWidth"), m_posItemWidth, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnCommand"), m_timeoutOnCmd, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnMouseMove"), m_timeoutOnMove, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("Salt"), m_salt, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("FileInfoMax"), m_hashListMax, m_szIniFileName);
-    WritePrivateProfileInt(TEXT("Settings"), TEXT("PopupMax"), m_popupMax, m_szIniFileName);
-    ::WritePrivateProfileString(TEXT("Settings"), TEXT("PopupPattern"), m_szPopupPattern, m_szIniFileName);
-    ::WritePrivateProfileString(TEXT("Settings"), TEXT("IconImage"), m_szIconFileName, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsAutoClose"), m_fAutoClose, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsAutoLoop"), m_fAutoLoop, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsResetAllOnSeek"), m_fResetAllOnSeek, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsResetDropInterval"), m_resetDropInterval, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsThreadPriority"), m_threadPriority, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsStretchMode"), m_stretchMode, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsStretchNoMuteMax"), m_noMuteMax, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsStretchNoMuteMin"), m_noMuteMin, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsConvTo188"), m_fConvTo188, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("ToBottom"), m_fToBottom, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("Margin"), m_statusMargin, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("DispTot"), m_fSeekDrawTot, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("DispTotOnStatus"), m_fPosDrawTot, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("StatusItemWidth"), m_posItemWidth, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TimeoutOnCommand"), m_timeoutOnCmd, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TimeoutOnMouseMove"), m_timeoutOnMove, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("Salt"), m_salt, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("FileInfoMax"), m_hashListMax, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("PopupMax"), m_popupMax, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("PopupDesc"), m_fPopupDesc, m_szIniFileName);
+    ::WritePrivateProfileString(SETTINGS, TEXT("PopupPattern"), m_szPopupPattern, m_szIniFileName);
+    ::WritePrivateProfileString(SETTINGS, TEXT("IconImage"), m_szIconFileName, m_szIniFileName);
     
     for (int i = 0; i < COMMAND_SEEK_MAX; i++) {
         TCHAR key[16];
         ::wsprintf(key, TEXT("Seek%c"), (TCHAR)i + TEXT('A'));
-        WritePrivateProfileInt(TEXT("Settings"), key, m_seekList[i], m_szIniFileName);
+        WritePrivateProfileInt(SETTINGS, key, m_seekList[i], m_szIniFileName);
     }
     
     for (int i = 0; i < COMMAND_STRETCH_MAX; i++) {
         TCHAR key[16];
         ::wsprintf(key, TEXT("Stretch%c"), (TCHAR)i + TEXT('A'));
-        WritePrivateProfileInt(TEXT("Settings"), key, m_stretchList[i], m_szIniFileName);
+        WritePrivateProfileInt(SETTINGS, key, m_stretchList[i], m_szIniFileName);
     }
 
     for (int i = 0; i < BUTTON_MAX; i++) {
         TCHAR key[16];
         ::wsprintf(key, TEXT("Button%02d"), i);
-        ::WritePrivateProfileString(TEXT("Settings"), key, m_buttonList[i], m_szIniFileName);
+        ::WritePrivateProfileString(SETTINGS, key, m_buttonList[i], m_szIniFileName);
     }
     
     // FileInfoセクションは一気に書き込む
@@ -401,15 +422,32 @@ bool CTvtPlay::InitializePlugin()
     
     LoadSettings();
     
+    // アイコン画像読み込み
+    DrawUtil::CBitmap iconMap;
+    if (m_szIconFileName[0])
+        iconMap.Load(NULL, m_szIconFileName, LR_CREATEDIBSECTION | LR_LOADFROMFILE);
+    if (!iconMap.IsCreated())
+        if (!iconMap.Load(g_hinstDLL, IDB_BUTTONS)) return false;
+
+    DrawUtil::CBitmap icon;
+    if (!icon.Create(ICON_SIZE * 2, ICON_SIZE, 1)) return false;
+
+    HDC hdcMem = ::CreateCompatibleDC(NULL);
+    if (!hdcMem) return false;
+    HGDIOBJ hgdiOld = ::SelectObject(hdcMem, icon.GetHandle());
+
+    RGBQUAD rgbq[2] = {0};
+    rgbq[0].rgbBlue = rgbq[0].rgbGreen = rgbq[0].rgbRed = 0;
+    rgbq[1].rgbBlue = rgbq[1].rgbGreen = rgbq[1].rgbRed = 255;
+    ::SetDIBColorTable(hdcMem, 0, 2, rgbq);
+
     // 文字列解析してボタンアイテムを生成
     m_buttonNum = 0;
     for (int i = 0; i < BUTTON_MAX; i++) {
         if (m_buttonList[i][0] == TEXT(';')) continue;
 
-        int iconIndex = ::StrToInt(m_buttonList[i]);
-
         int commandID = -1;
-        LPCTSTR cmd = ::StrChr(m_buttonList[i], TEXT(','));
+        LPCTSTR cmd = ::StrRChr(m_buttonList[i], NULL, TEXT(','));
         for (int j = 0; cmd && j < ARRAY_SIZE(COMMAND_LIST); j++) {
             if (!::lstrcmpi(&cmd[1], COMMAND_LIST[j].pszText)) {
                 commandID = COMMAND_LIST[j].ID;
@@ -418,13 +456,20 @@ bool CTvtPlay::InitializePlugin()
         }
         if (commandID == -1) continue;
 
-        m_statusView.AddItem(new CButtonStatusItem(this, STATUS_ITEM_BUTTON + commandID, m_szIconFileName, iconIndex));
+        ComposeMonoColorIcon(hdcMem, 0, 0, iconMap.GetHandle(), m_buttonList[i]);
+
+        m_statusView.AddItem(new CButtonStatusItem(this, STATUS_ITEM_BUTTON + commandID, icon));
         m_buttonNum++;
     }
+    ::SelectObject(hdcMem, hgdiOld);
+    ::DeleteDC(hdcMem);
 
     m_statusView.AddItem(new CSeekStatusItem(this, m_fSeekDrawTot));
     m_statusView.AddItem(new CPositionStatusItem(this, m_fPosDrawTot, m_posItemWidth));
     
+    // CTsSenderを初期設定
+    m_tsSender.SetConvTo188(m_fConvTo188);
+
     m_fInitialized = true;
     return true;
 }
@@ -518,10 +563,10 @@ bool CTvtPlay::Open(const POINT &pt, UINT flags)
         ::FindClose(hFind);
     }
 
-    // ファイル名を昇順ソート
+    // ファイル名を昇順or降順ソート
     LPCTSTR nameList[POPUP_MAX_MAX];
     for (int i = 0; i < count; i++) nameList[i] = findList[i].cFileName;
-    qsort(nameList, count, sizeof(nameList[0]), CompareTStrI);
+    qsort(nameList, count, sizeof(nameList[0]), m_fPopupDesc ? CompareTStrIX : CompareTStrI);
     
     // メニュー生成
     int selID = 0;
@@ -813,9 +858,25 @@ void CTvtPlay::OnCommand(int id)
         Open(m_hwndFrame);
         break;
     case ID_COMMAND_OPEN_POPUP:
-        {
+        if (m_fPopuping) {
+            ::PostMessage(m_hwndFrame, WM_KEYDOWN, VK_DOWN, 0);
+            ::PostMessage(m_hwndFrame, WM_KEYUP, VK_DOWN, 0);
+        }
+        else {
             CStatusItem *pItem = m_statusView.GetItemByID(STATUS_ITEM_BUTTON + ID_COMMAND_OPEN);
             if (pItem) pItem->OnRButtonDown(0, 0);
+        }
+        break;
+    case ID_COMMAND_SELECT_POPUP:
+        if (m_fPopuping) {
+            ::PostMessage(m_hwndFrame, WM_KEYDOWN, VK_RETURN, 0);
+            ::PostMessage(m_hwndFrame, WM_KEYUP, VK_RETURN, 0);
+        }
+        break;
+    case ID_COMMAND_CANCEL_POPUP:
+        if (m_fPopuping) {
+            ::PostMessage(m_hwndFrame, WM_KEYDOWN, VK_ESCAPE, 0);
+            ::PostMessage(m_hwndFrame, WM_KEYUP, VK_ESCAPE, 0);
         }
         break;
     case ID_COMMAND_CLOSE:
@@ -1170,15 +1231,22 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
         }
         else {
             bool fRead = pThis->m_tsSender.Send();
-            if (!fRead) {
-                int num, den;
-                pThis->m_tsSender.GetSpeed(&num, &den);
-                if (num != 100) {
+
+            int num, den;
+            pThis->m_tsSender.GetSpeed(&num, &den);
+            if (num != 100) {
+                bool fSpecialExt;
+                // ファイル末尾に達したか、容量確保録画の追っかけ時に(再生時間-3)秒以上の位置に達した場合
+                if (!fRead || (!pThis->m_tsSender.IsFixed(&fSpecialExt) && fSpecialExt &&
+                    pThis->m_tsSender.GetPosition() > pThis->m_tsSender.GetDuration() - 3000))
+                {
                     // 等速に戻しておく
                     ASFilterPostMessage(WM_ASFLT_STRETCH, 0, MAKELPARAM(100, 100));
                     pThis->m_tsSender.SetSpeed(100, 100);
                     ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_SPEED, 0, 100);
                 }
+            }
+            if (!fRead) {
                 if (pThis->m_tsSender.IsFixed()) {
                     // ループ再生時に閉じてはいけない
                     if (pThis->m_fAutoLoop) {
@@ -1447,17 +1515,12 @@ void CPositionStatusItem::Draw(HDC hdc, const RECT *pRect)
 }
 
 
-CButtonStatusItem::CButtonStatusItem(CTvtPlay *pPlugin, int id, LPCTSTR iconFileName, int iconIndex)
+CButtonStatusItem::CButtonStatusItem(CTvtPlay *pPlugin, int id, const DrawUtil::CBitmap &icon)
     : CStatusItem(id, 16)
     , m_pPlugin(pPlugin)
-    , m_iconIndex(iconIndex)
+    , m_icon(icon)
 {
     m_MinWidth = 16;
-
-    if (iconFileName && iconFileName[0])
-        m_icons.Load(NULL, iconFileName, LR_CREATEDIBSECTION | LR_LOADFROMFILE);
-    
-    if (!m_icons.IsCreated()) m_icons.Load(g_hinstDLL, IDB_BUTTONS);
 }
 
 void CButtonStatusItem::Draw(HDC hdc, const RECT *pRect)
@@ -1469,10 +1532,10 @@ void CButtonStatusItem::Draw(HDC hdc, const RECT *pRect)
         (ID_COMMAND_STRETCH_A <= cmdID && cmdID <= ID_COMMAND_STRETCH_D &&
          m_pPlugin->GetStretchID() == cmdID - ID_COMMAND_STRETCH_A))
     {
-        DrawIcon(hdc, pRect, m_icons.GetHandle(), (m_iconIndex + 1) * 16);
+        DrawIcon(hdc, pRect, m_icon.GetHandle(), ICON_SIZE);
     }
     else {
-        DrawIcon(hdc, pRect, m_icons.GetHandle(), m_iconIndex * 16);
+        DrawIcon(hdc, pRect, m_icon.GetHandle(), 0);
     }
 }
 
