@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.1.8 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.1.8r2 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -24,17 +24,24 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
   「TVTest起動オプションについて」を参照
 ○倍速再生時にしばらくフリーズすることがある
   倍速再生はなるべくBonDriver_Pipeを使ってください。「倍速再生について」を参照
+  最新のTVTest0.7.23では、ドロップしたTSファイルの倍速再生でデッドロックします。
+  そのようなファイルを再生する場合はこちらのTVTestを使用してください:
+  http://www1.axfc.net/uploader/Sc/so/344770.zip (再UP、そのうち公開停止します)
 ○しばらく再生していると映像が途切れとぎれになったりする
   設定キーTsUsePerfCounter/TsEnableUnderrunCtrl を参照
 ○シークがおそい
   TVTest設定の「バッファリングを行う」を使っている場合、かわりに設定キー
   TsReadBufferSizeKB を使用することをお勧めします
+○レジュームは？
+  設定キーFileInfoMax を参照
 
 ■以前のバージョンからの移行
 設定ファイルTvtPlay.iniは基本的にそのまま引き継げます。ただし、ボタンのアイコン
 用画像の配置転換などで、設定キーButton02～Button15のデフォルトが一部変更されてい
 ます。ボタンアイコンがおかしくなった場合は、一度これらのキーをメモ帳などを使って
 削除してみてください。
+(ver.1.8からの移行)
+  TvtPlay.tvtpを置きかえてください。
 (ver.1.3～ver.1.7からの移行)
   TvtPlay.tvtpとBonDriver_Pipe.dllとを置きかえてください。ver.1.8は
   BonDriver_Pipe.dllの変更がメインなので必ず置きかえてください。
@@ -471,6 +478,11 @@ http://2sen.dip.jp/dtv/)のup0598.zip「非公式 TvtPlayシークボタンカ�
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.1.8r2 (2012-05-11)
+・「ラップアラウンドを避ける」(設定キーTsAvoidWraparound)を使っている場合、特定
+  パターンのパケットのPTS、DTSタイムスタンプを書き換えていなかったバグを修正
+  ・特定位置で字幕プラグインの字幕が残ったままになったりしていたかもしれない
+・高速鑑賞機能の差分ソースコードをプロジェクトにマージ(ただし機能オフでビルド)
 ver.1.8 (2012-03-29)
 ・某機能実装にむけてBonDriver_Pipeの倍速再生への耐性を強化。関連する設定キー
   TsEnableUnderrunCtrlを追加

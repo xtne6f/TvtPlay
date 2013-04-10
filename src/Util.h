@@ -1,6 +1,9 @@
 ﻿#ifndef INCLUDE_UTIL_H
 #define INCLUDE_UTIL_H
 
+// 高速鑑賞機能("字幕でゆっくり")をつけるときコメントをはずす
+//#define EN_SWC
+
 #ifdef _DEBUG
 #define DEBUG_OUT(x) ::OutputDebugString(x)
 #else

@@ -594,7 +594,13 @@ void extract_adaptation_field(ADAPTATION_FIELD *dst, const unsigned char *data)
 	p = data;
 	
 	memset(dst, 0, sizeof(ADAPTATION_FIELD));
-	if( (p[0] == 0) || (p[0] > 183) ){
+	if( p[0] == 0 ){
+		// a single stuffing byte
+		dst->adaptation_field_length = 0;
+		return;
+	}
+	if( p[0] > 183 ){
+		dst->adaptation_field_length = -1;
 		return;
 	}
 
@@ -603,6 +609,7 @@ void extract_adaptation_field(ADAPTATION_FIELD *dst, const unsigned char *data)
 	tail = p + dst->adaptation_field_length;
 	if( (p+1) > tail ){
 		memset(dst, 0, sizeof(ADAPTATION_FIELD));
+		dst->adaptation_field_length = -1;
 		return;
 	}
 
@@ -620,6 +627,7 @@ void extract_adaptation_field(ADAPTATION_FIELD *dst, const unsigned char *data)
 	if(dst->pcr_flag != 0){
 		if( (p+6) > tail ){
 			memset(dst, 0, sizeof(ADAPTATION_FIELD));
+			dst->adaptation_field_length = -1;
 			return;
 		}
 		dst->pcr_45khz = ((unsigned int)p[0]<<24)|(p[1]<<16)|(p[2]<<8)|p[3];

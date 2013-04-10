@@ -190,11 +190,19 @@
 				>
 			</File>
 			<File
+				RelativePath=".\CaptionAnalyzer.cpp"
+				>
+			</File>
+			<File
 				RelativePath=".\ChapterMap.cpp"
 				>
 			</File>
 			<File
 				RelativePath=".\Playlist.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\trex.c"
 				>
 			</File>
 			<File
@@ -268,6 +276,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\CaptionAnalyzer.h"
+				>
+			</File>
+			<File
 				RelativePath=".\ChapterMap.h"
 				>
 			</File>
@@ -277,6 +289,10 @@
 			</File>
 			<File
 				RelativePath=".\resource.h"
+				>
+			</File>
+			<File
+				RelativePath=".\trex.h"
 				>
 			</File>
 			<File

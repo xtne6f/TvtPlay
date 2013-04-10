@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2012-03-28
+// 最終更新: 2012-05-08
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -16,6 +16,14 @@
 #include "TsSender.h"
 #include "Playlist.h"
 #include "ChapterMap.h"
+
+#ifdef EN_SWC
+#include "Caption.h"
+#include "bregdef.h"
+#include "trex.h"
+#include "CaptionAnalyzer.h"
+#endif
+
 #include "resource.h"
 #include "TvtPlayUtil.h"
 #define TVTEST_PLUGIN_CLASS_IMPLEMENT
@@ -24,7 +32,7 @@
 #include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.8)";
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.8r2)";
 static const int INFO_VERSION = 21;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
@@ -169,12 +177,21 @@ CTvtPlay::CTvtPlay()
     , m_salt(0)
     , m_hashListMax(0)
     , m_fUpdateHashList(false)
+#ifdef EN_SWC
+    , m_slowerWithCaption(0)
+    , m_swcShowLate(0)
+    , m_swcClearEarly(0)
+#endif
 {
     m_szIniFileName[0] = 0;
     m_szSpecFileName[0] = 0;
     m_szIconFileName[0] = 0;
     m_szPopupPattern[0] = 0;
     m_szChaptersDirName[0] = 0;
+#ifdef EN_SWC
+    m_szCaptionDllPath[0] = 0;
+    m_szBregonigDllPath[0] = 0;
+#endif
     m_lastCurPos.x = m_lastCurPos.y = 0;
     m_idleCurPos.x = m_idleCurPos.y = 0;
     CStatusView::Initialize(g_hinstDLL);
@@ -359,6 +376,15 @@ void CTvtPlay::LoadSettings()
         m_fPopupDesc        = GetBufferedProfileInt(pBuf, TEXT("PopupDesc"), 0) != 0;
         GetBufferedProfileString(pBuf, TEXT("PopupPattern"), TEXT("%RecordFolder%*.ts"), m_szPopupPattern, _countof(m_szPopupPattern));
         GetBufferedProfileString(pBuf, TEXT("ChaptersFolderName"), TEXT("chapters"), m_szChaptersDirName, _countof(m_szChaptersDirName));
+#ifdef EN_SWC
+        GetBufferedProfileString(pBuf, TEXT("CaptionDll"), TEXT("Plugins\\TvtPlay_Caption.dll"), m_szCaptionDllPath, _countof(m_szCaptionDllPath));
+        GetBufferedProfileString(pBuf, TEXT("BregonigDll"), TEXT(""), m_szBregonigDllPath, _countof(m_szBregonigDllPath));
+        m_slowerWithCaption = GetBufferedProfileInt(pBuf, TEXT("SlowerWithCaption"), 0);
+        m_swcShowLate       = GetBufferedProfileInt(pBuf, TEXT("SlowerWithCaptionShowLate"), 0);
+        m_swcShowLate       = min(max(m_swcShowLate, 0), 5000);
+        m_swcClearEarly     = GetBufferedProfileInt(pBuf, TEXT("SlowerWithCaptionClearEarly"), 0);
+        m_swcClearEarly     = min(max(m_swcClearEarly, 0), 5000);
+#endif
         m_seekItemOrder     = GetBufferedProfileInt(pBuf, TEXT("SeekItemOrder"), 99);
         m_posItemOrder      = GetBufferedProfileInt(pBuf, TEXT("StatusItemOrder"), 99);
         GetBufferedProfileString(pBuf, TEXT("IconImage"), TEXT(""), m_szIconFileName, _countof(m_szIconFileName));
@@ -571,6 +597,15 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
         WritePrivateProfileInt(SETTINGS, TEXT("PopupDesc"), m_fPopupDesc, m_szIniFileName);
         ::WritePrivateProfileString(SETTINGS, TEXT("PopupPattern"), m_szPopupPattern, m_szIniFileName);
         ::WritePrivateProfileString(SETTINGS, TEXT("ChaptersFolderName"), m_szChaptersDirName, m_szIniFileName);
+#ifdef EN_SWC
+        ::WritePrivateProfileString(SETTINGS, TEXT("CaptionDll"), m_szCaptionDllPath, m_szIniFileName);
+        ::WritePrivateProfileString(SETTINGS, TEXT("BregonigDll"), m_szBregonigDllPath, m_szIniFileName);
+    }
+    WritePrivateProfileInt(SETTINGS, TEXT("SlowerWithCaption"), m_slowerWithCaption, m_szIniFileName);
+    if (fWriteDefault) {
+        WritePrivateProfileInt(SETTINGS, TEXT("SlowerWithCaptionShowLate"), m_swcShowLate, m_szIniFileName);
+        WritePrivateProfileInt(SETTINGS, TEXT("SlowerWithCaptionClearEarly"), m_swcClearEarly, m_szIniFileName);
+#endif
         WritePrivateProfileInt(SETTINGS, TEXT("SeekItemOrder"), m_seekItemOrder, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("StatusItemOrder"), m_posItemOrder, m_szIniFileName);
         ::WritePrivateProfileString(SETTINGS, TEXT("IconImage"), m_szIconFileName, m_szIniFileName);
@@ -820,7 +855,17 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
             }
         }
         OnDispModeChange(m_pApp->GetStandby(), true);
-
+#ifdef EN_SWC
+        TCHAR blacklistPath[MAX_PATH + 32];
+        if (::GetModuleFileName(g_hinstDLL, blacklistPath, MAX_PATH)) {
+            ::PathRemoveExtension(blacklistPath);
+            ::lstrcat(blacklistPath, TEXT("_Blacklist.txt"));
+            if (m_captionAnalyzer.Initialize(m_szCaptionDllPath, m_szBregonigDllPath, blacklistPath, m_swcShowLate, m_swcClearEarly)) {
+                // ストリームコールバックの登録
+                m_pApp->SetStreamCallback(0, StreamCallback, this);
+            }
+        }
+#endif
         if (m_fShowOpenDialog && !m_szSpecFileName[0] && !m_pApp->GetStandby()) OpenWithDialog();
 
         m_pApp->SetWindowMessageCallback(WindowMsgCallback, this);
@@ -830,7 +875,13 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
         ::DragAcceptFiles(m_pApp->GetAppWindow(), FALSE);
         m_pApp->SetWindowMessageCallback(NULL, NULL);
         Close();
-
+#ifdef EN_SWC
+        if (m_captionAnalyzer.IsInitialized()) {
+            // ストリームコールバックの登録解除
+            m_pApp->SetStreamCallback(TVTest::STREAM_CALLBACK_REMOVE, StreamCallback);
+            m_captionAnalyzer.UnInitialize();
+        }
+#endif
         if (m_hwndFrame) {
             m_statusView.SetEventHandler(NULL);
             m_statusView.Destroy();
@@ -854,6 +905,20 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
         }
         ::AppendMenu(hmenu, MF_STRING|(m_fPosDrawTot?MF_CHECKED:MF_UNCHECKED), 2, TEXT("放送時刻を表示する"));
         ::AppendMenu(hmenu, MF_STRING|(m_fModTimestamp?MF_CHECKED:MF_UNCHECKED), 3, TEXT("ラップアラウンドを回避する"));
+#ifdef EN_SWC
+        HMENU hSubMenu = ::CreatePopupMenu();
+        if (hSubMenu) {
+            ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==0   ?MF_CHECKED:MF_UNCHECKED), 101, TEXT("しない"));
+            ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==75  ?MF_CHECKED:MF_UNCHECKED), 102, TEXT("0.75倍"));
+            ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==50  ?MF_CHECKED:MF_UNCHECKED), 103, TEXT("0.50倍"));
+            ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==25  ?MF_CHECKED:MF_UNCHECKED), 104, TEXT("0.25倍"));
+            ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==-100?MF_CHECKED:MF_UNCHECKED), 105, TEXT("-100%"));
+            ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==-200?MF_CHECKED:MF_UNCHECKED), 106, TEXT("-200%"));
+            ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==-300?MF_CHECKED:MF_UNCHECKED), 107, TEXT("-300%"));
+            ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==-400?MF_CHECKED:MF_UNCHECKED), 108, TEXT("-400%"));
+            ::AppendMenu(hmenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSubMenu), TEXT("字幕でゆっくり"));
+        }
+#endif
         selID = TrackPopup(hmenu, pt, flags);
         ::DestroyMenu(hmenu);
     }
@@ -878,6 +943,22 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
         SetModTimestamp(m_fModTimestamp);
         SaveSettings();
     }
+#ifdef EN_SWC
+    else if (101 <= selID && selID <= 108) {
+        switch (selID) {
+        case 101: m_slowerWithCaption = 0; break;
+        case 102: m_slowerWithCaption = 75; break;
+        case 103: m_slowerWithCaption = 50; break;
+        case 104: m_slowerWithCaption = 25; break;
+        case 105: m_slowerWithCaption = -100; break;
+        case 106: m_slowerWithCaption = -200; break;
+        case 107: m_slowerWithCaption = -300; break;
+        case 108: m_slowerWithCaption = -400; break;
+        }
+        Stretch(GetStretchID());
+        SaveSettings();
+    }
+#endif
 }
 
 
@@ -1533,10 +1614,17 @@ void CTvtPlay::Stretch(int stretchID)
 {
     int speed = 0 <= stretchID && stretchID < m_stretchListNum ?
                 m_stretchList[stretchID] : 100;
+    int lowSpeed = speed;
+#ifdef EN_SWC
+    // 字幕表示中の速度を計算
+    lowSpeed = m_slowerWithCaption > 0 ? speed * m_slowerWithCaption / 100 : speed + m_slowerWithCaption;
+    // 切り替え時のプチノイズ防止のため101
+    lowSpeed = min(max(lowSpeed, 101), speed);
+#endif
 
     // 速度が設定値より大or小のときはミュートフラグをつける
     bool fMute = speed < m_noMuteMin || m_noMuteMax < speed;
-    if (m_hThread) ::PostThreadMessage(m_threadID, WM_TS_SET_SPEED, (fMute?4:0)|m_stretchMode, speed);
+    if (m_hThread) ::PostThreadMessage(m_threadID, WM_TS_SET_SPEED, (fMute?4:0)|m_stretchMode, MAKELPARAM(speed, lowSpeed));
 }
 
 // 再生位置から直近のチャプターの監視を開始する
@@ -2006,6 +2094,22 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         if (pThis->m_pApp->IsPluginEnabled())
             pThis->SetupDestination();
         break;
+#ifdef EN_SWC
+    case TVTest::EVENT_SERVICEUPDATE:
+        // サービスの構成が変化した
+        if (pThis->m_pApp->IsPluginEnabled()) {
+            // 字幕PIDをセットする
+            int index = pThis->m_pApp->GetService();
+            TVTest::ServiceInfo si;
+            if (index >= 0 && pThis->m_pApp->GetServiceInfo(index, &si) && si.SubtitlePID != 0) {
+                pThis->m_captionAnalyzer.SetPid(si.SubtitlePID);
+            }
+            else {
+                pThis->m_captionAnalyzer.SetPid(-1);
+            }
+        }
+        break;
+#endif
     case TVTest::EVENT_PREVIEWCHANGE:
         // プレビュー表示状態が変化した
         if (pThis->m_pApp->IsPluginEnabled())
@@ -2053,7 +2157,7 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
 // WM_CREATEは呼ばれない
 BOOL CALLBACK CTvtPlay::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pResult, void *pUserData)
 {
-    CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(pUserData);
+    CTvtPlay *pThis = static_cast<CTvtPlay*>(pUserData);
 
     switch (uMsg) {
     case WM_SIZE:
@@ -2258,6 +2362,9 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
     int posSec, durSec, lastTot, lastExtMode, lastSpeed;
     bool fLastPaused;
     int speed = 100, posWatch = -1;
+    int lowSpeed = 100;
+    int stretchMode = 0;
+    int fLowSpeed = false;
     static const int RESET_WAIT = 10;
     int resetCount = -RESET_WAIT;
     {
@@ -2322,13 +2429,22 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                 }
                 break;
             case WM_TS_SET_SPEED:
-                speed = static_cast<int>(msg.lParam);
-                if (!ASFilterSendMessageTimeout(WM_ASFLT_STRETCH, msg.wParam, MAKELPARAM(speed, 100), 1000)) {
+                speed = LOWORD(msg.lParam);
+                lowSpeed = HIWORD(msg.lParam);
+                stretchMode = static_cast<int>(msg.wParam);
+                fLowSpeed = false;
+#ifdef EN_SWC
+                {
+                    CBlockLock lock(&pThis->m_streamLock);
+                    fLowSpeed = pThis->m_captionAnalyzer.CheckShowState();
+                }
+#endif
+                if (!ASFilterSendMessageTimeout(WM_ASFLT_STRETCH, stretchMode, MAKELPARAM(fLowSpeed?lowSpeed:speed, 100), 1000)) {
                     // コマンド失敗の場合は等速にする
-                    speed = 100;
+                    speed = lowSpeed = 100;
                 }
                 // テンポが変化する場合は転送速度を変更する
-                pThis->m_tsSender.SetSpeed(msg.wParam & 1 ? speed : 100, 100);
+                pThis->m_tsSender.SetSpeed(stretchMode & 1 ? (fLowSpeed?lowSpeed:speed) : 100, 100);
                 break;
             case WM_TS_SET_MOD_TS:
                 pThis->m_tsSender.SetModTimestamp(msg.wParam != 0);
@@ -2351,6 +2467,11 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                     if (pThis->m_resetMode==2 || pThis->m_resetMode==3) {
                         pThis->m_tsSender.SendEmptyPat();
                     }
+#ifdef EN_SWC
+                    // PCRが不連続になるので一旦無効にする
+                    CBlockLock lock(&pThis->m_streamLock);
+                    pThis->m_captionAnalyzer.ClearShowState();
+#endif
                 }
                 resetCount += resetCount < 0 ? 1 : -1;
                 if (resetCount > 0) {
@@ -2361,9 +2482,7 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
             }
 
             int rvSend = pThis->m_tsSender.Send();
-            int num, den;
-            pThis->m_tsSender.GetSpeed(&num, &den);
-            if (num != 100) {
+            if (speed != 100) {
                 // ファイル末尾に達したか、追っかけ時に(再生時間-3)秒以上の位置に達した場合
                 if (!rvSend || (!pThis->m_tsSender.IsFixed() &&
                     pThis->m_tsSender.GetPosition() > pThis->m_tsSender.GetDuration() - 3000))
@@ -2371,9 +2490,41 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                     // 等速に戻しておく
                     ASFilterSendNotifyMessage(WM_ASFLT_STRETCH, 0, MAKELPARAM(100, 100));
                     pThis->m_tsSender.SetSpeed(100, 100);
-                    speed = 100;
+                    speed = lowSpeed = 100;
                 }
             }
+#ifdef EN_SWC
+            if (speed != 100 && speed != lowSpeed) {
+                int fSetSpeed = false;
+                {
+                    CBlockLock lock(&pThis->m_streamLock);
+                    if (pThis->m_captionAnalyzer.CheckShowState()) {
+                        if (!fLowSpeed) {
+                            // 低速にする
+                            ::OutputDebugString(TEXT("CTvtPlay::TsSenderThread(): *** LOW SPEED ***\n"));
+                            fLowSpeed = true;
+                            fSetSpeed = true;
+                        }
+                    }
+                    else {
+                        if (fLowSpeed) {
+                            // 高速にする
+                            ::OutputDebugString(TEXT("CTvtPlay::TsSenderThread(): *** NORMAL SPEED ***\n"));
+                            fLowSpeed = false;
+                            fSetSpeed = true;
+                        }
+                    }
+                }
+                if (fSetSpeed) {
+                    if (!ASFilterSendMessageTimeout(WM_ASFLT_STRETCH, stretchMode, MAKELPARAM(fLowSpeed?lowSpeed:speed, 100), 1000)) {
+                        // コマンド失敗の場合は等速にする
+                        speed = lowSpeed = 100;
+                    }
+                    // テンポが変化する場合は転送速度を変更する
+                    pThis->m_tsSender.SetSpeed(stretchMode & 1 ? (fLowSpeed?lowSpeed:speed) : 100, 100);
+                }
+            }
+#endif
             if (!rvSend) {
                 if (pThis->m_tsSender.IsFixed()) {
                     ::Sleep(pThis->m_supposedDispDelay + 300);
@@ -2387,6 +2538,11 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                 // カット編集やドロップの可能性が高いのでビューアリセットする
                 ::SendMessageTimeout(pThis->m_hwndFrame, WM_QUERY_RESET, 0, 0, SMTO_NORMAL, 1000, &dwRes);
                 DEBUG_OUT(TEXT("CTvtPlay::TsSenderThread(): ResetRateControl\n"));
+#ifdef EN_SWC
+                // PCRが不連続になるので一旦無効にする
+                CBlockLock lock(&pThis->m_streamLock);
+                pThis->m_captionAnalyzer.ClearShowState();
+#endif
             }
         }
 
@@ -2420,6 +2576,26 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
     ASFilterSendNotifyMessage(WM_ASFLT_STRETCH, 0, MAKELPARAM(100, 100));
     return 0;
 }
+
+
+#ifdef EN_SWC
+// ストリームコールバック(別スレッド)
+BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
+{
+    CTvtPlay *pThis = static_cast<CTvtPlay*>(pClientData);
+    TS_HEADER header;
+    extract_ts_header(&header, pData);
+
+    // Early reject
+    if ((header.adaptation_field_control&2)/*2,3*/ ||
+        header.pid == pThis->m_captionAnalyzer.GetPid())
+    {
+        CBlockLock lock(&pThis->m_streamLock);
+        pThis->m_captionAnalyzer.AddPacket(pData);
+    }
+    return TRUE;
+}
+#endif
 
 
 TVTest::CTVTestPlugin *CreatePluginClass()

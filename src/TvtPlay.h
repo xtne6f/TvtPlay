@@ -82,6 +82,9 @@ private:
     static LRESULT CALLBACK FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void UpdateInfos();
     static DWORD WINAPI TsSenderThread(LPVOID pParam);
+#ifdef EN_SWC
+    static BOOL CALLBACK StreamCallback(BYTE *pData, void *pClientData);
+#endif
 
     // 初期パラメータ
     bool m_fInitialized;
@@ -147,6 +150,17 @@ private:
     // 現在再生中のチャプター
     CChapterMap m_chapter;
     TCHAR m_szChaptersDirName[MAX_PATH];
+
+#ifdef EN_SWC
+    // 字幕でゆっくり
+    CCriticalLock m_streamLock;
+    CCaptionAnalyzer m_captionAnalyzer;
+    TCHAR m_szCaptionDllPath[MAX_PATH];
+    TCHAR m_szBregonigDllPath[MAX_PATH];
+    int m_slowerWithCaption;
+    int m_swcShowLate;
+    int m_swcClearEarly;
+#endif
 };
 
 #endif // INCLUDE_TVT_PLAY_H

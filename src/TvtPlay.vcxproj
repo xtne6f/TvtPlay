@@ -28,7 +28,6 @@
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <CharacterSet>Unicode</CharacterSet>
-    <PlatformToolset>Windows7.1SDK</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
@@ -41,7 +40,6 @@
     <UseDebugLibraries>false</UseDebugLibraries>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
-    <PlatformToolset>Windows7.1SDK</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
@@ -180,12 +178,14 @@
     <ClInclude Include="Aero.h" />
     <ClInclude Include="AsyncFileReader.h" />
     <ClInclude Include="BasicWindow.h" />
+    <ClInclude Include="CaptionAnalyzer.h" />
     <ClInclude Include="ChapterMap.h" />
     <ClInclude Include="ColorScheme.h" />
     <ClInclude Include="DrawUtil.h" />
     <ClInclude Include="Playlist.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="Settings.h" />
+    <ClInclude Include="trex.h" />
     <ClInclude Include="TvtPlayUtil.h" />
     <ClInclude Include="StatusView.h" />
     <ClInclude Include="Theme.h" />
@@ -199,11 +199,13 @@
     <ClCompile Include="Aero.cpp" />
     <ClCompile Include="AsyncFileReader.cpp" />
     <ClCompile Include="BasicWindow.cpp" />
+    <ClCompile Include="CaptionAnalyzer.cpp" />
     <ClCompile Include="ChapterMap.cpp" />
     <ClCompile Include="ColorScheme.cpp" />
     <ClCompile Include="DrawUtil.cpp" />
     <ClCompile Include="Playlist.cpp" />
     <ClCompile Include="Settings.cpp" />
+    <ClCompile Include="trex.c" />
     <ClCompile Include="TvtPlayUtil.cpp" />
     <ClCompile Include="StatusView.cpp" />
     <ClCompile Include="Theme.cpp" />
