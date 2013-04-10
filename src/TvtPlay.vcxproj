@@ -185,6 +185,7 @@
     <ClInclude Include="Playlist.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="Settings.h" />
+    <ClInclude Include="TvtPlayUtil.h" />
     <ClInclude Include="StatusView.h" />
     <ClInclude Include="Theme.h" />
     <ClInclude Include="TsSender.h" />
@@ -201,6 +202,7 @@
     <ClCompile Include="DrawUtil.cpp" />
     <ClCompile Include="Playlist.cpp" />
     <ClCompile Include="Settings.cpp" />
+    <ClCompile Include="TvtPlayUtil.cpp" />
     <ClCompile Include="StatusView.cpp" />
     <ClCompile Include="Theme.cpp" />
     <ClCompile Include="TsSender.cpp">

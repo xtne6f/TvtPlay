@@ -35,7 +35,7 @@ public:
     void SetPipeName(LPCTSTR name);
     void SetModTimestamp(bool fModTimestamp);
     void Close();
-    bool Send();
+    int Send();
     void SendEmptyPat();
     bool SeekToBegin();
     bool SeekToEnd();
@@ -55,8 +55,8 @@ public:
     int GetRate() const;
 private:
     DWORD GetAdjTickCount();
-    bool ReadToPcr(int limit, bool fSend);
-    inline bool ReadPacket(bool fSend);
+    int ReadToPcr(int limit, bool fSend, bool *pfDiscontinuity = NULL);
+    inline bool ReadPacket(bool fSend, bool *pfPcr, bool *pfDiscontinuity);
     void RotateBuffer(bool fSend);
     bool SetPointer(long long distanceToMove, DWORD dwMoveMethod);
     bool Seek(long long distanceToMove, DWORD dwMoveMethod);
@@ -79,7 +79,8 @@ private:
     TCHAR m_pipeName[MAX_PATH];
     DWORD m_baseTick, m_renewSizeTick, m_renewDurTick;
     DWORD m_pcr, m_basePcr, m_initPcr;
-    bool m_fPcr, m_fEnPcr, m_fShareWrite, m_fFixed, m_fPause;
+    bool m_fEnPcr, m_fShareWrite, m_fFixed, m_fPause;
+    int m_patContinuity;
     int m_pcrPid, m_pcrPids[PCR_PIDS_MAX];
     int m_pcrPidCounts[PCR_PIDS_MAX];
     int m_pcrPidsLen;

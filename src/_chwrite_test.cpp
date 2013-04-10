@@ -1,10 +1,11 @@
-﻿// .chapterファイルへのチャプター書き込みコード(2011-12-30)
+﻿// .chapterファイルへのチャプター書き込みコード(2011-01-18)
 // 商用私用問わず改変流用自由
 // [追加説明]
-// TvtPlay(ver.1.4以降)がTSファイルを開くとき、そのファイル名に.chapter拡張子を
-// 付加したファイルが存在すれば、TvtPlayはその変更を監視します。後述の"チャプタ
-// ーコマンド仕様"に従って.chapterファイルを作成・編集することで、リアルタイムに
-// チャプターを付加するといった、外部アプリケーションとの連携が可能です。
+// TvtPlay(ver.1.5以降)がTSファイルを開くとき、そのファイル名に.chapter拡張子を
+// 付加したファイル(例:foo.ts→foo.chapter)が存在すれば、TvtPlayはその変更を監視
+// します。後述の"チャプターコマンド仕様"に従って.chapterファイルを作成・編集す
+// ることで、リアルタイムにチャプターを付加するといった、外部アプリケーションと
+// の連携が可能です。
 #include <Windows.h>
 #include <Shlwapi.h>
 #include <tchar.h>
@@ -12,8 +13,9 @@
 #include <stdio.h>
 #pragma comment(lib, "shlwapi.lib")
 
-#define CHAPTER_NAME_MAX 16
-#define READ_FILE_MAX_SIZE (256 * 1024)
+#define CHAPTER_POS_MAX     (99*3600000+59*60000+59*1000+999)
+#define CHAPTER_NAME_MAX    64
+#define READ_FILE_MAX_SIZE  (256 * 1024)
 
 WCHAR *NewReadUtfFileToEnd(HANDLE hFile, int extraSpace);
 bool WriteUtfFileToEnd(HANDLE hFile, const WCHAR *pStr);
@@ -56,11 +58,14 @@ int _tmain(int argc, TCHAR *argv[])
     // ・Caseはできるだけ保存するが区別しない
     // ・"c-"で始めて"c"で終わる
     // ・チャプターごとに"{正整数}{接頭英文字}{文字列}-"を追加する
-    //   ・{接頭英文字}が"c"以外のとき、そのチャプターを無視する
+    //   ・{接頭英文字}が"c" "d" "e"以外のとき、そのチャプターを無視する
+    //     ・"c"なら{正整数}の単位はmsec
+    //     ・"d"なら{正整数}の単位は100msec
+    //     ・"e"なら{正整数}はCHAPTER_POS_MAX(動画の末尾)
     //   ・{文字列}は0～CHAPTER_NAME_MAX-1文字
     // ・仕様を満たさないコマンドは(できるだけ)全体を無視する
     // ・例1: "c-c" (仕様を満たす最小コマンド)
-    // ・例2: "c-1234cName1-2345c-3456c2ndName-c"
+    // ・例2: "c-1234cName1-3456c-2345c2ndName-0e-c"
     if (PathFileExists(argv[1])) {
         // ファイルが存在すれば追記
         // 不整合を防ぐためにSHARE_READ、SHARE_WRITEは指定しない
@@ -70,7 +75,7 @@ int _tmain(int argc, TCHAR *argv[])
             _tprintf(TEXT("Error: ファイルをオープンできません\n"));
             goto EXIT;
         }
-        WCHAR *pCmd = NewReadUtfFileToEnd(hFile, 64);
+        pCmd = NewReadUtfFileToEnd(hFile, CHAPTER_NAME_MAX + 32);
         // 先頭2文字は"c-"、末尾2文字は"-c"でなければ異常とみなす
         if (!pCmd || StrCmpNI(pCmd, L"c-", 2) || StrCmpI(pCmd + lstrlen(pCmd) - 2, L"-c")) {
             _tprintf(TEXT("Error: 書き込むファイルの中身が異常です\n"));
@@ -91,7 +96,7 @@ int _tmain(int argc, TCHAR *argv[])
             _tprintf(TEXT("Error: ファイルをオープンできません\n"));
             goto EXIT;
         }
-        WCHAR cmd[64];
+        WCHAR cmd[CHAPTER_NAME_MAX + 32];
         wsprintf(cmd, L"c-%dc%s-c", pos, chName);
         if (!WriteUtfFileToEnd(hFile, cmd)) {
             _tprintf(TEXT("Error: 書き込みエラー\n"));

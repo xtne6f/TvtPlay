@@ -1,7 +1,8 @@
 ﻿#ifndef INCLUDE_CHAPTER_MAP_H
 #define INCLUDE_CHAPTER_MAP_H
 
-#define CHAPTER_NAME_MAX 16
+#define CHAPTER_POS_MAX     (99*3600000+59*60000+59*1000+999)
+#define CHAPTER_NAME_MAX    64
 
 struct CHAPTER_NAME {
     TCHAR val[CHAPTER_NAME_MAX];
@@ -27,6 +28,7 @@ public:
     bool NeedToSync() const { return m_hDir != INVALID_HANDLE_VALUE; }
 private:
     bool InsertCommand(LPCTSTR p);
+    bool InsertOgmStyleCommand(LPCTSTR p);
     TCHAR m_path[MAX_PATH];
     TCHAR m_longName[MAX_PATH];
     TCHAR m_shortName[MAX_PATH];

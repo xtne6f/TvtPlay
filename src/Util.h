@@ -14,7 +14,10 @@ BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 #define READ_FILE_MAX_SIZE (256 * 1024)
 #define ICON_SIZE 16
 
-WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode);
+void GetBufferedProfileString(LPCTSTR lpBuff, LPCTSTR lpKeyName, LPCTSTR lpDefault, LPTSTR lpReturnedString, DWORD nSize);
+int GetBufferedProfileInt(LPCTSTR lpBuff, LPCTSTR lpKeyName, int nDefault);
+int GetPrivateProfileSignedInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int nDefault, LPCTSTR lpFileName);
+WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, bool fNoBomUseAcp = false);
 bool WriteUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, const WCHAR *pStr);
 bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTSTR pIdxList);
 int CompareTStrI(const void *str1, const void *str2);

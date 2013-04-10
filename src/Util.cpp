@@ -28,9 +28,46 @@ BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
 #endif
 
 
+// GetPrivateProfileSection()で取得したバッファから、キーに対応する文字列を取得する
+void GetBufferedProfileString(LPCTSTR lpBuff, LPCTSTR lpKeyName, LPCTSTR lpDefault, LPTSTR lpReturnedString, DWORD nSize)
+{
+    TCHAR szKey[256];
+    int nKeyLen = ::wsprintf(szKey, TEXT("%s="), lpKeyName);
+    while (*lpBuff) {
+        if (!::StrCmpNI(lpBuff, szKey, nKeyLen)) {
+            ::lstrcpyn(lpReturnedString, lpBuff + nKeyLen, nSize);
+            return;
+        }
+        lpBuff += ::lstrlen(lpBuff) + 1;
+    }
+    ::lstrcpyn(lpReturnedString, lpDefault, nSize);
+}
+
+
+// GetPrivateProfileSection()で取得したバッファから、キーに対応する数値を取得する
+int GetBufferedProfileInt(LPCTSTR lpBuff, LPCTSTR lpKeyName, int nDefault)
+{
+    TCHAR szVal[32];
+    GetBufferedProfileString(lpBuff, lpKeyName, TEXT(""), szVal, _countof(szVal));
+    int nRet;
+    return ::StrToIntEx(szVal, STIF_DEFAULT, &nRet) ? nRet : nDefault;
+}
+
+
+// GetPrivateProfileInt()の負値対応版
+// 実際にはGetPrivateProfileInt()も負値を返すが、仕様ではない
+int GetPrivateProfileSignedInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int nDefault, LPCTSTR lpFileName)
+{
+    TCHAR szVal[32];
+    GetPrivateProfileString(lpAppName, lpKeyName, TEXT(""), szVal, _countof(szVal), lpFileName);
+    int nRet;
+    return ::StrToIntEx(szVal, STIF_DEFAULT, &nRet) ? nRet : nDefault;
+}
+
+
 // UTF-16またはUTF-8テキストファイルを文字列として全て読む
 // 成功するとnewされた配列のポインタが返るので、必ずdeleteすること
-WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode)
+WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, bool fNoBomUseAcp)
 {
     BYTE *pBuf = NULL;
     WCHAR *pRet = NULL;
@@ -47,7 +84,7 @@ WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode)
     if (!::ReadFile(hFile, pBuf, fileBytes, &readBytes, NULL)) goto EXIT;
     pBuf[readBytes] = pBuf[readBytes+1] = 0;
 
-    // BOM付きUTF-16LE、UTF-16BE、UTF-8、またはBOM無しUTF-8を判別する
+    // BOM付きUTF-16LE、UTF-16BE、UTF-8、またはBOM無しを判別する
     int codeType = pBuf[0]==0xFF && pBuf[1]==0xFE ? 1 :
                    pBuf[0]==0xFE && pBuf[1]==0xFF ? 2 : 0;
     int bomOffset = codeType ? 2 : pBuf[0]==0xEF && pBuf[1]==0xBB && pBuf[2]==0xBF ? 3 : 0;
@@ -58,7 +95,8 @@ WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode)
         retSize = ::lstrlenW(reinterpret_cast<LPCWSTR>(pBuf+bomOffset)) + 1;
     }
     else {
-        retSize = ::MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<LPCSTR>(pBuf+bomOffset), -1, NULL, 0);
+        retSize = ::MultiByteToWideChar(fNoBomUseAcp && !bomOffset ? CP_ACP : CP_UTF8, 0,
+                                        reinterpret_cast<LPCSTR>(pBuf+bomOffset), -1, NULL, 0);
     }
     if (retSize <= 0) goto EXIT;
 
@@ -73,7 +111,9 @@ WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode)
         }
     }
     else {
-        if (!::MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<LPCSTR>(pBuf+bomOffset), -1, pRet, retSize)) {
+        if (!::MultiByteToWideChar(fNoBomUseAcp && !bomOffset ? CP_ACP : CP_UTF8, 0,
+                                   reinterpret_cast<LPCSTR>(pBuf+bomOffset), -1, pRet, retSize))
+        {
             delete [] pRet;
             pRet = NULL;
             goto EXIT;

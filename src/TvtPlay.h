@@ -1,28 +1,80 @@
 ﻿#ifndef INCLUDE_TVT_PLAY_H
 #define INCLUDE_TVT_PLAY_H
 
-#define TVTEST_PLUGIN_CLASS_IMPLEMENT
-#define TVTEST_PLUGIN_VERSION TVTEST_PLUGIN_VERSION_(0,0,13)
-#include "TVTestPlugin.h"
-
-#define COMMAND_S_MAX       26
-#define BUTTON_MAX          18
-#define BUTTON_TEXT_MAX     192
-
-class CStatusViewEventHandler : public CStatusView::CEventHandler
-{
-public:
-    void OnMouseLeave();
-};
-
 // プラグインクラス
-class CTvtPlay : public TVTest::CTVTestPlugin
+class CTvtPlay : public TVTest::CTVTestPlugin, public ITvtPlayController
 {
+    static const int BUTTON_MAX = 18;
+    static const int BUTTON_TEXT_MAX = 192;
     static const int TIMER_AUTO_HIDE_INTERVAL = 100;
     static const int TIMER_SYNC_CHAPTER_INTERVAL = 1000;
     static const int TIMER_WATCH_POS_GT_INTERVAL = 1000;
     static const int HASH_LIST_MAX_MAX = 10000;
     static const int POPUP_MAX_MAX = 100;
+public:
+    // CTVTestPlugin
+    CTvtPlay();
+    virtual bool GetPluginInfo(TVTest::PluginInfo *pInfo);
+    virtual bool Initialize();
+    virtual bool Finalize();
+    // ITvtPlayController
+    bool IsOpen() const { return m_hThread ? true : false; }
+    int GetPosition() { CBlockLock lock(&m_tsInfoLock); return m_infoPos; }
+    int GetDuration() { CBlockLock lock(&m_tsInfoLock); return m_infoDur; }
+    int GetTotTime() { CBlockLock lock(&m_tsInfoLock); return m_infoTot; }
+    int IsExtending() { CBlockLock lock(&m_tsInfoLock); return m_infoExtMode; }
+    bool IsPaused() { CBlockLock lock(&m_tsInfoLock); return m_fInfoPaused; }
+    CChapterMap& GetChapter() { return m_chapter; }
+    bool IsAllRepeat() const { return m_fAllRepeat; }
+    bool IsSingleRepeat() const { return m_fSingleRepeat; }
+    bool IsRepeatChapterEnabled() const { return m_fRepeatChapter; }
+    bool IsSkipXChapterEnabled() const { return m_fSkipXChapter; }
+    bool IsPosDrawTotEnabled() const { return m_fPosDrawTot; }
+    int GetStretchID();
+    void SetupWithPopup(const POINT &pt, UINT flags);
+    void EditChapterWithPopup(int pos, const POINT &pt, UINT flags);
+    void EditAllChaptersWithPopup(const POINT &pt, UINT flags);
+    void Pause(bool fPause);
+    void SeekToBegin();
+    void SeekToEnd();
+    void Seek(int msec);
+    void SeekAbsolute(int msec);
+    void OnCommand(int id, const POINT *pPt = NULL, UINT flags = 0);
+private:
+    void AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst);
+    void LoadSettings();
+    void LoadTVTestSettings();
+    void SaveSettings(bool fWriteDefault = false) const;
+    bool InitializePlugin();
+    bool EnablePlugin(bool fEnable);
+    bool IsAppMaximized() { return (::GetWindowLong(m_pApp->GetAppWindow(), GWL_STYLE) & WS_MAXIMIZE) != 0; }
+    HWND GetFullscreenWindow();
+    bool OpenWithDialog();
+    bool OpenWithPopup(const POINT &pt, UINT flags);
+    bool OpenWithPlayListPopup(const POINT &pt, UINT flags);
+    int TrackPopup(HMENU hmenu, const POINT &pt, UINT flags);
+    bool OpenCurrent(int offset = -1);
+    bool Open(LPCTSTR fileName, int offset);
+    void Close();
+    void SetupDestination();
+    void WaitAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll);
+    void SetModTimestamp(bool fModTimestamp);
+    void SetRepeatFlags(bool fAllRepeat, bool fSingleRepeat);
+    void Stretch(int stretchID);
+    void BeginWatchingNextChapter(bool fDoDelay);
+    bool CalcStatusRect(RECT *pRect, bool fInit = false);
+    void OnResize(bool fInit = false);
+    void OnDispModeChange(bool fStandby, bool fInit = false);
+    void OnFrameResize();
+    void EnablePluginByDriverName();
+    void OnPreviewChange(bool fPreview);
+    static LRESULT CALLBACK EventCallback(UINT Event, LPARAM lParam1, LPARAM lParam2, void *pClientData);
+    static BOOL CALLBACK WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pResult, void *pUserData);
+    static LRESULT CALLBACK FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+    void UpdateInfos();
+    static DWORD WINAPI TsSenderThread(LPVOID pParam);
+
+    // 初期パラメータ
     bool m_fInitialized;
     bool m_fSettingsLoaded;
     bool m_fForceEnable, m_fIgnoreExt;
@@ -70,7 +122,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     bool m_fInfoPaused;
     bool m_fHalt, m_fAllRepeat, m_fSingleRepeat;
     bool m_fRepeatChapter, m_fSkipXChapter;
-    int m_waitOnStop;
+    int m_supposedDispDelay;
     int m_resetMode;
     int m_stretchMode, m_noMuteMax, m_noMuteMin;
     bool m_fConvTo188, m_fUseQpc, m_fModTimestamp;
@@ -82,121 +134,10 @@ class CTvtPlay : public TVTest::CTVTestPlugin
         int resumePos; // レジューム位置(msec)
     };
     std::list<HASH_INFO> m_hashList;
-
     // 再生リスト
     CPlaylist m_playlist;
-
     // 現在再生中のチャプター
     CChapterMap m_chapter;
-
-    void AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst);
-    void LoadSettings();
-    void LoadTVTestSettings();
-    void SaveSettings() const;
-    bool InitializePlugin();
-    bool EnablePlugin(bool fEnable);
-    HWND GetFullscreenWindow();
-    bool OpenWithDialog();
-    bool OpenWithPopup(const POINT &pt, UINT flags);
-    bool OpenWithPlayListPopup(const POINT &pt, UINT flags);
-    int TrackPopup(HMENU hmenu, const POINT &pt, UINT flags);
-    bool OpenCurrent(int offset = -1);
-    bool Open(LPCTSTR fileName, int offset);
-    void Close();
-    void SetupDestination();
-    void WaitAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll);
-    bool CalcStatusRect(RECT *pRect, bool fInit = false);
-    void OnResize(bool fInit = false);
-    void OnDispModeChange(bool fStandby, bool fInit = false);
-    void OnFrameResize();
-    void EnablePluginByDriverName();
-    void OnPreviewChange(bool fPreview);
-    static LRESULT CALLBACK EventCallback(UINT Event, LPARAM lParam1, LPARAM lParam2, void *pClientData);
-    static BOOL CALLBACK WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pResult, void *pUserData);
-    static LRESULT CALLBACK FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-    void UpdateInfos();
-    static DWORD WINAPI TsSenderThread(LPVOID pParam);
-public:
-    CTvtPlay();
-    virtual bool GetPluginInfo(TVTest::PluginInfo *pInfo);
-    virtual bool Initialize();
-    virtual bool Finalize();
-    bool IsOpen() const { return m_hThread ? true : false; }
-    int GetPosition() { CBlockLock lock(&m_tsInfoLock); return m_infoPos; }
-    int GetDuration() { CBlockLock lock(&m_tsInfoLock); return m_infoDur; }
-    int GetTotTime() { CBlockLock lock(&m_tsInfoLock); return m_infoTot; }
-    int IsExtending() { CBlockLock lock(&m_tsInfoLock); return m_infoExtMode; }
-    bool IsPaused() { CBlockLock lock(&m_tsInfoLock); return m_fInfoPaused; }
-    CChapterMap& GetChapter() { return m_chapter; }
-    bool IsAllRepeat() const { return m_fAllRepeat; }
-    bool IsSingleRepeat() const { return m_fSingleRepeat; }
-    bool IsRepeatChapterEnabled() const { return m_fRepeatChapter; }
-    bool IsSkipXChapterEnabled() const { return m_fSkipXChapter; }
-    bool IsPosDrawTotEnabled() const { return m_fPosDrawTot; }
-
-    void SetupWithPopup(const POINT &pt, UINT flags);
-    bool EditChapterWithPopup(CHAPTER &chapter, const POINT &pt, UINT flags);
-    void Pause(bool fPause);
-    void SeekToBegin();
-    void SeekToEnd();
-    void Seek(int msec);
-    void SeekAbsolute(int msec);
-    void SetModTimestamp(bool fModTimestamp);
-    void SetRepeatFlags(bool fAllRepeat, bool fSingleRepeat);
-    int GetStretchID();
-    void Stretch(int stretchID);
-    void BeginWatchingNextChapter(bool fDoDelay);
-    void OnCommand(int id, const POINT *pPt = NULL, UINT flags = 0);
-};
-
-enum {
-    STATUS_ITEM_SEEK,
-    STATUS_ITEM_POSITION,
-    STATUS_ITEM_BUTTON,
-};
-
-class CSeekStatusItem : public CStatusItem
-{
-public:
-    CSeekStatusItem(CTvtPlay *pPlugin, bool fDrawOfs, bool fDrawTot);
-    LPCTSTR GetName() const { return TEXT("シークバー"); };
-    void Draw(HDC hdc, const RECT *pRect);
-    void OnLButtonDown(int x, int y);
-    void OnRButtonDown(int x, int y);
-    void OnMouseMove(int x, int y);
-    void SetMousePos(int x, int y) { m_mousePos.x = x; m_mousePos.y = y; }
-private:
-    static int ConvUnit(int x, int a, int b) { return x<0||a<0||b<=0 ? 0 : x>=b ? a : (int)((long long)x*a/b); }
-    CTvtPlay *m_pPlugin;
-    bool m_fDrawOfs, m_fDrawTot;
-    POINT m_mousePos;
-};
-
-class CPositionStatusItem : public CStatusItem
-{
-public:
-    CPositionStatusItem(CTvtPlay *pPlugin);
-    LPCTSTR GetName() const { return TEXT("再生位置"); };
-    void Draw(HDC hdc, const RECT *pRect);
-    int CalcSuitableWidth();
-    void OnRButtonDown(int x, int y);
-private:
-    CTvtPlay *m_pPlugin;
-};
-
-class CButtonStatusItem : public CStatusItem
-{
-public:
-    CButtonStatusItem(CTvtPlay *pPlugin, int id, int subID, int width, const DrawUtil::CBitmap &icon);
-    LPCTSTR GetName() const { return TEXT("ボタン"); }
-    void Draw(HDC hdc, const RECT *pRect);
-    void OnLButtonDown(int x, int y);
-    void OnRButtonDown(int x, int y);
-    int GetSubID() const { return m_subID; }
-private:
-    CTvtPlay *m_pPlugin;
-    int m_subID;
-    DrawUtil::CBitmap m_icon;
 };
 
 #endif // INCLUDE_TVT_PLAY_H
