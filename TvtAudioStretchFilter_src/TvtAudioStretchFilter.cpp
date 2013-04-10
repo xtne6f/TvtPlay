@@ -18,21 +18,24 @@ static HWND ASFilterFindWindow()
     return ::FindWindowEx(HWND_MESSAGE, NULL, ASFLT_FILTER_NAME, szName);
 }
 
-LRESULT ASFilterSendMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
+LRESULT ASFilterSendMessageTimeout(UINT Msg, WPARAM wParam, LPARAM lParam, UINT uTimeout)
 {
     HWND hwnd = ASFilterFindWindow();
-    return hwnd ? ::SendMessage(hwnd, Msg, wParam, lParam) : FALSE;
+    DWORD_PTR dwResult;
+    return hwnd && ::SendMessageTimeout(hwnd, Msg, wParam, lParam, SMTO_NORMAL,
+                                        uTimeout, &dwResult) ? dwResult : FALSE;
 }
 
-BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
+BOOL ASFilterSendNotifyMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
 {
     HWND hwnd = ASFilterFindWindow();
-    return hwnd ? ::PostMessage(hwnd, Msg, wParam, lParam) : FALSE;
+    return hwnd ? ::SendNotifyMessage(hwnd, Msg, wParam, lParam) : FALSE;
 }
 #endif
 
 #ifdef _DEBUG
 #define DEBUG_OUT(x) ::OutputDebugString(x)
+#define DDEBUG_OUT
 #else
 #define DEBUG_OUT(x)
 #endif
@@ -409,6 +412,7 @@ HRESULT CTvtAudioStretchFilter::CompleteConnect(PIN_DIRECTION dir, IPin *pReceiv
 {
     DEBUG_OUT(TEXT("CTvtAudioStretchFilter::CompleteConnect(): "));
     DEBUG_OUT(dir == PINDIR_OUTPUT ? TEXT("Out\n") : TEXT("In\n"));
+    ASSERT(CritCheckIn(&m_csFilter));
 
     if (dir == PINDIR_OUTPUT) {
         AddExtraFilter(pReceivePin);
@@ -484,6 +488,8 @@ HRESULT CTvtAudioStretchFilter::SetMediaType(PIN_DIRECTION dir, const CMediaType
 HRESULT CTvtAudioStretchFilter::EndFlush(void)
 {
     DEBUG_OUT(TEXT("CTvtAudioStretchFilter::EndFlush()\n"));
+    ASSERT(CritCheckIn(&m_csFilter));
+
     CAutoLock lock(&m_csReceive);
     if (m_fAcceptConv) m_stouch.clear();
     return CTransformFilter::EndFlush();
@@ -492,7 +498,8 @@ HRESULT CTvtAudioStretchFilter::EndFlush(void)
 
 HRESULT CTvtAudioStretchFilter::Receive(IMediaSample *pSample)
 {
-    // m_csReceiveでロックされている
+    ASSERT(CritCheckIn(&m_csReceive));
+
     // メディアタイプの変更を監視
     AM_MEDIA_TYPE *pMtIn;
     if (pSample->GetMediaType(&pMtIn) == S_OK) {
@@ -538,6 +545,8 @@ HRESULT CTvtAudioStretchFilter::Receive(IMediaSample *pSample)
 
 HRESULT CTvtAudioStretchFilter::Transform(IMediaSample *pIn, IMediaSample *pOut)
 {
+    ASSERT(CritCheckIn(&m_csReceive));
+
     if (m_fOutputFormatChanged) {
         // メディアタイプの変更を下流に伝える
         pOut->SetMediaType(&m_pOutput->CurrentMediaType());
@@ -575,6 +584,7 @@ LRESULT CALLBACK CTvtAudioStretchFilter::WndProc(HWND hwnd, UINT uMsg, WPARAM wP
     switch (uMsg) {
     case WM_CREATE:
         {
+            DEBUG_OUT(TEXT("CTvtAudioStretchFilter::WndProc(): WM_CREATE\n"));
             LPCREATESTRUCT pcs = reinterpret_cast<LPCREATESTRUCT>(lParam);
             pThis = reinterpret_cast<CTvtAudioStretchFilter*>(pcs->lpCreateParams);
             ::SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pThis));
@@ -589,6 +599,7 @@ LRESULT CALLBACK CTvtAudioStretchFilter::WndProc(HWND hwnd, UINT uMsg, WPARAM wP
         break;
     case WM_ASFLT_STRETCH:
         {
+            DEBUG_OUT(TEXT("CTvtAudioStretchFilter::WndProc(): WM_ASFLT_STRETCH\n"));
             CAutoLock lock(&pThis->m_csReceive);
             if (!pThis->m_fAcceptConv) return FALSE;
 

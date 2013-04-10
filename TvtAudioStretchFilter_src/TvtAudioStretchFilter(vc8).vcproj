@@ -40,7 +40,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories="..\soundtouch\include;&quot;C:\Program Files\Microsoft SDKs\Windows\v7.1\Samples\multimedia\directshow\baseclasses&quot;"
+				AdditionalIncludeDirectories="..\..\soundtouch\include;..\..\baseclasses"
 				PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;_USRDLL;TVTAUDIOSTRETCHFILTERVC8_EXPORTS"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
@@ -62,7 +62,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/PDBALTPATH:%_PDB% /OPT:NOWIN98"
-				AdditionalDependencies="..\soundtouch\lib\SoundTouchD.lib winmm.lib &quot;C:\Program Files\Microsoft SDKs\Windows\v7.1\Samples\multimedia\directshow\baseclasses\Debug\strmbasd.lib&quot;"
+				AdditionalDependencies="..\..\soundtouch\lib\SoundTouchD.lib winmm.lib ..\..\baseclasses\Debug\strmbasd.lib"
 				OutputFile="$(OutDir)\$(ProjectName).ax"
 				LinkIncremental="2"
 				ModuleDefinitionFile="TvtAudioStretchFilter.def"
@@ -120,7 +120,7 @@
 			/>
 			<Tool
 				Name="VCCLCompilerTool"
-				AdditionalIncludeDirectories="..\soundtouch\include;&quot;C:\Program Files\Microsoft SDKs\Windows\v7.1\Samples\multimedia\directshow\baseclasses&quot;"
+				AdditionalIncludeDirectories="..\..\soundtouch\include;..\..\baseclasses"
 				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_USRDLL;TVTAUDIOSTRETCHFILTERVC8_EXPORTS"
 				RuntimeLibrary="2"
 				UsePrecompiledHeader="0"
@@ -140,7 +140,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/PDBALTPATH:%_PDB% /OPT:NOWIN98"
-				AdditionalDependencies="..\soundtouch\lib\SoundTouch.lib winmm.lib &quot;C:\Program Files\Microsoft SDKs\Windows\v7.1\Samples\multimedia\directshow\baseclasses\Release\strmbase.lib&quot;"
+				AdditionalDependencies="..\..\soundtouch\lib\SoundTouch.lib winmm.lib ..\..\baseclasses\Release\strmbase.lib"
 				OutputFile="$(OutDir)\$(ProjectName).ax"
 				LinkIncremental="1"
 				ModuleDefinitionFile="TvtAudioStretchFilter.def"
