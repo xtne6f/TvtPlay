@@ -79,7 +79,7 @@ void CTsTimestampShifter::Transform(BYTE *pPacket)
         ADAPTATION_FIELD adapt;
         extract_adaptation_field(&adapt, pPayload);
         if (!adapt.adaptation_field_length) return;
-        pPayload += adapt.adaptation_field_length;
+        pPayload += adapt.adaptation_field_length + 1;
     }
     int payloadSize = 188 - static_cast<int>(pPayload - pPacket);
 

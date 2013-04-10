@@ -1,5 +1,5 @@
-﻿TVTest TvtPlay Plugin ver.1.1(人柱版) + BonDriver_Pipe.dll
-                                      + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.1.1r2(人柱版) + BonDriver_Pipe.dll
+                                        + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -322,6 +322,13 @@ http://2sen.dip.jp/)のup0598.zip「非公式 TvtPlayシークボタンカスタ
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.1.1r2 (2011-11-10)
+・以下3点を修正した
+  ・アダプテーションフィールド長の計算ミスにより、高頻度でPTS/DTSが書き換えられ
+    ない(該当箇所の指摘ありがとうございます)
+  ・複数起動禁止での起動時に1番目のコマンドオプションが無視される
+  ・マルチディスプレイ環境で、プライマリ以外での全画面表示状態でプラグインを有効
+    にすると、コントロールがプライマリに表示される(修正できたか不明)
 ver.1.1 (2011-11-09)
 ・以下2点を修正した(バグ報告サンクスです)
   ・再生リストが1つだけのときに全体リピートが働かない

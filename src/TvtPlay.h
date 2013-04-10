@@ -86,7 +86,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     // 再生リスト
     CPlaylist m_playlist;
 
-    void AnalyzeCommandLine(LPCWSTR cmdLine);
+    void AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst);
     void LoadSettings();
     void LoadTVTestSettings();
     void SaveSettings() const;
@@ -98,8 +98,8 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     void Close();
     void SetupDestination();
     void ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll);
-    bool CalcStatusRect(RECT *pRect);
-    void Resize();
+    bool CalcStatusRect(RECT *pRect, bool fInit = false);
+    void Resize(bool fInit = false);
     void EnablePluginByDriverName();
     void OnPreviewChange(bool fPreview);
     static LRESULT CALLBACK EventCallback(UINT Event, LPARAM lParam1, LPARAM lParam2, void *pClientData);

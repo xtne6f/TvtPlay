@@ -333,10 +333,15 @@ void extract_pat(PAT *pat, const unsigned char *payload, int payload_size, int u
 }
 
 
+// 地上波+BSで指定可能なID(ARIB TR-B14):0x01,0x02,0x06,0x0D,0x0F,0x1B
 #define H_262_VIDEO         0x02
 #define PES_PRIVATE_DATA    0x06
 #define ADTS_TRANSPORT      0x0F
 #define AVC_VIDEO           0x1B
+// for スカパーSD
+#define MPEG2_AUDIO         0x04
+// for Blu-ray
+#define PS_BD_AC3_AUDIO     0x81
 
 
 // 参考: ITU-T H.222.0 Sec.2.4.4.8
@@ -370,7 +375,9 @@ void extract_pmt(PMT *pmt, const unsigned char *payload, int payload_size, int u
             if (stream_type == H_262_VIDEO ||
                 stream_type == PES_PRIVATE_DATA ||
                 stream_type == ADTS_TRANSPORT ||
-                stream_type == AVC_VIDEO)
+                stream_type == AVC_VIDEO ||
+                stream_type == MPEG2_AUDIO ||
+                stream_type == PS_BD_AC3_AUDIO)
             {
                 //pmt->stream_type[pmt->pid_count] = stream_type;
                 pmt->pid[pmt->pid_count++] = (table[pos+1]&0x1f)<<8 | table[pos+2];

@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-11-08
+// 最終更新: 2011-11-10
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -16,7 +16,7 @@
 #include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.1)";
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.1r2)";
 static const int INFO_VERSION = 11;
 
 #define WM_UPDATE_POSITION  (WM_APP + 1)
@@ -196,7 +196,7 @@ bool CTvtPlay::GetPluginInfo(TVTest::PluginInfo *pInfo)
 }
 
 
-void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine)
+void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst)
 {
     m_szSpecFileName[0] = 0;
     m_specOffset = -1;
@@ -205,7 +205,7 @@ void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine)
     LPTSTR *argv = ::CommandLineToArgvW(cmdLine, &argc);
     if (argv) {
         int specOffset = -1;
-        for (int i = 1; i < argc; ++i) {
+        for (int i = fIgnoreFirst; i < argc; ++i) {
             // オプションは複数起動禁止時に無効->有効にすることができる
             if (argv[i][0] == TEXT('/') || argv[i][0] == TEXT('-')) {
                 if (!::lstrcmpi(argv[i]+1, TEXT("tvtplay"))) m_fForceEnable = m_fIgnoreExt = true;
@@ -224,7 +224,7 @@ void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine)
             }
         }
 
-        if (argc >= 2 && argv[argc-1][0] != TEXT('/') && argv[argc-1][0] != TEXT('-')) {
+        if (argc >= 1 + fIgnoreFirst && argv[argc-1][0] != TEXT('/') && argv[argc-1][0] != TEXT('-')) {
             bool fSpec = m_fIgnoreExt;
             if (!m_fIgnoreExt) {
                 LPCTSTR ext = ::PathFindExtension(argv[argc-1]);
@@ -259,7 +259,7 @@ bool CTvtPlay::Initialize()
     // イベントコールバック関数を登録
     m_pApp->SetEventCallback(EventCallback, this);
 
-    AnalyzeCommandLine(::GetCommandLine());
+    AnalyzeCommandLine(::GetCommandLine(), true);
     if (m_fForceEnable) m_pApp->EnablePlugin(true);
 
     return true;
@@ -644,9 +644,7 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
         }
         m_statusView.SetEventHandler(&m_eventHandler);
 
-        m_fFullScreen = !m_pApp->GetFullscreen();
-        m_fAutoHideActive = false;
-        Resize();
+        Resize(true);
 
         m_pApp->SetWindowMessageCallback(WindowMsgCallback, this);
         ::DragAcceptFiles(m_pApp->GetAppWindow(), TRUE);
@@ -1099,11 +1097,11 @@ void CTvtPlay::Stretch(int stretchID)
     if (m_hThread) ::PostThreadMessage(m_threadID, WM_TS_SET_SPEED, (fMute?4:0)|m_stretchMode, speed);
 }
 
-bool CTvtPlay::CalcStatusRect(RECT *pRect)
+bool CTvtPlay::CalcStatusRect(RECT *pRect, bool fInit)
 {
     if (m_pApp->GetFullscreen()) {
         // 切り替え時にバーが画面外にいることもある
-        HMONITOR hMon = ::MonitorFromWindow(m_hwndFrame, MONITOR_DEFAULTTONEAREST);
+        HMONITOR hMon = ::MonitorFromWindow(fInit?m_pApp->GetAppWindow():m_hwndFrame, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi;
         mi.cbSize = sizeof(MONITORINFO);
         if (::GetMonitorInfo(hMon, &mi)) {
@@ -1134,12 +1132,16 @@ bool CTvtPlay::CalcStatusRect(RECT *pRect)
     return false;
 }
 
-void CTvtPlay::Resize()
+void CTvtPlay::Resize(bool fInit)
 {
     RECT rect;
-    if (CalcStatusRect(&rect)) {
+    if (CalcStatusRect(&rect, fInit)) {
         ::SetWindowPos(m_hwndFrame, NULL, rect.left, rect.top,
                        rect.right-rect.left, rect.bottom-rect.top, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    if (fInit) {
+        m_fFullScreen = !m_pApp->GetFullscreen();
+        m_fAutoHideActive = false;
     }
     if (m_pApp->GetFullscreen()) {
         if (!m_fFullScreen) {
@@ -1363,7 +1365,7 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
     case TVTest::EVENT_EXECUTE:
         // 複数起動禁止時に複数起動された
         // ドライバ変更前に呼ばれるので、このあとEVENT_DRIVERCHANGEが呼ばれるかもしれない
-        pThis->AnalyzeCommandLine(reinterpret_cast<LPCWSTR>(lParam1));
+        pThis->AnalyzeCommandLine(reinterpret_cast<LPCWSTR>(lParam1), false);
         pThis->m_fEventExecute = true;
         // FALL THROUGH!
     case TVTest::EVENT_STARTUPDONE:
