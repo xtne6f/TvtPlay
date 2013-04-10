@@ -1,0 +1,2871 @@
+﻿diff TVTestStatusView_orig/Aero.cpp ./Aero.cpp
+1c1
+< #include "stdafx.h"
+---
+> #include <Windows.h>
+8d7
+< #include <dwmapi.h>
+25,105d23
+< typedef HRESULT (WINAPI *DwmExtendFrameIntoClientAreaFunc)(HWND hWnd,const MARGINS *pMarInset);
+< typedef HRESULT (WINAPI *DwmIsCompositionEnabledFunc)(BOOL *pfEnabled);
+< typedef HRESULT (WINAPI *DwmEnableCompositionFunc)(UINT uCompositionAction);
+< typedef HRESULT (WINAPI *DwmSetWindowAttributeFunc)(HWND hwnd,DWORD dwAttribute,LPCVOID pvAttribute,DWORD cbAttribute);
+< 
+< 
+< CAeroGlass::CAeroGlass()
+< 	: m_hDwmLib(NULL)
+< {
+< }
+< 
+< 
+< CAeroGlass::~CAeroGlass()
+< {
+< 	if (m_hDwmLib)
+< 		::FreeLibrary(m_hDwmLib);
+< }
+< 
+< 
+< bool CAeroGlass::LoadDwmLib()
+< {
+< 	if (m_hDwmLib==NULL) {
+< 		m_hDwmLib=::LoadLibrary(TEXT("dwmapi.dll"));
+< 		if (m_hDwmLib==NULL)
+< 			return false;
+< 	}
+< 	return true;
+< }
+< 
+< 
+< // コンポジションが有効か取得する
+< bool CAeroGlass::IsEnabled()
+< {
+< 	if (!LoadDwmLib())
+< 		return false;
+< 
+< 	DwmIsCompositionEnabledFunc pIsCompositionEnabled;
+< 	ProcAddress(pIsCompositionEnabled,m_hDwmLib,"DwmIsCompositionEnabled");
+< 	BOOL fEnabled;
+< 	return pIsCompositionEnabled!=NULL
+< 		&& pIsCompositionEnabled(&fEnabled)==S_OK && fEnabled;
+< }
+< 
+< 
+< // クライアント領域を透けさせる
+< bool CAeroGlass::ApplyAeroGlass(HWND hwnd,const RECT *pRect)
+< {
+< 	if (!IsEnabled())
+< 		return false;
+< 
+< 	DwmExtendFrameIntoClientAreaFunc pExtendFrame;
+< 	if (!ProcAddress(pExtendFrame,m_hDwmLib,"DwmExtendFrameIntoClientArea"))
+< 		return false;
+< 
+< 	MARGINS Margins;
+< 
+< 	Margins.cxLeftWidth=pRect->left;
+< 	Margins.cxRightWidth=pRect->right;
+< 	Margins.cyTopHeight=pRect->top;
+< 	Margins.cyBottomHeight=pRect->bottom;
+< 	return pExtendFrame(hwnd,&Margins)==S_OK;
+< }
+< 
+< 
+< // フレームの描画を無効にする
+< bool CAeroGlass::EnableNcRendering(HWND hwnd,bool fEnable)
+< {
+< 	if (!LoadDwmLib())
+< 		return false;
+< 
+< 	DwmSetWindowAttributeFunc pSetWindowAttribute;
+< 	if (!ProcAddress(pSetWindowAttribute,m_hDwmLib,"DwmSetWindowAttribute"))
+< 		return false;
+< 
+< 	DWMNCRENDERINGPOLICY ncrp=fEnable?DWMNCRP_USEWINDOWSTYLE:DWMNCRP_DISABLED;
+< 	return pSetWindowAttribute(hwnd,DWMWA_NCRENDERING_POLICY,&ncrp,sizeof(ncrp))==S_OK;
+< }
+< 
+< 
+< 
+< 
+126c44
+< 				TRACE(TEXT("BufferedPaintInit() Failed\n"));
+---
+> 				//TRACE(TEXT("BufferedPaintInit() Failed\n"));
+222,243d139
+< }
+< 
+< 
+< 
+< 
+< void CDoubleBufferingDraw::OnPaint(HWND hwnd)
+< {
+< 	::PAINTSTRUCT ps;
+< 	::BeginPaint(hwnd,&ps);
+< 	{
+< 		CBufferedPaint BufferedPaint;
+< 		RECT rc;
+< 		::GetClientRect(hwnd,&rc);
+< 		HDC hdc=BufferedPaint.Begin(ps.hdc,&rc);
+< 		if (hdc!=NULL) {
+< 			Draw(hdc,ps.rcPaint);
+< 			BufferedPaint.End();
+< 		} else {
+< 			Draw(ps.hdc,ps.rcPaint);
+< 		}
+< 	}
+< 	::EndPaint(hwnd,&ps);
+diff TVTestStatusView_orig/Aero.h ./Aero.h
+4,18d3
+< 
+< class CAeroGlass
+< {
+< public:
+< 	CAeroGlass();
+< 	~CAeroGlass();
+< 	bool IsEnabled();
+< 	bool ApplyAeroGlass(HWND hwnd,const RECT *pRect);
+< 	bool EnableNcRendering(HWND hwnd,bool fEnable);
+< 
+< private:
+< 	HMODULE m_hDwmLib;
+< 	bool LoadDwmLib();
+< };
+< 
+35,42d19
+< 
+< class CDoubleBufferingDraw
+< {
+< public:
+< 	virtual void Draw(HDC hdc,const RECT &PaintRect) = 0;
+< 	void OnPaint(HWND hwnd);
+< };
+< 
+diff TVTestStatusView_orig/BasicWindow.cpp ./BasicWindow.cpp
+1,2c1,3
+< #include "stdafx.h"
+< #include "TVTest.h"
+---
+> #include <Windows.h>
+> #include <WindowsX.h>
+> #include "Util.h"
+diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
+1,3c1,2
+< #include "stdafx.h"
+< #include "TVTest.h"
+< #include "AppMain.h"
+---
+> #include <Windows.h>
+> #include "Util.h"
+6,8d4
+< #include "DialogUtil.h"
+< #include "DrawUtil.h"
+< #include "resource.h"
+15a12,13
+> #define lengthof _countof
+> 
+42d39
+< 	{HEXRGB(0xCCCCCC),	TEXT("Splitter"),							TEXT("分割線")},
+44,187d40
+< 	{HEXRGB(0x666666),	TEXT("PanelBack"),							TEXT("パネル背景")},
+< 	{HEXRGB(0xCCCCCC),	TEXT("PanelText"),							TEXT("パネル文字")},
+< 	{HEXRGB(0xCCCCCC),	TEXT("PanelTabBack"),						TEXT("パネルタブ背景1")},
+< 	{HEXRGB(0x888888),	TEXT("PanelTabBack2"),						TEXT("パネルタブ背景2")},
+< 	{HEXRGB(0x444444),	TEXT("PanelTabText"),						TEXT("パネルタブ文字")},
+< 	{HEXRGB(0x444444),	TEXT("PanelTabBorder"),						TEXT("パネルタブ外枠")},
+< 	{HEXRGB(0x999999),	TEXT("PanelCurTabBack"),					TEXT("パネル選択タブ背景1")},
+< 	{HEXRGB(0x666666),	TEXT("PanelCurTabBack2"),					TEXT("パネル選択タブ背景2")},
+< 	{HEXRGB(0xEEEEEE),	TEXT("PanelCurTabText"),					TEXT("パネル選択タブ文字")},
+< 	{HEXRGB(0x444444),	TEXT("PanelCurTabBorder"),					TEXT("パネル選択タブ外枠")},
+< 	{HEXRGB(0x888888),	TEXT("PanelTabMargin"),						TEXT("パネルタブ余白1")},
+< 	{HEXRGB(0x888888),	TEXT("PanelTabMargin2"),					TEXT("パネルタブ余白2")},
+< 	{HEXRGB(0x888888),	TEXT("PanelTabMarginBorder"),				TEXT("パネルタブ余白外枠")},
+< 	{HEXRGB(0x444444),	TEXT("PanelTabLine"),						TEXT("パネルタブ線")},
+< 	{HEXRGB(0x777777),	TEXT("PanelTitleBack"),						TEXT("パネルタイトル背景1")},
+< 	{HEXRGB(0x222222),	TEXT("PanelTitleBack2"),					TEXT("パネルタイトル背景2")},
+< 	{HEXRGB(0xBBBBBB),	TEXT("PanelTitleText"),						TEXT("パネルタイトル文字")},
+< 	{HEXRGB(0x777777),	TEXT("PanelTitleBorder"),					TEXT("パネルタイトル外枠")},
+< 	{HEXRGB(0x777777),	TEXT("ProgramInfoBack"),					TEXT("情報パネル番組背景")},
+< 	{HEXRGB(0xDDDDDD),	TEXT("ProgramInfoText"),					TEXT("情報パネル番組文字")},
+< 	{HEXRGB(0x777777),	TEXT("ProgramListBack"),					TEXT("番組表パネル番組内容背景1")},
+< 	{HEXRGB(0x888888),	TEXT("ProgramListBack2"),					TEXT("番組表パネル番組内容背景2")},
+< 	{HEXRGB(0xDDDDDD),	TEXT("ProgramListText"),					TEXT("番組表パネル番組内容文字")},
+< 	{HEXRGB(0x777777),	TEXT("ProgramListBorder"),					TEXT("番組表パネル番組内容外枠")},
+< 	{HEXRGB(0x777777),	TEXT("ProgramListCurBack"),					TEXT("番組表パネル現在番組内容背景1")},
+< 	{HEXRGB(0x888888),	TEXT("ProgramListCurBack2"),				TEXT("番組表パネル現在番組内容背景2")},
+< 	{HEXRGB(0xDDDDDD),	TEXT("ProgramListCurText"),					TEXT("番組表パネル現在番組内容文字")},
+< 	{HEXRGB(0x777777),	TEXT("ProgramListCurBorder"),				TEXT("番組表パネル現在番組内容外枠")},
+< 	{HEXRGB(0x777777),	TEXT("ProgramListTitleBack"),				TEXT("番組表パネル番組名背景1")},
+< 	{HEXRGB(0x555555),	TEXT("ProgramListTitleBack2"),				TEXT("番組表パネル番組名背景2")},
+< 	{HEXRGB(0xCCCCCC),	TEXT("ProgramListTitleText"),				TEXT("番組表パネル番組名文字")},
+< 	{HEXRGB(0x777777),	TEXT("ProgramListTitleBorder"),				TEXT("番組表パネル番組名外枠")},
+< 	{HEXRGB(0x3384FF),	TEXT("ProgramListCurTitleBack"),			TEXT("番組表パネル現在番組名背景1")},
+< 	{HEXRGB(0x33D6FF),	TEXT("ProgramListCurTitleBack2"),			TEXT("番組表パネル現在番組名背景2")},
+< 	{HEXRGB(0x333333),	TEXT("ProgramListCurTitleText"),			TEXT("番組表パネル現在番組名文字")},
+< 	{HEXRGB(0x3384FF),	TEXT("ProgramListCurTitleBorder"),			TEXT("番組表パネル現在番組名外枠")},
+< 	{HEXRGB(0x777777),	TEXT("ChannelPanelChannelNameBack"),		TEXT("チャンネルパネル局名背景1")},
+< 	{HEXRGB(0x555555),	TEXT("ChannelPanelChannelNameBack2"),		TEXT("チャンネルパネル局名背景2")},
+< 	{HEXRGB(0xCCCCCC),	TEXT("ChannelPanelChannelNameText"),		TEXT("チャンネルパネル局名文字")},
+< 	{HEXRGB(0x555555),	TEXT("ChannelPanelChannelNameBorder"),		TEXT("チャンネルパネル局名外枠")},
+< 	{HEXRGB(0x3384FF),	TEXT("ChannelPanelCurChannelNameBack"),		TEXT("チャンネルパネル現在局名背景1")},
+< 	{HEXRGB(0x33D6FF),	TEXT("ChannelPanelCurChannelNameBack2"),	TEXT("チャンネルパネル現在局名背景2")},
+< 	{HEXRGB(0x333333),	TEXT("ChannelPanelCurChannelNameText"),		TEXT("チャンネルパネル現在局名文字")},
+< 	{HEXRGB(0x3384FF),	TEXT("ChannelPanelCurChannelNameBorder"),	TEXT("チャンネルパネル現在局名外枠")},
+< 	{HEXRGB(0x777777),	TEXT("ChannelPanelEventNameBack"),			TEXT("チャンネルパネル番組名1背景1")},
+< 	{HEXRGB(0x888888),	TEXT("ChannelPanelEventNameBack2"),			TEXT("チャンネルパネル番組名1背景2")},
+< 	{HEXRGB(0xDDDDDD),	TEXT("ChannelPanelEventNameText"),			TEXT("チャンネルパネル番組名1文字")},
+< 	{HEXRGB(0x888888),	TEXT("ChannelPanelEventNameBorder"),		TEXT("チャンネルパネル番組名1外枠")},
+< 	{HEXRGB(0x777777),	TEXT("ChannelPanelEventName2Back"),			TEXT("チャンネルパネル番組名2背景1")},
+< 	{HEXRGB(0x888888),	TEXT("ChannelPanelEventName2Back2"),		TEXT("チャンネルパネル番組名2背景2")},
+< 	{HEXRGB(0xDDDDDD),	TEXT("ChannelPanelEventName2Text"),			TEXT("チャンネルパネル番組名2文字")},
+< 	{HEXRGB(0x888888),	TEXT("ChannelPanelEventName2Border"),		TEXT("チャンネルパネル番組名2外枠")},
+< 	{HEXRGB(0x777777),	TEXT("ChannelPanelCurEventNameBack"),		TEXT("チャンネルパネル選択番組名1背景1")},
+< 	{HEXRGB(0x888888),	TEXT("ChannelPanelCurEventNameBack2"),		TEXT("チャンネルパネル選択番組名1背景2")},
+< 	{HEXRGB(0xDDDDDD),	TEXT("ChannelPanelCurEventNameText"),		TEXT("チャンネルパネル選択番組名1文字")},
+< 	{HEXRGB(0x888888),	TEXT("ChannelPanelCurEventNameBorder"),		TEXT("チャンネルパネル選択番組名1外枠")},
+< 	{HEXRGB(0x777777),	TEXT("ChannelPanelCurEventName2Back"),		TEXT("チャンネルパネル選択番組名2背景1")},
+< 	{HEXRGB(0x888888),	TEXT("ChannelPanelCurEventName2Back2"),		TEXT("チャンネルパネル選択番組名2背景2")},
+< 	{HEXRGB(0xDDDDDD),	TEXT("ChannelPanelCurEventName2Text"),		TEXT("チャンネルパネル選択番組名2文字")},
+< 	{HEXRGB(0x888888),	TEXT("ChannelPanelCurEventName2Border"),	TEXT("チャンネルパネル選択番組名2外枠")},
+< 	{HEXRGB(0x666666),	TEXT("ControlPanelBack"),					TEXT("操作パネル背景1")},
+< 	{HEXRGB(0x666666),	TEXT("ControlPanelBack2"),					TEXT("操作パネル背景2")},
+< 	{HEXRGB(0xCCCCCC),	TEXT("ControlPanelText"),					TEXT("操作パネル文字")},
+< 	{HEXRGB(0x666666),	TEXT("ControlPanelItemBorder"),				TEXT("操作パネル項目外枠")},
+< 	{HEXRGB(0x3384FF),	TEXT("ControlPanelHighlightBack"),			TEXT("操作パネル選択背景1")},
+< 	{HEXRGB(0x33D6FF),	TEXT("ControlPanelHighlightBack2"),			TEXT("操作パネル選択背景2")},
+< 	{HEXRGB(0xEEEEEE),	TEXT("ControlPanelHighlightText"),			TEXT("操作パネル選択文字")},
+< 	{HEXRGB(0x3384FF),	TEXT("ControlPanelHighlightBorder"),		TEXT("操作パネル選択項目外枠")},
+< 	{HEXRGB(0x666666),	TEXT("ControlPanelMargin"),					TEXT("操作パネル余白")},
+< 	{HEXRGB(0x777777),	TEXT("CaptionPanelBack"),					TEXT("字幕パネル背景")},
+< 	{HEXRGB(0xDDDDDD),	TEXT("CaptionPanelText"),					TEXT("字幕パネル文字")},
+< 	{HEXRGB(0x777777),	TEXT("TitleBarBack"),						TEXT("タイトルバー背景1")},
+< 	{HEXRGB(0x222222),	TEXT("TitleBarBack2"),						TEXT("タイトルバー背景2")},
+< 	{HEXRGB(0xBBBBBB),	TEXT("TitleBarText"),						TEXT("タイトルバー文字")},
+< 	{HEXRGB(0x777777),	TEXT("TitleBarTextBorder"),					TEXT("タイトルバー文字外枠")},
+< 	{HEXRGB(0x777777),	TEXT("TitleBarIconBack"),					TEXT("タイトルバーアイコン背景1")},
+< 	{HEXRGB(0x222222),	TEXT("TitleBarIconBack2"),					TEXT("タイトルバーアイコン背景2")},
+< 	{HEXRGB(0xBBBBBB),	TEXT("TitleBarIcon"),						TEXT("タイトルバーアイコン")},
+< 	{HEXRGB(0x777777),	TEXT("TitleBarIconBorder"),					TEXT("タイトルバーアイコン外枠")},
+< 	{HEXRGB(0x3384FF),	TEXT("TitleBarHighlightBack"),				TEXT("タイトルバー選択背景1")},
+< 	{HEXRGB(0x33D6FF),	TEXT("TitleBarHighlightBack2"),				TEXT("タイトルバー選択背景2")},
+< 	{HEXRGB(0x444444),	TEXT("TitleBarHighlightIcon"),				TEXT("タイトルバー選択アイコン")},
+< 	{HEXRGB(0x3384FF),	TEXT("TitleBarHighlightIconBorder"),		TEXT("タイトルバー選択アイコン外枠")},
+< 	{HEXRGB(0x777777),	TEXT("TitleBarBorder"),						TEXT("タイトルバー外枠")},
+< 	{HEXRGB(0x777777),	TEXT("SideBarBack"),						TEXT("サイドバー背景1")},
+< 	{HEXRGB(0x222222),	TEXT("SideBarBack2"),						TEXT("サイドバー背景2")},
+< 	{HEXRGB(0xBBBBBB),	TEXT("SideBarIcon"),						TEXT("サイドバーアイコン")},
+< 	{HEXRGB(0x777777),	TEXT("SideBarItemBorder"),					TEXT("サイドバー項目外枠")},
+< 	{HEXRGB(0x3384FF),	TEXT("SideBarHighlightBack"),				TEXT("サイドバー選択背景1")},
+< 	{HEXRGB(0x33D6FF),	TEXT("SideBarHighlightBack2"),				TEXT("サイドバー選択背景2")},
+< 	{HEXRGB(0x444444),	TEXT("SideBarHighlightIcon"),				TEXT("サイドバー選択アイコン")},
+< 	{HEXRGB(0x3384FF),	TEXT("SideBarHighlightBorder"),				TEXT("サイドバー選択外枠")},
+< 	{HEXRGB(0x777777),	TEXT("SideBarCheckBack"),					TEXT("サイドバーチェック背景1")},
+< 	{HEXRGB(0x222222),	TEXT("SideBarCheckBack2"),					TEXT("サイドバーチェック背景2")},
+< 	{HEXRGB(0xBBBBBB),	TEXT("SideBarCheckIcon"),					TEXT("サイドバーチェックアイコン")},
+< 	{HEXRGB(0x222222),	TEXT("SideBarCheckBorder"),					TEXT("サイドバーチェック外枠")},
+< 	{HEXRGB(0x777777),	TEXT("SideBarBorder"),						TEXT("サイドバー外枠")},
+< 	{HEXRGB(0x222222),	TEXT("NotificationBarBack"),				TEXT("通知バー背景1")},
+< 	{HEXRGB(0x333333),	TEXT("NotificationBarBack2"),				TEXT("通知バー背景2")},
+< 	{HEXRGB(0xBBBBBB),	TEXT("NotificationBarText"),				TEXT("通知バー文字")},
+< 	{HEXRGB(0xFF9F44),	TEXT("NotificationBarWarningText"),			TEXT("通知バー警告文字")},
+< 	{HEXRGB(0xFF4444),	TEXT("NotificationBarErrorText"),			TEXT("通知バーエラー文字")},
+< 	{HEXRGB(0x666666),	TEXT("ProgramGuideBack"),					TEXT("EPG番組表背景")},
+< 	{HEXRGB(0x000000),	TEXT("ProgramGuideText"),					TEXT("EPG番組表文字")},
+< 	{HEXRGB(0x777777),	TEXT("ProgramGuideChannelBack"),			TEXT("EPG番組表チャンネル名背景1")},
+< 	{HEXRGB(0x222222),	TEXT("ProgramGuideChannelBack2"),			TEXT("EPG番組表チャンネル名背景2")},
+< 	{HEXRGB(0xBBBBBB),	TEXT("ProgramGuideChannelText"),			TEXT("EPG番組表チャンネル名文字")},
+< 	{HEXRGB(0x3384FF),	TEXT("ProgramGuideCurChannelBack"),			TEXT("EPG番組表チャンネル名選択背景1")},
+< 	{HEXRGB(0x33D6FF),	TEXT("ProgramGuideCurChannelBack2"),		TEXT("EPG番組表チャンネル名選択背景2")},
+< 	{HEXRGB(0x333333),	TEXT("ProgramGuideCurChannelText"),			TEXT("EPG番組表チャンネル名選択文字")},
+< 	{HEXRGB(0x888888),	TEXT("ProgramGuideTimeBack"),				TEXT("EPG番組表日時背景1")},
+< 	{HEXRGB(0x777777),	TEXT("ProgramGuideTimeBack2"),				TEXT("EPG番組表日時背景2")},
+< 	{HEXRGB(0x004CBF),	TEXT("ProgramGuideTime0To2Back"),			TEXT("EPG番組表0～2時背景1")},
+< 	{HEXRGB(0x00337F),	TEXT("ProgramGuideTime0To2Back2"),			TEXT("EPG番組表0～2時背景2")},
+< 	{HEXRGB(0x0099BF),	TEXT("ProgramGuideTime3To5Back"),			TEXT("EPG番組表3～5時背景1")},
+< 	{HEXRGB(0x00667F),	TEXT("ProgramGuideTime3To5Back2"),			TEXT("EPG番組表3～5時背景2")},
+< 	{HEXRGB(0x00BF99),	TEXT("ProgramGuideTime6To8Back"),			TEXT("EPG番組表6～8時背景1")},
+< 	{HEXRGB(0x007F66),	TEXT("ProgramGuideTime6To8Back2"),			TEXT("EPG番組表6～8時背景2")},
+< 	{HEXRGB(0x99BF00),	TEXT("ProgramGuideTime9To11Back"),			TEXT("EPG番組表9～11時背景1")},
+< 	{HEXRGB(0x667F00),	TEXT("ProgramGuideTime9To11Back2"),			TEXT("EPG番組表9～11時背景2")},
+< 	{HEXRGB(0xBF9900),	TEXT("ProgramGuideTime12To14Back"),			TEXT("EPG番組表12～14時背景1")},
+< 	{HEXRGB(0x7F6600),	TEXT("ProgramGuideTime12To14Back2"),		TEXT("EPG番組表12～14時背景2")},
+< 	{HEXRGB(0xBF4C00),	TEXT("ProgramGuideTime15To17Back"),			TEXT("EPG番組表15～17時背景1")},
+< 	{HEXRGB(0x7F3300),	TEXT("ProgramGuideTime15To17Back2"),		TEXT("EPG番組表15～17間背景2")},
+< 	{HEXRGB(0xBF0099),	TEXT("ProgramGuideTime18To20Back"),			TEXT("EPG番組表18～20時背景1")},
+< 	{HEXRGB(0x7F0066),	TEXT("ProgramGuideTime18To20Back2"),		TEXT("EPG番組表18～20時背景2")},
+< 	{HEXRGB(0x9900BF),	TEXT("ProgramGuideTime21To23Back"),			TEXT("EPG番組表21～23時背景1")},
+< 	{HEXRGB(0x66007F),	TEXT("ProgramGuideTime21To23Back2"),		TEXT("EPG番組表21～23時背景2")},
+< 	{HEXRGB(0xDDDDDD),	TEXT("ProgramGuideTimeText"),				TEXT("EPG番組表時間文字")},
+< 	{HEXRGB(0xBBBBBB),	TEXT("ProgramGuideTimeLine"),				TEXT("EPG番組表時間線")},
+< 	{HEXRGB(0xFF6600),	TEXT("ProgramGuideCurTimeLine"),			TEXT("EPG番組表現在時刻線")},
+< 	{RGB(255,255,224),	TEXT("EPGContentNews"),						TEXT("EPG番組表ニュース番組")},
+< 	{RGB(224,224,255),	TEXT("EPGContentSports"),					TEXT("EPG番組表スポーツ番組")},
+< 	{RGB(255,224,240),	TEXT("EPGContentInformation"),				TEXT("EPG番組表情報番組")},
+< 	{RGB(255,224,224),	TEXT("EPGContentDrama"),					TEXT("EPG番組表ドラマ")},
+< 	{RGB(224,255,224),	TEXT("EPGContentMusic"),					TEXT("EPG番組表音楽番組")},
+< 	{RGB(224,255,255),	TEXT("EPGContentVariety"),					TEXT("EPG番組表バラエティ番組")},
+< 	{RGB(255,240,224),	TEXT("EPGContentMovie"),					TEXT("EPG番組表映画")},
+< 	{RGB(255,224,255),	TEXT("EPGContentAnime"),					TEXT("EPG番組表アニメ/特撮")},
+< 	{RGB(255,255,224),	TEXT("EPGContentDocumentary"),				TEXT("EPG番組表ドキュメンタリー/教養番組")},
+< 	{RGB(255,240,224),	TEXT("EPGContentTheater"),					TEXT("EPG番組表劇場/公演")},
+< 	{RGB(224,240,255),	TEXT("EPGContentEducation"),				TEXT("EPG番組表趣味/教育番組")},
+< 	{RGB(224,240,255),	TEXT("EPGContentWelfare"),					TEXT("EPG番組表福祉番組")},
+< 	{RGB(240,240,240),	TEXT("EPGContentOther"),					TEXT("EPG番組表その他の番組")},
+197,264d49
+< 	{TEXT("PanelTabBackGradient"),						Theme::DIRECTION_VERT,	true,
+< 		COLOR_PANELTABBACK1,					COLOR_PANELTABBACK2},
+< 	{TEXT("PanelCurTabBackGradient"),					Theme::DIRECTION_VERT,	true,
+< 		COLOR_PANELCURTABBACK1,					COLOR_PANELCURTABBACK2},
+< 	{TEXT("PanelTabMarginGradient"),					Theme::DIRECTION_VERT,	false,
+< 		COLOR_PANELTABMARGIN1,					COLOR_PANELTABMARGIN2},
+< 	{TEXT("PanelTitleBackGradient"),					Theme::DIRECTION_VERT,	true,
+< 		COLOR_PANELTITLEBACK1,					COLOR_PANELTITLEBACK2},
+< 	{TEXT("ProgramListBackGradient"),					Theme::DIRECTION_VERT,	true,
+< 		COLOR_PROGRAMLISTPANEL_EVENTBACK1,		COLOR_PROGRAMLISTPANEL_EVENTBACK2},
+< 	{TEXT("ProgramListCurBackGradient"),				Theme::DIRECTION_VERT,	true,
+< 		COLOR_PROGRAMLISTPANEL_CUREVENTBACK1,	COLOR_PROGRAMLISTPANEL_CUREVENTBACK2},
+< 	{TEXT("ProgramListTitleBackGradient"),				Theme::DIRECTION_VERT,	true,
+< 		COLOR_PROGRAMLISTPANEL_TITLEBACK1,		COLOR_PROGRAMLISTPANEL_TITLEBACK2},
+< 	{TEXT("ProgramListCurTitleBackGradient"),			Theme::DIRECTION_VERT,	true,
+< 		COLOR_PROGRAMLISTPANEL_CURTITLEBACK1,	COLOR_PROGRAMLISTPANEL_CURTITLEBACK2},
+< 	{TEXT("ChannelPanelChannelNameBackGradient"),		Theme::DIRECTION_VERT,	true,
+< 		COLOR_CHANNELPANEL_CHANNELNAMEBACK1,	COLOR_CHANNELPANEL_CHANNELNAMEBACK2},
+< 	{TEXT("ChannelPanelCurChannelNameBackGradient"),	Theme::DIRECTION_VERT,	true,
+< 		COLOR_CHANNELPANEL_CURCHANNELNAMEBACK1,	COLOR_CHANNELPANEL_CURCHANNELNAMEBACK2},
+< 	{TEXT("ChannelPanelEventNameBackGradient"),			Theme::DIRECTION_VERT,	true,
+< 		COLOR_CHANNELPANEL_EVENTNAME1BACK1,		COLOR_CHANNELPANEL_EVENTNAME1BACK2},
+< 	{TEXT("ChannelPanelEventName2BackGradient"),		Theme::DIRECTION_VERT,	true,
+< 		COLOR_CHANNELPANEL_EVENTNAME2BACK1,		COLOR_CHANNELPANEL_EVENTNAME2BACK2},
+< 	{TEXT("ChannelPanelCurEventNameBackGradient"),		Theme::DIRECTION_VERT,	true,
+< 		COLOR_CHANNELPANEL_CUREVENTNAME1BACK1,	COLOR_CHANNELPANEL_CUREVENTNAME1BACK2},
+< 	{TEXT("ChannelPanelCurEventName2BackGradient"),		Theme::DIRECTION_VERT,	true,
+< 		COLOR_CHANNELPANEL_CUREVENTNAME2BACK1,	COLOR_CHANNELPANEL_CUREVENTNAME2BACK2},
+< 	{TEXT("ControlPanelBackGradient"),					Theme::DIRECTION_VERT,	true,
+< 		COLOR_CONTROLPANELBACK1,				COLOR_CONTROLPANELBACK2},
+< 	{TEXT("ControlPanelHighlightBackGradient"),			Theme::DIRECTION_VERT,	true,
+< 		COLOR_CONTROLPANELHIGHLIGHTBACK1,		COLOR_CONTROLPANELHIGHLIGHTBACK2},
+< 	{TEXT("TitleBarBackGradient"),						Theme::DIRECTION_VERT,	true,
+< 		COLOR_TITLEBARBACK1,					COLOR_TITLEBARBACK2},
+< 	{TEXT("TitleBarIconBackGradient"),					Theme::DIRECTION_VERT,	true,
+< 		COLOR_TITLEBARICONBACK1,				COLOR_TITLEBARICONBACK2},
+< 	{TEXT("TitleBarHighlightBackGradient"),				Theme::DIRECTION_VERT,	true,
+< 		COLOR_TITLEBARHIGHLIGHTBACK1,			COLOR_TITLEBARHIGHLIGHTBACK2},
+< 	{TEXT("SideBarBackGradient"),						Theme::DIRECTION_HORZ,	true,
+< 		COLOR_SIDEBARBACK1,						COLOR_SIDEBARBACK2},
+< 	{TEXT("SideBarHighlightBackGradient"),				Theme::DIRECTION_HORZ,	true,
+< 		COLOR_SIDEBARHIGHLIGHTBACK1,			COLOR_SIDEBARHIGHLIGHTBACK2},
+< 	{TEXT("SideBarCheckBackGradient"),					Theme::DIRECTION_HORZ,	true,
+< 		COLOR_SIDEBARCHECKBACK1,				COLOR_SIDEBARCHECKBACK2},
+< 	{TEXT("NotificationBarBackGradient"),				Theme::DIRECTION_VERT,	true,
+< 		COLOR_NOTIFICATIONBARBACK1,				COLOR_NOTIFICATIONBARBACK2},
+< 	{TEXT("ProgramGuideChannelBackGradient"),			Theme::DIRECTION_VERT,	true,
+< 		COLOR_PROGRAMGUIDECHANNELBACK1,			COLOR_PROGRAMGUIDECHANNELBACK2},
+< 	{TEXT("ProgramGuideCurChannelBackGradient"),		Theme::DIRECTION_VERT,	true,
+< 		COLOR_PROGRAMGUIDECURCHANNELBACK1,		COLOR_PROGRAMGUIDECURCHANNELBACK2},
+< 	{TEXT("ProgramGuideTimeBackGradient"),				Theme::DIRECTION_HORZ,	true,
+< 		COLOR_PROGRAMGUIDETIMEBACK1,			COLOR_PROGRAMGUIDETIMEBACK2},
+< 	{TEXT("ProgramGuideTime0To2BackGradient"),			Theme::DIRECTION_HORZ,	true,
+< 		COLOR_PROGRAMGUIDETIMEBACK_0TO2_1,		COLOR_PROGRAMGUIDETIMEBACK_0TO2_2},
+< 	{TEXT("ProgramGuideTime3To5BackGradient"),			Theme::DIRECTION_HORZ,	true,
+< 		COLOR_PROGRAMGUIDETIMEBACK_3TO5_1,		COLOR_PROGRAMGUIDETIMEBACK_3TO5_2},
+< 	{TEXT("ProgramGuideTime6To8BackGradient"),			Theme::DIRECTION_HORZ,	true,
+< 		COLOR_PROGRAMGUIDETIMEBACK_6TO8_1,		COLOR_PROGRAMGUIDETIMEBACK_6TO8_2},
+< 	{TEXT("ProgramGuideTime9To11BackGradient"),			Theme::DIRECTION_HORZ,	true,
+< 		COLOR_PROGRAMGUIDETIMEBACK_9TO11_1,		COLOR_PROGRAMGUIDETIMEBACK_9TO11_2},
+< 	{TEXT("ProgramGuideTime12To14BackGradient"),		Theme::DIRECTION_HORZ,	true,
+< 		COLOR_PROGRAMGUIDETIMEBACK_12TO14_1,	COLOR_PROGRAMGUIDETIMEBACK_12TO14_2},
+< 	{TEXT("ProgramGuideTime15To17BackGradient"),		Theme::DIRECTION_HORZ,	true,
+< 		COLOR_PROGRAMGUIDETIMEBACK_15TO17_1,	COLOR_PROGRAMGUIDETIMEBACK_15TO17_2},
+< 	{TEXT("ProgramGuideTime18To20BackGradient"),		Theme::DIRECTION_HORZ,	true,
+< 		COLOR_PROGRAMGUIDETIMEBACK_18TO20_1,	COLOR_PROGRAMGUIDETIMEBACK_18TO20_2},
+< 	{TEXT("ProgramGuideTime21To23BackGradient"),		Theme::DIRECTION_HORZ,	true,
+< 		COLOR_PROGRAMGUIDETIMEBACK_21TO23_1,	COLOR_PROGRAMGUIDETIMEBACK_21TO23_2},
+278,327d62
+< 	{TEXT("TitleBarBorder"),					Theme::BORDER_RAISED,
+< 		COLOR_TITLEBARBORDER,						true},
+< 	{TEXT("TitleBarCaptionBorder"),				Theme::BORDER_NONE,
+< 		COLOR_TITLEBARTEXTBORDER,					false},
+< 	{TEXT("TitleBarIconBorder"),				Theme::BORDER_NONE,
+< 		COLOR_TITLEBARICONBORDER,					false},
+< 	{TEXT("TitleBarHighlightBorder"),			Theme::BORDER_NONE,
+< 		COLOR_TITLEBARHIGHLIGHTBORDER,				false},
+< 	{TEXT("SideBarBorder"),						Theme::BORDER_RAISED,
+< 		COLOR_SIDEBARBORDER,						true},
+< 	{TEXT("SideBarItemBorder"),					Theme::BORDER_NONE,
+< 		COLOR_SIDEBARITEMBORDER,					false},
+< 	{TEXT("SideBarHighlightBorder"),			Theme::BORDER_NONE,
+< 		COLOR_SIDEBARHIGHLIGHTBORDER,				false},
+< 	{TEXT("SideBarCheckBorder"),				Theme::BORDER_SUNKEN,
+< 		COLOR_SIDEBARCHECKBORDER,					false},
+< 	{TEXT("ProgramGuideStatusBorder"),			Theme::BORDER_SUNKEN,
+< 		COLOR_STATUSBORDER,							true},
+< 	{TEXT("PanelTabBorder"),					Theme::BORDER_SOLID,
+< 		COLOR_PANELTABBORDER,						false},
+< 	{TEXT("PanelCurTabBorder"),					Theme::BORDER_SOLID,
+< 		COLOR_PANELCURTABBORDER,					false},
+< 	{TEXT("PanelTabMarginBorder"),				Theme::BORDER_NONE,
+< 		COLOR_PANELTABMARGINBORDER,					false},
+< 	{TEXT("PanelTitleBorder"),					Theme::BORDER_RAISED,
+< 		COLOR_PANELTITLEBORDER,						false},
+< 	{TEXT("ProgramListPanelEventBorder"),		Theme::BORDER_NONE,
+< 		COLOR_PROGRAMLISTPANEL_EVENTBORDER,			false},
+< 	{TEXT("ProgramListPanelCurEventBorder"),	Theme::BORDER_NONE,
+< 		COLOR_PROGRAMLISTPANEL_CUREVENTBORDER,		false},
+< 	{TEXT("ProgramListPanelTitleBorder"),		Theme::BORDER_NONE,
+< 		COLOR_PROGRAMLISTPANEL_TITLEBORDER,			false},
+< 	{TEXT("ProgramListPanelCurTitleBorder"),	Theme::BORDER_NONE,
+< 		COLOR_PROGRAMLISTPANEL_CURTITLEBORDER,		false},
+< 	{TEXT("ChannelPanelChannelNameBorder"),		Theme::BORDER_NONE,
+< 		COLOR_CHANNELPANEL_CHANNELNAMEBORDER,		false},
+< 	{TEXT("ChannelPanelCurChannelNameBorder"),	Theme::BORDER_NONE,
+< 		COLOR_CHANNELPANEL_CURCHANNELNAMEBORDER,	false},
+< 	{TEXT("ChannelPanelEventNameBorder"),		Theme::BORDER_NONE,
+< 		COLOR_CHANNELPANEL_EVENTNAME1BORDER,		false},
+< 	{TEXT("ChannelPanelEventName2Border"),		Theme::BORDER_NONE,
+< 		COLOR_CHANNELPANEL_EVENTNAME2BORDER,		false},
+< 	{TEXT("ChannelPanelCurEventNameBorder"),	Theme::BORDER_NONE,
+< 		COLOR_CHANNELPANEL_CUREVENTNAME1BORDER,		false},
+< 	{TEXT("ChannelPanelCurEventName2Border"),	Theme::BORDER_NONE,
+< 		COLOR_CHANNELPANEL_CUREVENTNAME2BORDER,		false},
+< 	{TEXT("ControlPanelItemBorder"),			Theme::BORDER_NONE,
+< 		COLOR_CONTROLPANELITEMBORDER,				false},
+< 	{TEXT("ControlPanelHighlightBorder"),		Theme::BORDER_NONE,
+< 		COLOR_CONTROLPANELHIGHLIGHTBORDER,			false},
+337,380d71
+< 	{GRADIENT_TITLEBARBACK,						BORDER_TITLEBARCAPTION,
+< 		COLOR_TITLEBARTEXT},
+< 	{GRADIENT_TITLEBARICON,						BORDER_TITLEBARICON,
+< 		COLOR_TITLEBARICON},
+< 	{GRADIENT_TITLEBARHIGHLIGHTBACK,			BORDER_TITLEBARHIGHLIGHT,
+< 		COLOR_TITLEBARHIGHLIGHTICON},
+< 	{GRADIENT_SIDEBARBACK,						BORDER_SIDEBARITEM,
+< 		COLOR_SIDEBARICON},
+< 	{GRADIENT_SIDEBARHIGHLIGHTBACK,				BORDER_SIDEBARHIGHLIGHT,
+< 		COLOR_SIDEBARHIGHLIGHTICON},
+< 	{GRADIENT_SIDEBARCHECKBACK,					BORDER_SIDEBARCHECK,
+< 		COLOR_SIDEBARCHECKICON},
+< 	{GRADIENT_PANELTABBACK,						BORDER_PANEL_TAB,
+< 		COLOR_PANELTABTEXT},
+< 	{GRADIENT_PANELCURTABBACK,					BORDER_PANEL_CURTAB,
+< 		COLOR_PANELCURTABTEXT},
+< 	{GRADIENT_PANELTABMARGIN,					BORDER_PANEL_TABMARGIN,
+< 		-1},
+< 	{GRADIENT_PANELTITLEBACK,					BORDER_PANEL_TITLE,
+< 		COLOR_PANELTITLETEXT},
+< 	{GRADIENT_PROGRAMLISTPANEL_EVENTBACK,		BORDER_PROGRAMLISTPANEL_EVENT,
+< 		COLOR_PROGRAMLISTPANEL_EVENTTEXT},
+< 	{GRADIENT_PROGRAMLISTPANEL_CUREVENTBACK,	BORDER_PROGRAMLISTPANEL_CUREVENT,
+< 		COLOR_PROGRAMLISTPANEL_CUREVENTTEXT},
+< 	{GRADIENT_PROGRAMLISTPANEL_TITLEBACK,		BORDER_PROGRAMLISTPANEL_TITLE,
+< 		COLOR_PROGRAMLISTPANEL_TITLETEXT},
+< 	{GRADIENT_PROGRAMLISTPANEL_CURTITLEBACK,	BORDER_PROGRAMLISTPANEL_CURTITLE,
+< 		COLOR_PROGRAMLISTPANEL_CURTITLETEXT},
+< 	{GRADIENT_CHANNELPANEL_CHANNELNAMEBACK,		BORDER_CHANNELPANEL_CHANNELNAME,
+< 		COLOR_CHANNELPANEL_CHANNELNAMETEXT},
+< 	{GRADIENT_CHANNELPANEL_CURCHANNELNAMEBACK,	BORDER_CHANNELPANEL_CURCHANNELNAME,
+< 		COLOR_CHANNELPANEL_CURCHANNELNAMETEXT},
+< 	{GRADIENT_CHANNELPANEL_EVENTNAMEBACK1,		BORDER_CHANNELPANEL_EVENTNAME1,
+< 		COLOR_CHANNELPANEL_EVENTNAME1TEXT},
+< 	{GRADIENT_CHANNELPANEL_EVENTNAMEBACK2,		BORDER_CHANNELPANEL_EVENTNAME2,
+< 		COLOR_CHANNELPANEL_EVENTNAME2TEXT},
+< 	{GRADIENT_CHANNELPANEL_CUREVENTNAMEBACK1,	BORDER_CHANNELPANEL_CUREVENTNAME1,
+< 		COLOR_CHANNELPANEL_CUREVENTNAME1TEXT},
+< 	{GRADIENT_CHANNELPANEL_CUREVENTNAMEBACK2,	BORDER_CHANNELPANEL_CUREVENTNAME2,
+< 		COLOR_CHANNELPANEL_CUREVENTNAME2TEXT},
+< 	{GRADIENT_CONTROLPANELBACK,					BORDER_CONTROLPANELITEM,
+< 		COLOR_CONTROLPANELTEXT},
+< 	{GRADIENT_CONTROLPANELHIGHLIGHTBACK,		BORDER_CONTROLPANELHIGHLIGHTITEM,
+< 		COLOR_CONTROLPANELHIGHLIGHTTEXT},
+572,574d262
+< 		} else if (i==COLOR_SPLITTER) {
+< 			m_ColorList[i]=::GetSysColor(COLOR_3DFACE);
+< 			SetLoadedFlag(i);
+584,637d271
+< 				{COLOR_PROGRAMLISTPANEL_CUREVENTBACK1,		COLOR_PROGRAMLISTPANEL_EVENTBACK1},
+< 				{COLOR_PROGRAMLISTPANEL_CUREVENTBACK2,		COLOR_PROGRAMLISTPANEL_EVENTBACK2},
+< 				{COLOR_PROGRAMLISTPANEL_CUREVENTTEXT,		COLOR_PROGRAMLISTPANEL_EVENTTEXT},
+< 				{COLOR_PROGRAMLISTPANEL_CURTITLEBACK1,		COLOR_PROGRAMLISTPANEL_TITLEBACK1},
+< 				{COLOR_PROGRAMLISTPANEL_CURTITLEBACK2,		COLOR_PROGRAMLISTPANEL_TITLEBACK2},
+< 				{COLOR_PROGRAMLISTPANEL_CURTITLETEXT,		COLOR_PROGRAMLISTPANEL_TITLETEXT},
+< 				{COLOR_PANELTABLINE,						COLOR_PANELTABBORDER},
+< 				{COLOR_PANELTITLEBORDER,					COLOR_PANELTITLEBACK1},
+< 				{COLOR_CHANNELPANEL_CURCHANNELNAMEBACK1,	COLOR_CHANNELPANEL_CHANNELNAMEBACK1},
+< 				{COLOR_CHANNELPANEL_CURCHANNELNAMEBACK2,	COLOR_CHANNELPANEL_CHANNELNAMEBACK2},
+< 				{COLOR_CHANNELPANEL_CURCHANNELNAMETEXT,		COLOR_CHANNELPANEL_CHANNELNAMETEXT},
+< 				{COLOR_CHANNELPANEL_EVENTNAME2BACK1,		COLOR_CHANNELPANEL_EVENTNAME1BACK1},
+< 				{COLOR_CHANNELPANEL_EVENTNAME2BACK2,		COLOR_CHANNELPANEL_EVENTNAME1BACK2},
+< 				{COLOR_CHANNELPANEL_EVENTNAME2TEXT,			COLOR_CHANNELPANEL_EVENTNAME1TEXT},
+< 				{COLOR_CHANNELPANEL_EVENTNAME2BORDER,		COLOR_CHANNELPANEL_EVENTNAME1BORDER},
+< 				{COLOR_CHANNELPANEL_CUREVENTNAME1BACK1,		COLOR_CHANNELPANEL_EVENTNAME1BACK1},
+< 				{COLOR_CHANNELPANEL_CUREVENTNAME1BACK2,		COLOR_CHANNELPANEL_EVENTNAME1BACK2},
+< 				{COLOR_CHANNELPANEL_CUREVENTNAME1TEXT,		COLOR_CHANNELPANEL_EVENTNAME1TEXT},
+< 				{COLOR_CHANNELPANEL_CUREVENTNAME1BORDER,	COLOR_CHANNELPANEL_EVENTNAME1BORDER},
+< 				{COLOR_CHANNELPANEL_CUREVENTNAME2BACK1,		COLOR_CHANNELPANEL_CUREVENTNAME1BACK1},
+< 				{COLOR_CHANNELPANEL_CUREVENTNAME2BACK2,		COLOR_CHANNELPANEL_CUREVENTNAME1BACK2},
+< 				{COLOR_CHANNELPANEL_CUREVENTNAME2TEXT,		COLOR_CHANNELPANEL_CUREVENTNAME1TEXT},
+< 				{COLOR_CHANNELPANEL_CUREVENTNAME2BORDER,	COLOR_CHANNELPANEL_CUREVENTNAME1BORDER},
+< 				{COLOR_CONTROLPANELBACK1,					COLOR_PANELBACK},
+< 				{COLOR_CONTROLPANELBACK2,					COLOR_PANELBACK},
+< 				{COLOR_CONTROLPANELTEXT,					COLOR_PANELTEXT},
+< 				{COLOR_CONTROLPANELMARGIN,					COLOR_PANELBACK},
+< 				{COLOR_CAPTIONPANELBACK,					COLOR_PROGRAMINFOBACK},
+< 				{COLOR_CAPTIONPANELTEXT,					COLOR_PROGRAMINFOTEXT},
+< 				{COLOR_TITLEBARBACK1,						COLOR_STATUSBACK1},
+< 				{COLOR_TITLEBARBACK2,						COLOR_STATUSBACK2},
+< 				{COLOR_TITLEBARTEXT,						COLOR_STATUSTEXT},
+< 				{COLOR_TITLEBARICONBACK1,					COLOR_TITLEBARBACK1},
+< 				{COLOR_TITLEBARICONBACK2,					COLOR_TITLEBARBACK2},
+< 				{COLOR_TITLEBARICON,						COLOR_TITLEBARTEXT},
+< 				{COLOR_TITLEBARHIGHLIGHTBACK1,				COLOR_STATUSHIGHLIGHTBACK1},
+< 				{COLOR_TITLEBARHIGHLIGHTBACK2,				COLOR_STATUSHIGHLIGHTBACK2},
+< 				{COLOR_TITLEBARHIGHLIGHTICON,				COLOR_STATUSHIGHLIGHTTEXT},
+< 				{COLOR_TITLEBARBORDER,						COLOR_TITLEBARBACK1},
+< 				{COLOR_SIDEBARBACK1,						COLOR_STATUSBACK1},
+< 				{COLOR_SIDEBARBACK2,						COLOR_STATUSBACK2},
+< 				{COLOR_SIDEBARICON,							COLOR_STATUSTEXT},
+< 				{COLOR_SIDEBARHIGHLIGHTBACK1,				COLOR_STATUSHIGHLIGHTBACK1},
+< 				{COLOR_SIDEBARHIGHLIGHTBACK2,				COLOR_STATUSHIGHLIGHTBACK2},
+< 				{COLOR_SIDEBARHIGHLIGHTICON,				COLOR_STATUSHIGHLIGHTTEXT},
+< 				{COLOR_SIDEBARCHECKBACK1,					COLOR_SIDEBARBACK1},
+< 				{COLOR_SIDEBARCHECKBACK2,					COLOR_SIDEBARBACK2},
+< 				{COLOR_SIDEBARCHECKICON,					COLOR_SIDEBARICON},
+< 				{COLOR_SIDEBARCHECKBORDER,					COLOR_SIDEBARCHECKBACK2},
+< 				{COLOR_SIDEBARBORDER,						COLOR_SIDEBARBACK1},
+< 				{COLOR_PROGRAMGUIDECURCHANNELBACK1,			COLOR_PROGRAMGUIDECHANNELBACK1},
+< 				{COLOR_PROGRAMGUIDECURCHANNELBACK2,			COLOR_PROGRAMGUIDECHANNELBACK2},
+< 				{COLOR_PROGRAMGUIDECURCHANNELTEXT,			COLOR_PROGRAMGUIDECHANNELTEXT},
+< 				{COLOR_PROGRAMGUIDETIMELINE,				COLOR_PROGRAMGUIDETIMETEXT},
+658,666d291
+< 		} else {
+< 			switch (i) {
+< 			case GRADIENT_TITLEBARICON:
+< 				m_GradientList[i].Type=m_GradientList[GRADIENT_TITLEBARBACK].Type;
+< 				break;
+< 			case GRADIENT_SIDEBARCHECKBACK:
+< 				m_GradientList[i].Type=m_GradientList[GRADIENT_SIDEBARBACK].Type;
+< 				break;
+< 			}
+679,687d303
+< 		} else {
+< 			switch (i) {
+< 			case GRADIENT_TITLEBARICON:
+< 				m_GradientList[i].Direction=m_GradientList[GRADIENT_TITLEBARBACK].Direction;
+< 				break;
+< 			case GRADIENT_SIDEBARCHECKBACK:
+< 				m_GradientList[i].Direction=m_GradientList[GRADIENT_SIDEBARBACK].Direction;
+< 				break;
+< 			}
+717,751d332
+< bool CColorScheme::Save(LPCTSTR pszFileName) const
+< {
+< 	CSettings Settings;
+< 	int i;
+< 
+< 	if (!Settings.Open(pszFileName,TEXT("ColorScheme"),CSettings::OPEN_WRITE))
+< 		return false;
+< 	Settings.Write(TEXT("Name"),m_Name.GetSafe());
+< 	for (i=0;i<NUM_COLORS;i++)
+< 		Settings.WriteColor(m_ColorInfoList[i].pszText,m_ColorList[i]);
+< 	for (i=0;i<NUM_GRADIENTS;i++) {
+< 		static const LPCTSTR pszTypeName[] = {
+< 			TEXT("normal"),	TEXT("glossy"), TEXT("interlaced")
+< 		};
+< 		TCHAR szName[128];
+< 
+< 		Settings.Write(m_GradientInfoList[i].pszText,pszTypeName[m_GradientList[i].Type]);
+< 		::wsprintf(szName,TEXT("%sDirection"),m_GradientInfoList[i].pszText);
+< 		Settings.Write(szName,GradientDirectionList[m_GradientList[i].Direction]);
+< 	}
+< 	Settings.Close();
+< 
+< 	if (Settings.Open(pszFileName,TEXT("Style"),CSettings::OPEN_WRITE)) {
+< 		static const LPCTSTR pszTypeName[] = {
+< 			TEXT("none"),	TEXT("solid"),	TEXT("sunken"),	TEXT("raised")
+< 		};
+< 
+< 		for (i=0;i<NUM_BORDERS;i++)
+< 			Settings.Write(m_BorderInfoList[i].pszText,pszTypeName[m_BorderList[i]]);
+< 		Settings.Close();
+< 	}
+< 	return true;
+< }
+< 
+< 
+867,1654d447
+< }
+< 
+< 
+< 
+< 
+< CColorSchemeList::CColorSchemeList()
+< 	: m_NumColorSchemes(0)
+< 	, m_ppList(NULL)
+< {
+< }
+< 
+< 
+< CColorSchemeList::~CColorSchemeList()
+< {
+< 	Clear();
+< }
+< 
+< 
+< bool CColorSchemeList::Add(CColorScheme *pColorScheme)
+< {
+< 	m_ppList=(CColorScheme**)realloc(m_ppList,(m_NumColorSchemes+1)*sizeof(CColorScheme*));
+< 	m_ppList[m_NumColorSchemes++]=pColorScheme;
+< 	return true;
+< }
+< 
+< 
+< bool CColorSchemeList::Load(LPCTSTR pszDirectory)
+< {
+< 	HANDLE hFind;
+< 	WIN32_FIND_DATA wfd;
+< 	TCHAR szFileName[MAX_PATH];
+< 
+< 	PathCombine(szFileName,pszDirectory,TEXT("*.httheme"));
+< 	hFind=FindFirstFile(szFileName,&wfd);
+< 	if (hFind!=INVALID_HANDLE_VALUE) {
+< 		do {
+< 			CColorScheme *pColorScheme;
+< 
+< 			PathCombine(szFileName,pszDirectory,wfd.cFileName);
+< 			pColorScheme=new CColorScheme;
+< 			if (pColorScheme->Load(szFileName))
+< 				Add(pColorScheme);
+< 			else
+< 				delete pColorScheme;
+< 		} while (FindNextFile(hFind,&wfd));
+< 		FindClose(hFind);
+< 	}
+< 	return true;
+< }
+< 
+< 
+< void CColorSchemeList::Clear()
+< {
+< 	if (m_ppList!=NULL) {
+< 		int i;
+< 
+< 		for (i=0;i<m_NumColorSchemes;i++)
+< 			delete m_ppList[i];
+< 		free(m_ppList);
+< 		m_ppList=NULL;
+< 		m_NumColorSchemes=0;
+< 	}
+< }
+< 
+< 
+< CColorScheme *CColorSchemeList::GetColorScheme(int Index)
+< {
+< 	if (Index<0 || Index>=m_NumColorSchemes)
+< 		return NULL;
+< 	return m_ppList[Index];
+< }
+< 
+< 
+< bool CColorSchemeList::SetColorScheme(int Index,const CColorScheme *pColorScheme)
+< {
+< 	if (Index<0 || Index>=m_NumColorSchemes)
+< 		return true;
+< 	*m_ppList[Index]=*pColorScheme;
+< 	return true;
+< }
+< 
+< 
+< 
+< 
+< const LPCTSTR CColorSchemeOptions::m_pszExtension=TEXT(".httheme");
+< 
+< 
+< CColorSchemeOptions::CColorSchemeOptions()
+< 	: m_pColorScheme(new CColorScheme)
+< 	, m_pPreviewColorScheme(NULL)
+< 	, m_pApplyFunc(NULL)
+< {
+< }
+< 
+< 
+< CColorSchemeOptions::~CColorSchemeOptions()
+< {
+< 	Destroy();
+< 	delete m_pColorScheme;
+< 	delete m_pPreviewColorScheme;
+< }
+< 
+< 
+< bool CColorSchemeOptions::Load(LPCTSTR pszFileName)
+< {
+< 	return m_pColorScheme->Load(pszFileName);
+< }
+< 
+< 
+< bool CColorSchemeOptions::Save(LPCTSTR pszFileName) const
+< {
+< 	return m_pColorScheme->Save(pszFileName);
+< }
+< 
+< 
+< bool CColorSchemeOptions::Create(HWND hwndOwner)
+< {
+< 	return CreateDialogWindow(hwndOwner,
+< 							  GetAppClass().GetResourceInstance(),MAKEINTRESOURCE(IDD_OPTIONS_COLORSCHEME));
+< }
+< 
+< 
+< bool CColorSchemeOptions::SetApplyCallback(ApplyFunc pCallback)
+< {
+< 	m_pApplyFunc=pCallback;
+< 	return true;
+< }
+< 
+< 
+< bool CColorSchemeOptions::ApplyColorScheme() const
+< {
+< 	return Apply(m_pColorScheme);
+< }
+< 
+< 
+< bool CColorSchemeOptions::Apply(const CColorScheme *pColorScheme) const
+< {
+< 	if (m_pApplyFunc==NULL)
+< 		return false;
+< 	return m_pApplyFunc(pColorScheme);
+< }
+< 
+< 
+< COLORREF CColorSchemeOptions::GetColor(int Type) const
+< {
+< 	if (m_pPreviewColorScheme!=NULL)
+< 		return m_pPreviewColorScheme->GetColor(Type);
+< 	return m_pColorScheme->GetColor(Type);
+< }
+< 
+< 
+< COLORREF CColorSchemeOptions::GetColor(LPCTSTR pszText) const
+< {
+< 	if (m_pPreviewColorScheme!=NULL)
+< 		return m_pPreviewColorScheme->GetColor(pszText);
+< 	return m_pColorScheme->GetColor(pszText);
+< }
+< 
+< 
+< void CColorSchemeOptions::GetCurrentSettings(CColorScheme *pColorScheme)
+< {
+< 	int i;
+< 
+< 	for (i=0;i<CColorScheme::NUM_COLORS;i++)
+< 		pColorScheme->SetColor(i,
+< 							   (COLORREF)DlgListBox_GetItemData(m_hDlg,IDC_COLORSCHEME_LIST,i));
+< 	for (int i=0;i<CColorScheme::NUM_GRADIENTS;i++)
+< 		pColorScheme->SetGradientStyle(i,m_GradientList[i]);
+< 	for (int i=0;i<CColorScheme::NUM_BORDERS;i++)
+< 		pColorScheme->SetBorderType(i,m_BorderList[i]);
+< }
+< 
+< 
+< bool CColorSchemeOptions::GetThemesDirectory(LPTSTR pszDirectory,int MaxLength,bool fCreate)
+< {
+< 	GetAppClass().GetAppDirectory(pszDirectory);
+< 	::PathAppend(pszDirectory,TEXT("Themes"));
+< 	if (fCreate && !::PathIsDirectory(pszDirectory))
+< 		::CreateDirectory(pszDirectory,NULL);
+< 	return true;
+< }
+< 
+< 
+< INT_PTR CColorSchemeOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
+< {
+< 	switch (uMsg) {
+< 	case WM_INITDIALOG:
+< 		{
+< 			TCHAR szDirectory[MAX_PATH];
+< 			int i;
+< 
+< 			GetThemesDirectory(szDirectory,lengthof(szDirectory));
+< 			m_PresetList.Load(szDirectory);
+< 			for (i=0;i<m_PresetList.NumColorSchemes();i++) {
+< 				LPCTSTR pszName=m_PresetList.GetColorScheme(i)->GetName();
+< 				LRESULT Index=DlgComboBox_AddString(hDlg,IDC_COLORSCHEME_PRESET,
+< 													NullToEmptyString(pszName));
+< 				DlgComboBox_SetItemData(hDlg,IDC_COLORSCHEME_PRESET,Index,i);
+< 			}
+< 			DlgComboBox_SetCueBanner(hDlg,IDC_COLORSCHEME_PRESET,L"<配色を選択してください>");
+< 			DlgComboBox_SetItemHeight(hDlg,IDC_COLORSCHEME_PRESET,0,
+< 									  7*HIWORD(::GetDialogBaseUnits())/8+4);
+< 
+< 			for (i=0;i<CColorScheme::NUM_COLORS;i++) {
+< 				DlgListBox_AddString(hDlg,IDC_COLORSCHEME_LIST,m_pColorScheme->GetColor(i));
+< 			}
+< 			HDC hdc=GetDC(GetDlgItem(hDlg,IDC_COLORSCHEME_LIST));
+< 			HFONT hfontOld=
+< 				SelectFont(hdc,(HFONT)SendDlgItemMessage(hDlg,IDC_COLORSCHEME_LIST,WM_GETFONT,0,0));
+< 			long MaxWidth=0;
+< 			for (i=0;i<CColorScheme::NUM_COLORS;i++) {
+< 				LPCTSTR pszName=CColorScheme::GetColorName(i);
+< 				SIZE sz;
+< 				GetTextExtentPoint32(hdc,pszName,lstrlen(pszName),&sz);
+< 				if (sz.cx>MaxWidth)
+< 					MaxWidth=sz.cx;
+< 			}
+< 			SelectFont(hdc,hfontOld);
+< 			ReleaseDC(GetDlgItem(hDlg,IDC_COLORSCHEME_LIST),hdc);
+< 			DlgListBox_SetItemHeight(hDlg,IDC_COLORSCHEME_LIST,0,
+< 									 7*HIWORD(::GetDialogBaseUnits())/8);
+< 			DlgListBox_SetHorizontalExtent(hDlg,IDC_COLORSCHEME_LIST,
+< 										   DlgListBox_GetItemHeight(hDlg,IDC_COLORSCHEME_LIST,0)*2+MaxWidth+2);
+< 			ExtendListBox(GetDlgItem(hDlg,IDC_COLORSCHEME_LIST));
+< 
+< 			for (int i=0;i<CColorScheme::NUM_GRADIENTS;i++)
+< 				m_pColorScheme->GetGradientStyle(i,&m_GradientList[i]);
+< 			for (int i=0;i<CColorScheme::NUM_BORDERS;i++)
+< 				m_BorderList[i]=m_pColorScheme->GetBorderType(i);
+< 
+< 			RECT rc;
+< 			static const RGBQUAD BaseColors[18] = {
+< 				{0x00, 0x00, 0xFF},
+< 				{0x00, 0x66, 0xFF},
+< 				{0x00, 0xCC, 0xFF},
+< 				{0x00, 0xFF, 0xFF},
+< 				{0x00, 0xFF, 0xCC},
+< 				{0x00, 0xFF, 0x66},
+< 				{0x00, 0xFF, 0x00},
+< 				{0x66, 0xFF, 0x00},
+< 				{0xCC, 0xFF, 0x00},
+< 				{0xFF, 0xFF, 0x00},
+< 				{0xFF, 0xCC, 0x00},
+< 				{0xFF, 0x66, 0x00},
+< 				{0xFF, 0x00, 0x00},
+< 				{0xFF, 0x00, 0x66},
+< 				{0xFF, 0x00, 0xCC},
+< 				{0xFF, 0x00, 0xFF},
+< 				{0xCC, 0x00, 0xFF},
+< 				{0x66, 0x00, 0xFF},
+< 			};
+< 			RGBQUAD Palette[256];
+< 			int j,k;
+< 
+< 			CColorPalette::Initialize(GetWindowInstance(hDlg));
+< 			m_ColorPalette.Create(hDlg,WS_CHILD | WS_VISIBLE,0,IDC_COLORSCHEME_PALETTE);
+< 			GetWindowRect(GetDlgItem(hDlg,IDC_COLORSCHEME_PALETTEPLACE),&rc);
+< 			MapWindowPoints(NULL,hDlg,(LPPOINT)&rc,2);
+< 			m_ColorPalette.SetPosition(&rc);
+< 			for (i=0;i<lengthof(BaseColors);i++) {
+< 				RGBQUAD Color=BaseColors[i%2*(lengthof(BaseColors)/2)+i/2];
+< 
+< 				for (j=0;j<4;j++) {
+< 					Palette[i*8+j].rgbBlue=(Color.rgbBlue*(j+1))/4;
+< 					Palette[i*8+j].rgbGreen=(Color.rgbGreen*(j+1))/4;
+< 					Palette[i*8+j].rgbRed=(Color.rgbRed*(j+1))/4;
+< 				}
+< 				for (;j<8;j++) {
+< 					Palette[i*8+j].rgbBlue=Color.rgbBlue+(255-Color.rgbBlue)*(j-3)/5;
+< 					Palette[i*8+j].rgbGreen=Color.rgbGreen+(255-Color.rgbGreen)*(j-3)/5;
+< 					Palette[i*8+j].rgbRed=Color.rgbRed+(255-Color.rgbRed)*(j-3)/5;
+< 				}
+< 			}
+< 			i=lengthof(BaseColors)*8;
+< 			for (j=0;j<16;j++) {
+< 				Palette[i].rgbBlue=(255*j)/15;
+< 				Palette[i].rgbGreen=(255*j)/15;
+< 				Palette[i].rgbRed=(255*j)/15;
+< 				i++;
+< 			}
+< 			for (j=0;j<CColorScheme::NUM_COLORS;j++) {
+< 				COLORREF cr=m_pColorScheme->GetColor(j);
+< 
+< 				for (k=0;k<i;k++) {
+< 					if (cr==RGB(Palette[k].rgbRed,Palette[k].rgbGreen,Palette[k].rgbBlue))
+< 						break;
+< 				}
+< 				if (k==i) {
+< 					Palette[i].rgbBlue=GetBValue(cr);
+< 					Palette[i].rgbGreen=GetGValue(cr);
+< 					Palette[i].rgbRed=GetRValue(cr);
+< 					i++;
+< 				}
+< 			}
+< 			if (i<lengthof(Palette))
+< 				ZeroMemory(&Palette[i],(lengthof(Palette)-i)*sizeof(RGBQUAD));
+< 			m_ColorPalette.SetPalette(Palette,lengthof(Palette));
+< 		}
+< 		return TRUE;
+< 
+< 	/*
+< 	case WM_MEASUREITEM:
+< 		{
+< 			LPMEASUREITEMSTRUCT pmis=reinterpret_cast<LPMEASUREITEMSTRUCT>(lParam);
+< 
+< 			pmis->itemHeight=7*HIWORD(GetDialogBaseUnits())/8;
+< 			if (pmis->CtlID==IDC_COLORSCHEME_PRESET)
+< 				pmis->itemHeight+=4;
+< 		}
+< 		return TRUE;
+< 	*/
+< 
+< 	case WM_DRAWITEM:
+< 		{
+< 			LPDRAWITEMSTRUCT pdis=reinterpret_cast<LPDRAWITEMSTRUCT>(lParam);
+< 
+< 			if (pdis->CtlID==IDC_COLORSCHEME_PRESET) {
+< 				switch (pdis->itemAction) {
+< 				case ODA_DRAWENTIRE:
+< 				case ODA_SELECT:
+< 					if ((int)pdis->itemID<0) {
+< 						::FillRect(pdis->hDC,&pdis->rcItem,
+< 									reinterpret_cast<HBRUSH>(COLOR_WINDOW+1));
+< 					} else {
+< 						CColorScheme *pColorScheme=m_PresetList.GetColorScheme((int)pdis->itemData);
+< 						Theme::Style Style;
+< 
+< 						pColorScheme->GetStyle(
+< 							(pdis->itemState&ODS_SELECTED)==0?
+< 								CColorScheme::STYLE_STATUSITEM:
+< 								CColorScheme::STYLE_STATUSHIGHLIGHTITEM,
+< 							&Style);
+< 						Theme::DrawStyleBackground(pdis->hDC,&pdis->rcItem,&Style);
+< 						if (pColorScheme->GetName()!=NULL) {
+< 							int OldBkMode;
+< 							COLORREF crOldTextColor;
+< 							RECT rc;
+< 							HFONT hfont,hfontOld;
+< 
+< 							if ((pdis->itemState&ODS_SELECTED)!=0) {
+< 								LOGFONT lf;
+< 
+< 								hfontOld=static_cast<HFONT>(::GetCurrentObject(pdis->hDC,OBJ_FONT));
+< 								::GetObject(hfontOld,sizeof(LOGFONT),&lf);
+< 								lf.lfWeight=FW_BOLD;
+< 								hfont=::CreateFontIndirect(&lf);
+< 								SelectFont(pdis->hDC,hfont);
+< 							} else
+< 								hfont=NULL;
+< 							OldBkMode=::SetBkMode(pdis->hDC,TRANSPARENT);
+< 							crOldTextColor=::SetTextColor(pdis->hDC,Style.TextColor);
+< 							rc=pdis->rcItem;
+< 							rc.left+=4;
+< 							::DrawText(pdis->hDC,pColorScheme->GetName(),-1,&rc,
+< 								DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
+< 							::SetTextColor(pdis->hDC,crOldTextColor);
+< 							::SetBkMode(pdis->hDC,OldBkMode);
+< 							if (hfont!=NULL) {
+< 								::SelectObject(pdis->hDC,hfontOld);
+< 								::DeleteObject(hfont);
+< 							}
+< 						}
+< 					}
+< 					if ((pdis->itemState&ODS_FOCUS)==0)
+< 						break;
+< 				case ODA_FOCUS:
+< 					::DrawFocusRect(pdis->hDC,&pdis->rcItem);
+< 					break;
+< 				}
+< 			} else if (pdis->CtlID==IDC_COLORSCHEME_LIST) {
+< 				switch (pdis->itemAction) {
+< 				case ODA_DRAWENTIRE:
+< 				case ODA_SELECT:
+< 					{
+< 						int BackSysColor;
+< 						COLORREF BackColor,TextColor,OldTextColor;
+< 						HBRUSH hbr,hbrOld;
+< 						HPEN hpenOld;
+< 						RECT rc;
+< 						int OldBkMode;
+< 
+< 						if ((pdis->itemState&ODS_SELECTED)==0) {
+< 							BackSysColor=COLOR_WINDOW;
+< 							TextColor=::GetSysColor(COLOR_WINDOWTEXT);
+< 						} else {
+< 							BackSysColor=COLOR_HIGHLIGHT;
+< 							TextColor=::GetSysColor(COLOR_HIGHLIGHTTEXT);
+< 						}
+< 						BackColor=::GetSysColor(BackSysColor);
+< 						int Border=CColorScheme::GetColorBorder((int)pdis->itemID);
+< 						if (Border>=0 && m_BorderList[Border]==Theme::BORDER_NONE)
+< 							TextColor=MixColor(TextColor,BackColor);
+< 						::FillRect(pdis->hDC,&pdis->rcItem,reinterpret_cast<HBRUSH>(BackSysColor+1));
+< 						hbr=::CreateSolidBrush((COLORREF)pdis->itemData);
+< 						hbrOld=SelectBrush(pdis->hDC,hbr);
+< 						hpenOld=SelectPen(pdis->hDC,::GetStockObject(BLACK_PEN));
+< 						rc.left=pdis->rcItem.left+2;
+< 						rc.top=pdis->rcItem.top+2;
+< 						rc.bottom=pdis->rcItem.bottom-2;
+< 						rc.right=rc.left+(rc.bottom-rc.top)*2;
+< 						::Rectangle(pdis->hDC,rc.left,rc.top,rc.right,rc.bottom);
+< 						::SelectObject(pdis->hDC,hpenOld);
+< 						::SelectObject(pdis->hDC,hbrOld);
+< 						::DeleteObject(hbr);
+< 						OldBkMode=::SetBkMode(pdis->hDC,TRANSPARENT);
+< 						OldTextColor=::SetTextColor(pdis->hDC,TextColor);
+< 						rc.left=rc.right+2;
+< 						rc.top=pdis->rcItem.top;
+< 						rc.right=pdis->rcItem.right;
+< 						rc.bottom=pdis->rcItem.bottom;
+< 						::DrawText(pdis->hDC,CColorScheme::GetColorName(pdis->itemID),-1,&rc,
+< 								   DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+< 						::SetTextColor(pdis->hDC,OldTextColor);
+< 						::SetBkMode(pdis->hDC,OldBkMode);
+< 					}
+< 					if ((pdis->itemState&ODS_FOCUS)==0)
+< 						break;
+< 				case ODA_FOCUS:
+< 					::DrawFocusRect(pdis->hDC,&pdis->rcItem);
+< 					break;
+< 				}
+< 			}
+< 		}
+< 		return TRUE;
+< 
+< 	case WM_COMMAND:
+< 		switch (LOWORD(wParam)) {
+< 		case IDC_COLORSCHEME_PRESET:
+< 			if (HIWORD(wParam)==CBN_SELCHANGE) {
+< 				int Sel=(int)SendDlgItemMessage(hDlg,IDC_COLORSCHEME_PRESET,CB_GETCURSEL,0,0);
+< 
+< 				if (Sel>=0) {
+< 					int Index=(int)SendDlgItemMessage(hDlg,IDC_COLORSCHEME_PRESET,CB_GETITEMDATA,Sel,0);
+< 					const CColorScheme *pColorScheme=m_PresetList.GetColorScheme(Index);
+< 
+< 					if (pColorScheme!=NULL) {
+< 						int i;
+< 
+< 						for (i=0;i<CColorScheme::NUM_COLORS;i++) {
+< 							if (pColorScheme->IsLoaded(i))
+< 								SendDlgItemMessage(hDlg,IDC_COLORSCHEME_LIST,
+< 									LB_SETITEMDATA,i,pColorScheme->GetColor(i));
+< 						}
+< 						SendDlgItemMessage(hDlg,IDC_COLORSCHEME_LIST,LB_SETSEL,FALSE,-1);
+< 						InvalidateDlgItem(hDlg,IDC_COLORSCHEME_LIST);
+< 
+< 						for (i=0;i<CColorScheme::NUM_GRADIENTS;i++)
+< 							pColorScheme->GetGradientStyle(i,&m_GradientList[i]);
+< 						for (i=0;i<CColorScheme::NUM_BORDERS;i++)
+< 							m_BorderList[i]=pColorScheme->GetBorderType(i);
+< 
+< 						m_ColorPalette.SetSel(-1);
+< 						::SendMessage(hDlg,WM_COMMAND,IDC_COLORSCHEME_PREVIEW,0);
+< 					}
+< 				}
+< 			}
+< 			return TRUE;
+< 
+< 		case IDC_COLORSCHEME_SAVE:
+< 			{
+< 				TCHAR szName[MAX_PATH],szFileName[MAX_PATH];
+< 				int Index;
+< 				CColorScheme *pColorScheme=NULL;
+< 				LPCTSTR pszFileName;
+< 
+< 				GetDlgItemText(hDlg,IDC_COLORSCHEME_PRESET,szName,lengthof(szName));
+< 				if (szName[0]=='\0') {
+< 					MessageBox(hDlg,TEXT("名前を入力してください。"),NULL,MB_OK | MB_ICONEXCLAMATION);
+< 					break;
+< 				}
+< 				pszFileName=szName;
+< 				Index=(int)DlgComboBox_FindStringExact(hDlg,IDC_COLORSCHEME_PRESET,-1,szName);
+< 				if (Index>=0) {
+< 					pColorScheme=m_PresetList.GetColorScheme(
+< 						(int)DlgComboBox_GetItemData(hDlg,IDC_COLORSCHEME_PRESET,Index));
+< 					if (pColorScheme==NULL)
+< 						break;
+< 					pszFileName=PathFindFileName(pColorScheme->GetFileName());
+< 				}
+< 				GetThemesDirectory(szFileName,lengthof(szFileName),true);
+< 				if (lstrlen(szFileName)+1+lstrlen(pszFileName)+lstrlen(m_pszExtension)>=MAX_PATH) {
+< 					MessageBox(hDlg,TEXT("名前が長すぎます。"),NULL,MB_OK | MB_ICONEXCLAMATION);
+< 					break;
+< 				}
+< 				PathAppend(szFileName,pszFileName);
+< 				if (pszFileName==szName)
+< 					lstrcat(szFileName,m_pszExtension);
+< 				if (pColorScheme==NULL) {
+< 					pColorScheme=new CColorScheme;
+< 					pColorScheme->SetName(szName);
+< 				}
+< 				GetCurrentSettings(pColorScheme);
+< 				if (!pColorScheme->Save(szFileName)) {
+< 					if (Index<0)
+< 						delete pColorScheme;
+< 					MessageBox(hDlg,TEXT("保存ができません。"),NULL,MB_OK | MB_ICONEXCLAMATION);
+< 					break;
+< 				}
+< 				if (Index<0) {
+< 					pColorScheme->SetFileName(szFileName);
+< 					pColorScheme->SetLoaded();
+< 					m_PresetList.Add(pColorScheme);
+< 					Index=(int)DlgComboBox_AddString(hDlg,IDC_COLORSCHEME_PRESET,szName);
+< 					DlgComboBox_SetItemData(hDlg,IDC_COLORSCHEME_PRESET,Index,m_PresetList.NumColorSchemes()-1);
+< 				}
+< 				MessageBox(hDlg,TEXT("配色を保存しました。"),TEXT("保存"),MB_OK | MB_ICONINFORMATION);
+< 			}
+< 			return TRUE;
+< 
+< 		case IDC_COLORSCHEME_DELETE:
+< 			{
+< 				TCHAR szName[MAX_PATH],szFileName[MAX_PATH];
+< 				int Index;
+< 				CColorScheme *pColorScheme;
+< 				LPCTSTR pszFileName;
+< 
+< 				GetDlgItemText(hDlg,IDC_COLORSCHEME_PRESET,szName,lengthof(szName));
+< 				if (szName[0]=='\0')
+< 					break;
+< 				Index=(int)SendDlgItemMessage(hDlg,IDC_COLORSCHEME_PRESET,CB_FINDSTRINGEXACT,-1,(LPARAM)szName);
+< 				if (Index<0
+< 						|| (pColorScheme=m_PresetList.GetColorScheme(
+< 							(int)SendDlgItemMessage(hDlg,IDC_COLORSCHEME_PRESET,CB_GETITEMDATA,Index,0)))==NULL)
+< 					break;
+< 				GetThemesDirectory(szFileName,lengthof(szFileName));
+< 				pszFileName=PathFindFileName(pColorScheme->GetFileName());
+< 				if (lstrlen(szFileName)+1+lstrlen(pszFileName)+lstrlen(m_pszExtension)>=MAX_PATH)
+< 					break;
+< 				PathAppend(szFileName,pszFileName);
+< 				if (pszFileName==szName)
+< 					lstrcat(szFileName,m_pszExtension);
+< 				if (MessageBox(hDlg,TEXT("選択された配色を削除しますか?"),TEXT("削除の確認"),
+< 							   MB_OKCANCEL | MB_ICONQUESTION)!=IDOK)
+< 					break;
+< 				if (!DeleteFile(szFileName)) {
+< 					MessageBox(hDlg,TEXT("ファイルを削除できません。"),NULL,MB_OK | MB_ICONEXCLAMATION);
+< 					break;
+< 				}
+< 				SendDlgItemMessage(hDlg,IDC_COLORSCHEME_PRESET,CB_DELETESTRING,Index,0);
+< 			}
+< 			return TRUE;
+< 
+< 		case IDC_COLORSCHEME_LIST:
+< 			switch (HIWORD(wParam)) {
+< 			case LBN_SELCHANGE:
+< 				{
+< 					int SelCount=(int)DlgListBox_GetSelCount(hDlg,IDC_COLORSCHEME_LIST);
+< 					int i;
+< 					COLORREF SelColor=CLR_INVALID,Color;
+< 
+< 					if (SelCount==0) {
+< 						m_ColorPalette.SetSel(-1);
+< 						break;
+< 					}
+< 					if (SelCount==1) {
+< 						for (i=0;i<CColorScheme::NUM_COLORS;i++) {
+< 							if (DlgListBox_GetSel(hDlg,IDC_COLORSCHEME_LIST,i)) {
+< 								SelColor=(COLORREF)DlgListBox_GetItemData(hDlg,IDC_COLORSCHEME_LIST,i);
+< 								break;
+< 							}
+< 						}
+< 					} else {
+< 						for (i=0;i<CColorScheme::NUM_COLORS;i++) {
+< 							if (DlgListBox_GetSel(hDlg,IDC_COLORSCHEME_LIST,i)) {
+< 								Color=(COLORREF)DlgListBox_GetItemData(hDlg,IDC_COLORSCHEME_LIST,i);
+< 								if (SelColor==CLR_INVALID)
+< 									SelColor=Color;
+< 								else if (Color!=SelColor)
+< 									break;
+< 							}
+< 						}
+< 						if (i<CColorScheme::NUM_COLORS) {
+< 							m_ColorPalette.SetSel(-1);
+< 							break;
+< 						}
+< 					}
+< 					if (SelColor!=CLR_INVALID)
+< 						m_ColorPalette.SetSel(
+< 									m_ColorPalette.FindColor(SelColor));
+< 				}
+< 				break;
+< 
+< 			case LBN_EX_RBUTTONDOWN:
+< 				{
+< 					HMENU hmenu=::LoadMenu(GetAppClass().GetResourceInstance(),MAKEINTRESOURCE(IDM_COLORSCHEME));
+< 					POINT pt;
+< 
+< 					::EnableMenuItem(hmenu,IDC_COLORSCHEME_SELECTSAMECOLOR,
+< 						MF_BYCOMMAND | (m_ColorPalette.GetSel()>=0?MFS_ENABLED:MFS_GRAYED));
+< 					if (DlgListBox_GetSelCount(hDlg,IDC_COLORSCHEME_LIST)==1) {
+< 						int Sel,Gradient,Border;
+< 
+< 						DlgListBox_GetSelItems(hDlg,IDC_COLORSCHEME_LIST,&Sel,1);
+< 						Gradient=CColorScheme::GetColorGradient(Sel);
+< 						if (Gradient>=0) {
+< 							::EnableMenuItem(::GetSubMenu(hmenu,0),2,MF_BYPOSITION | MFS_ENABLED);
+< 							::CheckMenuRadioItem(hmenu,
+< 												 IDC_COLORSCHEME_GRADIENT_NORMAL,IDC_COLORSCHEME_GRADIENT_INTERLACED,
+< 												 IDC_COLORSCHEME_GRADIENT_NORMAL+(int)m_GradientList[Gradient].Type,
+< 												 MF_BYCOMMAND);
+< 							::EnableMenuItem(::GetSubMenu(hmenu,0),3,MF_BYPOSITION | MFS_ENABLED);
+< 							::CheckMenuRadioItem(hmenu,
+< 												 IDC_COLORSCHEME_DIRECTION_HORZ,IDC_COLORSCHEME_DIRECTION_VERTMIRROR,
+< 												 IDC_COLORSCHEME_DIRECTION_HORZ+(int)m_GradientList[Gradient].Direction,
+< 												 MF_BYCOMMAND);
+< 							if (!CColorScheme::IsGradientDirectionEnabled(Gradient)) {
+< 								if (m_GradientList[Gradient].Direction==Theme::DIRECTION_HORZ
+< 										|| m_GradientList[Gradient].Direction==Theme::DIRECTION_HORZMIRROR) {
+< 									::EnableMenuItem(hmenu,IDC_COLORSCHEME_DIRECTION_VERT,MF_BYCOMMAND | MFS_GRAYED);
+< 									::EnableMenuItem(hmenu,IDC_COLORSCHEME_DIRECTION_VERTMIRROR,MF_BYCOMMAND | MFS_GRAYED);
+< 								} else {
+< 									::EnableMenuItem(hmenu,IDC_COLORSCHEME_DIRECTION_HORZ,MF_BYCOMMAND | MFS_GRAYED);
+< 									::EnableMenuItem(hmenu,IDC_COLORSCHEME_DIRECTION_HORZMIRROR,MF_BYCOMMAND | MFS_GRAYED);
+< 								}
+< 							}
+< 						}
+< 						Border=CColorScheme::GetColorBorder(Sel);
+< 						if (Border>=0) {
+< 							::EnableMenuItem(::GetSubMenu(hmenu,0),4,MF_BYPOSITION | MFS_ENABLED);
+< 							::EnableMenuItem(hmenu,IDC_COLORSCHEME_BORDER_NONE,
+< 											 MF_BYCOMMAND | (CColorScheme::IsBorderAlways(Border)?MFS_GRAYED:MFS_ENABLED));
+< 							::CheckMenuRadioItem(hmenu,
+< 												 IDC_COLORSCHEME_BORDER_NONE,IDC_COLORSCHEME_BORDER_RAISED,
+< 												 IDC_COLORSCHEME_BORDER_NONE+(int)m_BorderList[Border],
+< 												 MF_BYCOMMAND);
+< 						}
+< 					}
+< 					::GetCursorPos(&pt);
+< 					::TrackPopupMenu(::GetSubMenu(hmenu,0),TPM_RIGHTBUTTON,pt.x,pt.y,0,hDlg,NULL);
+< 					::DestroyMenu(hmenu);
+< 				}
+< 				break;
+< 			}
+< 			return TRUE;
+< 
+< 		case IDC_COLORSCHEME_PALETTE:
+< 			switch (HIWORD(wParam)) {
+< 			case CColorPalette::NOTIFY_SELCHANGE:
+< 				{
+< 					int Sel=m_ColorPalette.GetSel();
+< 					COLORREF Color=m_ColorPalette.GetColor(Sel);
+< 					int i;
+< 
+< 					for (i=0;i<CColorScheme::NUM_COLORS;i++) {
+< 						if (DlgListBox_GetSel(hDlg,IDC_COLORSCHEME_LIST,i))
+< 							DlgListBox_SetItemData(hDlg,IDC_COLORSCHEME_LIST,i,Color);
+< 					}
+< 					InvalidateDlgItem(hDlg,IDC_COLORSCHEME_LIST);
+< 				}
+< 				break;
+< 
+< 			case CColorPalette::NOTIFY_DOUBLECLICK:
+< 				{
+< 					int Sel=m_ColorPalette.GetSel();
+< 					COLORREF Color=m_ColorPalette.GetColor(Sel);
+< 
+< 					if (ChooseColorDialog(hDlg,&Color)) {
+< 						m_ColorPalette.SetColor(Sel,Color);
+< 						int i;
+< 
+< 						for (i=0;i<CColorScheme::NUM_COLORS;i++) {
+< 							if (DlgListBox_GetSel(hDlg,IDC_COLORSCHEME_LIST,i))
+< 								DlgListBox_SetItemData(hDlg,IDC_COLORSCHEME_LIST,i,Color);
+< 						}
+< 						InvalidateDlgItem(hDlg,IDC_COLORSCHEME_LIST);
+< 					}
+< 				}
+< 				break;
+< 			}
+< 			return TRUE;
+< 
+< 		case IDC_COLORSCHEME_DEFAULT:
+< 			{
+< 				int i;
+< 
+< 				for (i=0;i<CColorScheme::NUM_COLORS;i++)
+< 					DlgListBox_SetItemData(hDlg,IDC_COLORSCHEME_LIST,i,
+< 										   CColorScheme::GetDefaultColor(i));
+< 				for (i=0;i<CColorScheme::NUM_GRADIENTS;i++)
+< 					CColorScheme::GetDefaultGradientStyle(i,&m_GradientList[i]);
+< 				for (i=0;i<CColorScheme::NUM_BORDERS;i++)
+< 					m_BorderList[i]=CColorScheme::GetDefaultBorderType(i);
+< 				InvalidateDlgItem(hDlg,IDC_COLORSCHEME_LIST);
+< 				::SendMessage(hDlg,WM_COMMAND,IDC_COLORSCHEME_PREVIEW,0);
+< 			}
+< 			return TRUE;
+< 
+< 		case IDC_COLORSCHEME_PREVIEW:
+< 			if (m_pPreviewColorScheme==NULL)
+< 				m_pPreviewColorScheme=new CColorScheme;
+< 			GetCurrentSettings(m_pPreviewColorScheme);
+< 			Apply(m_pPreviewColorScheme);
+< 			return TRUE;
+< 
+< 		case IDC_COLORSCHEME_SELECTSAMECOLOR:
+< 			{
+< 				int Sel=m_ColorPalette.GetSel();
+< 
+< 				if (Sel>=0) {
+< 					COLORREF Color=m_ColorPalette.GetColor(Sel);
+< 					int TopIndex=(int)DlgListBox_GetTopIndex(hDlg,IDC_COLORSCHEME_LIST);
+< 
+< 					::SendDlgItemMessage(hDlg,IDC_COLORSCHEME_LIST,WM_SETREDRAW,FALSE,0);
+< 					for (int i=0;i<CColorScheme::NUM_COLORS;i++) {
+< 						DlgListBox_SetSel(hDlg,IDC_COLORSCHEME_LIST,i,
+< 							(COLORREF)DlgListBox_GetItemData(hDlg,IDC_COLORSCHEME_LIST,i)==Color);
+< 					}
+< 					DlgListBox_SetTopIndex(hDlg,IDC_COLORSCHEME_LIST,TopIndex);
+< 					::SendDlgItemMessage(hDlg,IDC_COLORSCHEME_LIST,WM_SETREDRAW,TRUE,0);
+< 					::InvalidateDlgItem(hDlg,IDC_COLORSCHEME_LIST);
+< 				}
+< 			}
+< 			return TRUE;
+< 
+< 		case IDC_COLORSCHEME_GRADIENT_NORMAL:
+< 		case IDC_COLORSCHEME_GRADIENT_GLOSSY:
+< 		case IDC_COLORSCHEME_GRADIENT_INTERLACED:
+< 			if (DlgListBox_GetSelCount(hDlg,IDC_COLORSCHEME_LIST)==1) {
+< 				int Sel,Gradient;
+< 
+< 				DlgListBox_GetSelItems(hDlg,IDC_COLORSCHEME_LIST,&Sel,1);
+< 				Gradient=CColorScheme::GetColorGradient(Sel);
+< 				if (Gradient>=0) {
+< 					m_GradientList[Gradient].Type=
+< 						(Theme::GradientType)(LOWORD(wParam)-IDC_COLORSCHEME_GRADIENT_NORMAL);
+< 				}
+< 			}
+< 			return TRUE;
+< 
+< 		case IDC_COLORSCHEME_DIRECTION_HORZ:
+< 		case IDC_COLORSCHEME_DIRECTION_VERT:
+< 		case IDC_COLORSCHEME_DIRECTION_HORZMIRROR:
+< 		case IDC_COLORSCHEME_DIRECTION_VERTMIRROR:
+< 			if (DlgListBox_GetSelCount(hDlg,IDC_COLORSCHEME_LIST)==1) {
+< 				int Sel,Gradient;
+< 
+< 				DlgListBox_GetSelItems(hDlg,IDC_COLORSCHEME_LIST,&Sel,1);
+< 				Gradient=CColorScheme::GetColorGradient(Sel);
+< 				if (Gradient>=0) {
+< 					m_GradientList[Gradient].Direction=
+< 						(Theme::GradientDirection)(LOWORD(wParam)-IDC_COLORSCHEME_DIRECTION_HORZ);
+< 				}
+< 			}
+< 			return TRUE;
+< 
+< 		case IDC_COLORSCHEME_BORDER_NONE:
+< 		case IDC_COLORSCHEME_BORDER_SOLID:
+< 		case IDC_COLORSCHEME_BORDER_SUNKEN:
+< 		case IDC_COLORSCHEME_BORDER_RAISED:
+< 			if (DlgListBox_GetSelCount(hDlg,IDC_COLORSCHEME_LIST)==1) {
+< 				int Sel,Border;
+< 
+< 				DlgListBox_GetSelItems(hDlg,IDC_COLORSCHEME_LIST,&Sel,1);
+< 				Border=CColorScheme::GetColorBorder(Sel);
+< 				if (Border>=0) {
+< 					m_BorderList[Border]=
+< 						(Theme::BorderType)(LOWORD(wParam)-IDC_COLORSCHEME_BORDER_NONE);
+< 					RECT rc;
+< 					::SendDlgItemMessage(hDlg,IDC_COLORSCHEME_LIST,LB_GETITEMRECT,
+< 										 Sel,reinterpret_cast<LPARAM>(&rc));
+< 					InvalidateDlgItem(hDlg,IDC_COLORSCHEME_LIST,&rc);
+< 				}
+< 			}
+< 			return TRUE;
+< 		}
+< 		return TRUE;
+< 
+< 	case WM_NOTIFY:
+< 		switch (((LPNMHDR)lParam)->code) {
+< 		case PSN_APPLY:
+< 			GetCurrentSettings(m_pColorScheme);
+< 			Apply(m_pColorScheme);
+< 			break;
+< 
+< 		case PSN_RESET:
+< 			if (m_pPreviewColorScheme!=NULL)
+< 				Apply(m_pColorScheme);
+< 			break;
+< 		}
+< 		break;
+< 
+< 	case WM_DESTROY:
+< 		SAFE_DELETE(m_pPreviewColorScheme);
+< 		m_PresetList.Clear();
+< 		break;
+< 	}
+< 
+< 	return FALSE;
+diff TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
+5,6d4
+< #include "Options.h"
+< #include "ColorPalette.h"
+28d25
+< 		COLOR_SPLITTER,
+30,176c27
+< 		COLOR_PANELBACK,
+< 		COLOR_PANELTEXT,
+< 		COLOR_PANELTABBACK1,
+< 		COLOR_PANELTABBACK2,
+< 		COLOR_PANELTABTEXT,
+< 		COLOR_PANELTABBORDER,
+< 		COLOR_PANELCURTABBACK1,
+< 		COLOR_PANELCURTABBACK2,
+< 		COLOR_PANELCURTABTEXT,
+< 		COLOR_PANELCURTABBORDER,
+< 		COLOR_PANELTABMARGIN1,
+< 		COLOR_PANELTABMARGIN2,
+< 		COLOR_PANELTABMARGINBORDER,
+< 		COLOR_PANELTABLINE,
+< 		COLOR_PANELTITLEBACK1,
+< 		COLOR_PANELTITLEBACK2,
+< 		COLOR_PANELTITLETEXT,
+< 		COLOR_PANELTITLEBORDER,
+< 		COLOR_PROGRAMINFOBACK,
+< 		COLOR_PROGRAMINFOTEXT,
+< 		COLOR_PROGRAMLISTPANEL_EVENTBACK1,
+< 		COLOR_PROGRAMLISTPANEL_EVENTBACK2,
+< 		COLOR_PROGRAMLISTPANEL_EVENTTEXT,
+< 		COLOR_PROGRAMLISTPANEL_EVENTBORDER,
+< 		COLOR_PROGRAMLISTPANEL_CUREVENTBACK1,
+< 		COLOR_PROGRAMLISTPANEL_CUREVENTBACK2,
+< 		COLOR_PROGRAMLISTPANEL_CUREVENTTEXT,
+< 		COLOR_PROGRAMLISTPANEL_CUREVENTBORDER,
+< 		COLOR_PROGRAMLISTPANEL_TITLEBACK1,
+< 		COLOR_PROGRAMLISTPANEL_TITLEBACK2,
+< 		COLOR_PROGRAMLISTPANEL_TITLETEXT,
+< 		COLOR_PROGRAMLISTPANEL_TITLEBORDER,
+< 		COLOR_PROGRAMLISTPANEL_CURTITLEBACK1,
+< 		COLOR_PROGRAMLISTPANEL_CURTITLEBACK2,
+< 		COLOR_PROGRAMLISTPANEL_CURTITLETEXT,
+< 		COLOR_PROGRAMLISTPANEL_CURTITLEBORDER,
+< 		COLOR_CHANNELPANEL_CHANNELNAMEBACK1,
+< 		COLOR_CHANNELPANEL_CHANNELNAMEBACK2,
+< 		COLOR_CHANNELPANEL_CHANNELNAMETEXT,
+< 		COLOR_CHANNELPANEL_CHANNELNAMEBORDER,
+< 		COLOR_CHANNELPANEL_CURCHANNELNAMEBACK1,
+< 		COLOR_CHANNELPANEL_CURCHANNELNAMEBACK2,
+< 		COLOR_CHANNELPANEL_CURCHANNELNAMETEXT,
+< 		COLOR_CHANNELPANEL_CURCHANNELNAMEBORDER,
+< 		COLOR_CHANNELPANEL_EVENTNAME1BACK1,
+< 		COLOR_CHANNELPANEL_EVENTNAME1BACK2,
+< 		COLOR_CHANNELPANEL_EVENTNAME1TEXT,
+< 		COLOR_CHANNELPANEL_EVENTNAME1BORDER,
+< 		COLOR_CHANNELPANEL_EVENTNAME2BACK1,
+< 		COLOR_CHANNELPANEL_EVENTNAME2BACK2,
+< 		COLOR_CHANNELPANEL_EVENTNAME2TEXT,
+< 		COLOR_CHANNELPANEL_EVENTNAME2BORDER,
+< 		COLOR_CHANNELPANEL_CUREVENTNAME1BACK1,
+< 		COLOR_CHANNELPANEL_CUREVENTNAME1BACK2,
+< 		COLOR_CHANNELPANEL_CUREVENTNAME1TEXT,
+< 		COLOR_CHANNELPANEL_CUREVENTNAME1BORDER,
+< 		COLOR_CHANNELPANEL_CUREVENTNAME2BACK1,
+< 		COLOR_CHANNELPANEL_CUREVENTNAME2BACK2,
+< 		COLOR_CHANNELPANEL_CUREVENTNAME2TEXT,
+< 		COLOR_CHANNELPANEL_CUREVENTNAME2BORDER,
+< 		COLOR_CONTROLPANELBACK1,
+< 		COLOR_CONTROLPANELBACK2,
+< 		COLOR_CONTROLPANELTEXT,
+< 		COLOR_CONTROLPANELITEMBORDER,
+< 		COLOR_CONTROLPANELHIGHLIGHTBACK1,
+< 		COLOR_CONTROLPANELHIGHLIGHTBACK2,
+< 		COLOR_CONTROLPANELHIGHLIGHTTEXT,
+< 		COLOR_CONTROLPANELHIGHLIGHTBORDER,
+< 		COLOR_CONTROLPANELMARGIN,
+< 		COLOR_CAPTIONPANELBACK,
+< 		COLOR_CAPTIONPANELTEXT,
+< 		COLOR_TITLEBARBACK1,
+< 		COLOR_TITLEBARBACK2,
+< 		COLOR_TITLEBARTEXT,
+< 		COLOR_TITLEBARTEXTBORDER,
+< 		COLOR_TITLEBARICONBACK1,
+< 		COLOR_TITLEBARICONBACK2,
+< 		COLOR_TITLEBARICON,
+< 		COLOR_TITLEBARICONBORDER,
+< 		COLOR_TITLEBARHIGHLIGHTBACK1,
+< 		COLOR_TITLEBARHIGHLIGHTBACK2,
+< 		COLOR_TITLEBARHIGHLIGHTICON,
+< 		COLOR_TITLEBARHIGHLIGHTBORDER,
+< 		COLOR_TITLEBARBORDER,
+< 		COLOR_SIDEBARBACK1,
+< 		COLOR_SIDEBARBACK2,
+< 		COLOR_SIDEBARICON,
+< 		COLOR_SIDEBARITEMBORDER,
+< 		COLOR_SIDEBARHIGHLIGHTBACK1,
+< 		COLOR_SIDEBARHIGHLIGHTBACK2,
+< 		COLOR_SIDEBARHIGHLIGHTICON,
+< 		COLOR_SIDEBARHIGHLIGHTBORDER,
+< 		COLOR_SIDEBARCHECKBACK1,
+< 		COLOR_SIDEBARCHECKBACK2,
+< 		COLOR_SIDEBARCHECKICON,
+< 		COLOR_SIDEBARCHECKBORDER,
+< 		COLOR_SIDEBARBORDER,
+< 		COLOR_NOTIFICATIONBARBACK1,
+< 		COLOR_NOTIFICATIONBARBACK2,
+< 		COLOR_NOTIFICATIONBARTEXT,
+< 		COLOR_NOTIFICATIONBARWARNINGTEXT,
+< 		COLOR_NOTIFICATIONBARERRORTEXT,
+< 		COLOR_PROGRAMGUIDEBACK,
+< 		COLOR_PROGRAMGUIDETEXT,
+< 		COLOR_PROGRAMGUIDECHANNELBACK1,
+< 		COLOR_PROGRAMGUIDECHANNELBACK2,
+< 		COLOR_PROGRAMGUIDECHANNELTEXT,
+< 		COLOR_PROGRAMGUIDECURCHANNELBACK1,
+< 		COLOR_PROGRAMGUIDECURCHANNELBACK2,
+< 		COLOR_PROGRAMGUIDECURCHANNELTEXT,
+< 		COLOR_PROGRAMGUIDETIMEBACK1,
+< 		COLOR_PROGRAMGUIDETIMEBACK2,
+< 		COLOR_PROGRAMGUIDETIMEBACK_0TO2_1,
+< 		COLOR_PROGRAMGUIDETIMEBACK_0TO2_2,
+< 		COLOR_PROGRAMGUIDETIMEBACK_3TO5_1,
+< 		COLOR_PROGRAMGUIDETIMEBACK_3TO5_2,
+< 		COLOR_PROGRAMGUIDETIMEBACK_6TO8_1,
+< 		COLOR_PROGRAMGUIDETIMEBACK_6TO8_2,
+< 		COLOR_PROGRAMGUIDETIMEBACK_9TO11_1,
+< 		COLOR_PROGRAMGUIDETIMEBACK_9TO11_2,
+< 		COLOR_PROGRAMGUIDETIMEBACK_12TO14_1,
+< 		COLOR_PROGRAMGUIDETIMEBACK_12TO14_2,
+< 		COLOR_PROGRAMGUIDETIMEBACK_15TO17_1,
+< 		COLOR_PROGRAMGUIDETIMEBACK_15TO17_2,
+< 		COLOR_PROGRAMGUIDETIMEBACK_18TO20_1,
+< 		COLOR_PROGRAMGUIDETIMEBACK_18TO20_2,
+< 		COLOR_PROGRAMGUIDETIMEBACK_21TO23_1,
+< 		COLOR_PROGRAMGUIDETIMEBACK_21TO23_2,
+< 		COLOR_PROGRAMGUIDETIMETEXT,
+< 		COLOR_PROGRAMGUIDETIMELINE,
+< 		COLOR_PROGRAMGUIDECURTIMELINE,
+< 		COLOR_PROGRAMGUIDE_CONTENT_NEWS,
+< 		COLOR_PROGRAMGUIDE_CONTENT_SPORTS,
+< 		COLOR_PROGRAMGUIDE_CONTENT_INFORMATION,
+< 		COLOR_PROGRAMGUIDE_CONTENT_DRAMA,
+< 		COLOR_PROGRAMGUIDE_CONTENT_MUSIC,
+< 		COLOR_PROGRAMGUIDE_CONTENT_VARIETY,
+< 		COLOR_PROGRAMGUIDE_CONTENT_MOVIE,
+< 		COLOR_PROGRAMGUIDE_CONTENT_ANIME,
+< 		COLOR_PROGRAMGUIDE_CONTENT_DOCUMENTARY,
+< 		COLOR_PROGRAMGUIDE_CONTENT_THEATER,
+< 		COLOR_PROGRAMGUIDE_CONTENT_EDUCATION,
+< 		COLOR_PROGRAMGUIDE_CONTENT_WELFARE,
+< 		COLOR_PROGRAMGUIDE_CONTENT_OTHER,
+< 		COLOR_PROGRAMGUIDE_CONTENT_FIRST=COLOR_PROGRAMGUIDE_CONTENT_NEWS,
+< 		COLOR_PROGRAMGUIDE_CONTENT_LAST=COLOR_PROGRAMGUIDE_CONTENT_OTHER,
+< 		COLOR_LAST=COLOR_PROGRAMGUIDE_CONTENT_LAST,
+---
+> 		COLOR_LAST=COLOR_SCREENBORDER,
+183,216d33
+< 		GRADIENT_PANELTABBACK,
+< 		GRADIENT_PANELCURTABBACK,
+< 		GRADIENT_PANELTABMARGIN,
+< 		GRADIENT_PANELTITLEBACK,
+< 		GRADIENT_PROGRAMLISTPANEL_EVENTBACK,
+< 		GRADIENT_PROGRAMLISTPANEL_CUREVENTBACK,
+< 		GRADIENT_PROGRAMLISTPANEL_TITLEBACK,
+< 		GRADIENT_PROGRAMLISTPANEL_CURTITLEBACK,
+< 		GRADIENT_CHANNELPANEL_CHANNELNAMEBACK,
+< 		GRADIENT_CHANNELPANEL_CURCHANNELNAMEBACK,
+< 		GRADIENT_CHANNELPANEL_EVENTNAMEBACK1,
+< 		GRADIENT_CHANNELPANEL_EVENTNAMEBACK2,
+< 		GRADIENT_CHANNELPANEL_CUREVENTNAMEBACK1,
+< 		GRADIENT_CHANNELPANEL_CUREVENTNAMEBACK2,
+< 		GRADIENT_CONTROLPANELBACK,
+< 		GRADIENT_CONTROLPANELHIGHLIGHTBACK,
+< 		GRADIENT_TITLEBARBACK,
+< 		GRADIENT_TITLEBARICON,
+< 		GRADIENT_TITLEBARHIGHLIGHTBACK,
+< 		GRADIENT_SIDEBARBACK,
+< 		GRADIENT_SIDEBARHIGHLIGHTBACK,
+< 		GRADIENT_SIDEBARCHECKBACK,
+< 		GRADIENT_NOTIFICATIONBARBACK,
+< 		GRADIENT_PROGRAMGUIDECHANNELBACK,
+< 		GRADIENT_PROGRAMGUIDECURCHANNELBACK,
+< 		GRADIENT_PROGRAMGUIDETIMEBACK,
+< 		GRADIENT_PROGRAMGUIDETIME0TO2BACK,
+< 		GRADIENT_PROGRAMGUIDETIME3TO5BACK,
+< 		GRADIENT_PROGRAMGUIDETIME6TO8BACK,
+< 		GRADIENT_PROGRAMGUIDETIME9TO11BACK,
+< 		GRADIENT_PROGRAMGUIDETIME12TO14BACK,
+< 		GRADIENT_PROGRAMGUIDETIME15TO17BACK,
+< 		GRADIENT_PROGRAMGUIDETIME18TO20BACK,
+< 		GRADIENT_PROGRAMGUIDETIME21TO23BACK,
+225,249d41
+< 		BORDER_TITLEBAR,
+< 		BORDER_TITLEBARCAPTION,
+< 		BORDER_TITLEBARICON,
+< 		BORDER_TITLEBARHIGHLIGHT,
+< 		BORDER_SIDEBAR,
+< 		BORDER_SIDEBARITEM,
+< 		BORDER_SIDEBARHIGHLIGHT,
+< 		BORDER_SIDEBARCHECK,
+< 		BORDER_PROGRAMGUIDESTATUS,
+< 		BORDER_PANEL_TAB,
+< 		BORDER_PANEL_CURTAB,
+< 		BORDER_PANEL_TABMARGIN,
+< 		BORDER_PANEL_TITLE,
+< 		BORDER_PROGRAMLISTPANEL_EVENT,
+< 		BORDER_PROGRAMLISTPANEL_CUREVENT,
+< 		BORDER_PROGRAMLISTPANEL_TITLE,
+< 		BORDER_PROGRAMLISTPANEL_CURTITLE,
+< 		BORDER_CHANNELPANEL_CHANNELNAME,
+< 		BORDER_CHANNELPANEL_CURCHANNELNAME,
+< 		BORDER_CHANNELPANEL_EVENTNAME1,
+< 		BORDER_CHANNELPANEL_EVENTNAME2,
+< 		BORDER_CHANNELPANEL_CUREVENTNAME1,
+< 		BORDER_CHANNELPANEL_CUREVENTNAME2,
+< 		BORDER_CONTROLPANELITEM,
+< 		BORDER_CONTROLPANELHIGHLIGHTITEM,
+256,277d47
+< 		STYLE_TITLEBARCAPTION,
+< 		STYLE_TITLEBARICON,
+< 		STYLE_TITLEBARHIGHLIGHTITEM,
+< 		STYLE_SIDEBARITEM,
+< 		STYLE_SIDEBARHIGHLIGHTITEM,
+< 		STYLE_SIDEBARCHECKITEM,
+< 		STYLE_PANEL_TAB,
+< 		STYLE_PANEL_CURTAB,
+< 		STYLE_PANEL_TABMARGIN,
+< 		STYLE_PANEL_TITLE,
+< 		STYLE_PROGRAMLISTPANEL_EVENT,
+< 		STYLE_PROGRAMLISTPANEL_CUREVENT,
+< 		STYLE_PROGRAMLISTPANEL_TITLE,
+< 		STYLE_PROGRAMLISTPANEL_CURTITLE,
+< 		STYLE_CHANNELPANEL_CHANNELNAME,
+< 		STYLE_CHANNELPANEL_CURCHANNELNAME,
+< 		STYLE_CHANNELPANEL_EVENTNAME1,
+< 		STYLE_CHANNELPANEL_EVENTNAME2,
+< 		STYLE_CHANNELPANEL_CURCHANNELEVENTNAME1,
+< 		STYLE_CHANNELPANEL_CURCHANNELEVENTNAME2,
+< 		STYLE_CONTROLPANELITEM,
+< 		STYLE_CONTROLPANELHIGHLIGHTITEM,
+305d74
+< 	bool Save(LPCTSTR pszFileName) const;
+358,412d126
+< 
+< class CColorSchemeList
+< {
+< 	int m_NumColorSchemes;
+< 	CColorScheme **m_ppList;
+< 
+< public:
+< 	CColorSchemeList();
+< 	~CColorSchemeList();
+< 	int NumColorSchemes() const { return m_NumColorSchemes; }
+< 	bool Add(CColorScheme *pColorScheme);
+< 	bool Load(LPCTSTR pszDirectory);
+< 	void Clear();
+< 	CColorScheme *GetColorScheme(int Index);
+< 	bool SetColorScheme(int Index,const CColorScheme *pColorScheme);
+< };
+< 
+< class CColorSchemeOptions : public COptions
+< {
+< public:
+< 	typedef bool (*ApplyFunc)(const CColorScheme *pColorScheme);
+< 
+< 	CColorSchemeOptions();
+< 	~CColorSchemeOptions();
+< // COptions
+< 	bool Load(LPCTSTR pszFileName);
+< 	bool Save(LPCTSTR pszFileName) const;
+< // CBasicDialog
+< 	bool Create(HWND hwndOwner);
+< // CColorSchemeOptions
+< 	bool SetApplyCallback(ApplyFunc pCallback);
+< 	bool ApplyColorScheme() const;
+< 	const CColorScheme *GetColorScheme() const { return m_pColorScheme; }
+< 	COLORREF GetColor(int Type) const;
+< 	COLORREF GetColor(LPCTSTR pszText) const;
+< 	static bool GetThemesDirectory(LPTSTR pszDirectory,int MaxLength,bool fCreate=false);
+< 
+< private:
+< 	CColorScheme *m_pColorScheme;
+< 	CColorSchemeList m_PresetList;
+< 	CColorScheme::GradientStyle m_GradientList[CColorScheme::NUM_GRADIENTS];
+< 	Theme::BorderType m_BorderList[CColorScheme::NUM_BORDERS];
+< 	CColorScheme *m_pPreviewColorScheme;
+< 	bool m_fPreview;
+< 	ApplyFunc m_pApplyFunc;
+< 	CColorPalette m_ColorPalette;
+< 
+< // CBasicDialog
+< 	INT_PTR DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam);
+< 
+< 	bool Apply(const CColorScheme *pColorScheme) const;
+< 	void GetCurrentSettings(CColorScheme *pColorScheme);
+< 	static const LPCTSTR m_pszExtension;
+< };
+< 
+diff TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
+1c1,2
+< #include "stdafx.h"
+---
+> #include <Windows.h>
+> #include <CommCtrl.h>
+258,437d258
+< // 光沢を描画する
+< bool GlossOverlay(HDC hdc,const RECT *pRect,
+< 				  int Highlight1,int Highlight2,int Shadow1,int Shadow2)
+< {
+< 	const int Width=pRect->right-pRect->left;
+< 	const int Height=pRect->bottom-pRect->top;
+< 	if (Width<=0 || Height<=0)
+< 		return false;
+< 
+< 	BITMAPINFO bmi;
+< 	::ZeroMemory(&bmi,sizeof(bmi));
+< 	bmi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+< 	bmi.bmiHeader.biWidth=Width;
+< 	bmi.bmiHeader.biHeight=-Height;
+< 	bmi.bmiHeader.biPlanes=1;
+< 	bmi.bmiHeader.biBitCount=32;
+< 	void *pBits;
+< 	HBITMAP hbm=::CreateDIBSection(NULL,&bmi,DIB_RGB_COLORS,&pBits,NULL,0);
+< 	if (hbm==NULL)
+< 		return false;
+< 
+< 	const SIZE_T RowBytes=Width*4;
+< 	const int Center=Height/2;
+< 	int x,y;
+< 	BYTE *p=static_cast<BYTE*>(pBits);
+< 	for (y=0;y<Center;y++) {
+< 		::FillMemory(p,RowBytes,
+< 					 (BYTE)(((y*Highlight2)+(Center-1-y)*Highlight1)/(Center-1)));
+< 		p+=RowBytes;
+< 	}
+< 	for (;y<Height;y++) {
+< 		BYTE Alpha=(BYTE)(((y-Center)*Shadow2+(Height-1-y)*Shadow1)/(Height-Center-1));
+< 		::ZeroMemory(p,RowBytes);
+< 		for (x=0;x<Width;x++) {
+< 			p[x*4+3]=Alpha;
+< 		}
+< 		p+=RowBytes;
+< 	}
+< 
+< 	HDC hdcMemory=::CreateCompatibleDC(hdc);
+< 	if (hdcMemory==NULL) {
+< 		::DeleteObject(hbm);
+< 		return false;
+< 	}
+< 	HBITMAP hbmOld=SelectBitmap(hdcMemory,hbm);
+< 	BLENDFUNCTION bf={AC_SRC_OVER,0,255,AC_SRC_ALPHA};
+< 	::AlphaBlend(hdc,pRect->left,pRect->top,Width,Height,
+< 				 hdcMemory,0,0,Width,Height,bf);
+< 	::SelectObject(hdcMemory,hbmOld);
+< 	::DeleteDC(hdcMemory);
+< 	::DeleteObject(hbm);
+< 	return true;
+< }
+< 
+< 
+< // 単色を合成する
+< bool ColorOverlay(HDC hdc,const RECT *pRect,COLORREF Color,BYTE Opacity)
+< {
+< 	const int Width=pRect->right-pRect->left;
+< 	const int Height=pRect->bottom-pRect->top;
+< 	if (Width<=0 || Height<=0)
+< 		return false;
+< 
+< 	BITMAPINFO bmi;
+< 	::ZeroMemory(&bmi,sizeof(bmi));
+< 	bmi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+< 	bmi.bmiHeader.biWidth=Width;
+< 	bmi.bmiHeader.biHeight=-Height;
+< 	bmi.bmiHeader.biPlanes=1;
+< 	bmi.bmiHeader.biBitCount=32;
+< 	void *pBits;
+< 	HBITMAP hbm=::CreateDIBSection(NULL,&bmi,DIB_RGB_COLORS,&pBits,NULL,0);
+< 	if (hbm==NULL)
+< 		return false;
+< 
+< 	const DWORD Pixel=0xFF000000|((DWORD)GetRValue(Color)<<16)|((DWORD)GetGValue(Color)<<8)|(DWORD)GetBValue(Color);
+< 	DWORD *p=static_cast<DWORD*>(pBits);
+< 	DWORD *pEnd=p+Width*Height;
+< 	do {
+< 		*p++=Pixel;
+< 	} while (p<pEnd);
+< 
+< 	HDC hdcMemory=::CreateCompatibleDC(hdc);
+< 	if (hdcMemory==NULL) {
+< 		::DeleteObject(hbm);
+< 		return false;
+< 	}
+< 	HBITMAP hbmOld=SelectBitmap(hdcMemory,hbm);
+< 	BLENDFUNCTION bf={AC_SRC_OVER,0,Opacity,0};
+< 	::AlphaBlend(hdc,pRect->left,pRect->top,Width,Height,
+< 				 hdcMemory,0,0,Width,Height,bf);
+< 	::SelectObject(hdcMemory,hbmOld);
+< 	::DeleteDC(hdcMemory);
+< 	::DeleteObject(hbm);
+< 	return true;
+< }
+< 
+< 
+< // 指定された矩形の周囲を塗りつぶす
+< bool FillBorder(HDC hdc,const RECT *pBorderRect,const RECT *pEmptyRect,const RECT *pPaintRect,HBRUSH hbr)
+< {
+< 	RECT rc;
+< 
+< 	if (pPaintRect->left<pBorderRect->right && pPaintRect->right>pBorderRect->left) {
+< 		rc.left=max(pPaintRect->left,pBorderRect->left);
+< 		rc.right=min(pPaintRect->right,pBorderRect->right);
+< 		rc.top=max(pPaintRect->top,pBorderRect->top);
+< 		rc.bottom=min(pPaintRect->bottom,pEmptyRect->top);
+< 		if (rc.top<rc.bottom)
+< 			::FillRect(hdc,&rc,hbr);
+< 		rc.top=max(pEmptyRect->bottom,pPaintRect->top);
+< 		rc.bottom=min(pPaintRect->bottom,pBorderRect->bottom);
+< 		if (rc.top<rc.bottom)
+< 			::FillRect(hdc,&rc,hbr);
+< 	}
+< 	if (pPaintRect->top<pEmptyRect->bottom && pPaintRect->bottom>pEmptyRect->top) {
+< 		rc.top=max(pEmptyRect->top,pPaintRect->top);
+< 		rc.bottom=min(pEmptyRect->bottom,pPaintRect->bottom);
+< 		rc.left=max(pPaintRect->left,pBorderRect->left);
+< 		rc.right=min(pEmptyRect->left,pPaintRect->right);
+< 		if (rc.left<rc.right)
+< 			::FillRect(hdc,&rc,hbr);
+< 		rc.left=max(pPaintRect->left,pEmptyRect->right);
+< 		rc.right=min(pPaintRect->right,pBorderRect->right);
+< 		if (rc.left<rc.right)
+< 			::FillRect(hdc,&rc,hbr);
+< 	}
+< 	return true;
+< }
+< 
+< 
+< // ビットマップを描画する
+< bool DrawBitmap(HDC hdc,int DstX,int DstY,int DstWidth,int DstHeight,
+< 				HBITMAP hbm,const RECT *pSrcRect,BYTE Opacity)
+< {
+< 	if (hdc==NULL || hbm==NULL)
+< 		return false;
+< 
+< 	int SrcX,SrcY,SrcWidth,SrcHeight;
+< 	if (pSrcRect!=NULL) {
+< 		SrcX=pSrcRect->left;
+< 		SrcY=pSrcRect->top;
+< 		SrcWidth=pSrcRect->right-pSrcRect->left;
+< 		SrcHeight=pSrcRect->bottom-pSrcRect->top;
+< 	} else {
+< 		BITMAP bm;
+< 		if (::GetObject(hbm,sizeof(BITMAP),&bm)!=sizeof(BITMAP))
+< 			return false;
+< 		SrcX=SrcY=0;
+< 		SrcWidth=bm.bmWidth;
+< 		SrcHeight=bm.bmHeight;
+< 	}
+< 
+< 	HDC hdcMemory=::CreateCompatibleDC(hdc);
+< 	if (hdcMemory==NULL)
+< 		return false;
+< 	HBITMAP hbmOld=static_cast<HBITMAP>(::SelectObject(hdcMemory,hbm));
+< 
+< 	if (Opacity==255) {
+< 		if (SrcWidth==DstWidth && SrcHeight==DstHeight) {
+< 			::BitBlt(hdc,DstX,DstY,DstWidth,DstHeight,
+< 					 hdcMemory,SrcX,SrcY,SRCCOPY);
+< 		} else {
+< 			int OldStretchMode=::SetStretchBltMode(hdc,STRETCH_HALFTONE);
+< 			::StretchBlt(hdc,DstX,DstY,DstWidth,DstHeight,
+< 						 hdcMemory,SrcX,SrcY,SrcWidth,SrcHeight,SRCCOPY);
+< 			::SetStretchBltMode(hdc,OldStretchMode);
+< 		}
+< 	} else {
+< 		BLENDFUNCTION bf={AC_SRC_OVER,0,Opacity,0};
+< 		::AlphaBlend(hdc,DstX,DstY,DstWidth,DstHeight,
+< 					 hdcMemory,SrcX,SrcY,SrcWidth,SrcHeight,bf);
+< 	}
+< 
+< 	::SelectObject(hdcMemory,hbmOld);
+< 	::DeleteDC(hdcMemory);
+< 	return true;
+< }
+< 
+< 
+502,643d322
+< HBITMAP ResizeBitmap(HBITMAP hbmSrc,int Width,int Height,int BitCount,int StretchMode)
+< {
+< 	if (hbmSrc==NULL || Width<1 || Height==0)
+< 		return NULL;
+< 
+< 	HBITMAP hbm=CreateDIB(Width,Height,BitCount);
+< 	if (hbm==NULL)
+< 		return NULL;
+< 
+< 	bool fOK=false;
+< 	HDC hdcSrc=::CreateCompatibleDC(NULL);
+< 	HDC hdcDst=::CreateCompatibleDC(NULL);
+< 	if (hdcSrc!=NULL && hdcDst!=NULL) {
+< 		HBITMAP hbmSrcOld=SelectBitmap(hdcSrc,hbmSrc);
+< 		HBITMAP hbmDstOld=SelectBitmap(hdcDst,hbm);
+< 		int OldStretchMode=::SetStretchBltMode(hdcDst,StretchMode);
+< 		BITMAP bm;
+< 		::GetObject(hbmSrc,sizeof(bm),&bm);
+< 		::StretchBlt(hdcDst,0,0,Width,abs(Height),
+< 					 hdcSrc,0,0,bm.bmWidth,bm.bmHeight,SRCCOPY);
+< 		::SetStretchBltMode(hdcDst,OldStretchMode);
+< 		::SelectObject(hdcDst,hbmDstOld);
+< 		::SelectObject(hdcSrc,hbmSrcOld);
+< 		fOK=true;
+< 	}
+< 	if (hdcDst!=NULL)
+< 		::DeleteDC(hdcDst);
+< 	if (hdcSrc!=NULL)
+< 		::DeleteDC(hdcSrc);
+< 
+< 	if (!fOK) {
+< 		::DeleteObject(hbm);
+< 		return NULL;
+< 	}
+< 
+< 	return hbm;
+< }
+< 
+< 
+< // テキストを描画する
+< bool DrawText(HDC hdc,LPCTSTR pszText,const RECT &Rect,UINT Format,
+< 			  const CFont *pFont,COLORREF Color)
+< {
+< 	if (hdc==NULL || pszText==NULL)
+< 		return false;
+< 
+< 	int OldBkMode;
+< 	COLORREF OldTextColor;
+< 	HFONT hfontOld;
+< 
+< 	OldBkMode=::SetBkMode(hdc,TRANSPARENT);
+< 	if (Color!=CLR_INVALID)
+< 		OldTextColor=::SetTextColor(hdc,Color);
+< 	if (pFont!=NULL)
+< 		hfontOld=DrawUtil::SelectObject(hdc,*pFont);
+< 	RECT rc=Rect;
+< 	::DrawText(hdc,pszText,-1,&rc,Format);
+< 	if (pFont!=NULL)
+< 		::SelectObject(hdc,hfontOld);
+< 	if (Color!=CLR_INVALID)
+< 		::SetTextColor(hdc,OldTextColor);
+< 	::SetBkMode(hdc,OldBkMode);
+< 	return true;
+< }
+< 
+< 
+< // テキストを指定幅で折り返して何行になるか計算する
+< int CalcWrapTextLines(HDC hdc,LPCTSTR pszText,int Width)
+< {
+< 	if (hdc==NULL || pszText==NULL)
+< 		return 0;
+< 
+< 	LPCTSTR p;
+< 	int Length;
+< 	int Fit;
+< 	SIZE sz;
+< 	int Lines=0;
+< 
+< 	p=pszText;
+< 	while (*p!=_T('\0')) {
+< 		if (*p==_T('\r') || *p==_T('\n')) {
+< 			p++;
+< 			if (*p==_T('\n'))
+< 				p++;
+< 			if (*p==_T('\0'))
+< 				break;
+< 			Lines++;
+< 			continue;
+< 		}
+< 		for (Length=0;p[Length]!=_T('\0') && p[Length]!=_T('\r') && p[Length]!=_T('\n');Length++);
+< 		::GetTextExtentExPoint(hdc,p,Length,Width,&Fit,NULL,&sz);
+< 		if (Fit<1)
+< 			Fit=1;
+< 		p+=Fit;
+< 		Lines++;
+< 		if (*p==_T('\r'))
+< 			p++;
+< 		if (*p==_T('\n'))
+< 			p++;
+< 	}
+< 	return Lines;
+< }
+< 
+< 
+< // テキストを指定幅で折り返して描画する
+< bool DrawWrapText(HDC hdc,LPCTSTR pszText,const RECT *pRect,int LineHeight)
+< {
+< 	if (hdc==NULL || pszText==NULL || pRect==NULL)
+< 		return false;
+< 
+< 	LPCTSTR p;
+< 	int y;
+< 	int Length;
+< 	int Fit;
+< 	SIZE sz;
+< 
+< 	p=pszText;
+< 	y=pRect->top;
+< 	while (*p!=_T('\0') && y<pRect->bottom) {
+< 		if (*p==_T('\r') || *p==_T('\n')) {
+< 			p++;
+< 			if (*p==_T('\n'))
+< 				p++;
+< 			y+=LineHeight;
+< 			continue;
+< 		}
+< 		for (Length=0;p[Length]!=_T('\0') && p[Length]!=_T('\r') && p[Length]!=_T('\n');Length++);
+< 		::GetTextExtentExPoint(hdc,p,Length,pRect->right-pRect->left,&Fit,NULL,&sz);
+< 		if (Fit<1)
+< 			Fit=1;
+< 		::TextOut(hdc,pRect->left,y,p,Fit);
+< 		p+=Fit;
+< 		y+=LineHeight;
+< 		if (*p==_T('\r'))
+< 			p++;
+< 		if (*p==_T('\n'))
+< 			p++;
+< 	}
+< 	return true;
+< }
+< 
+< 
+671,741d349
+< // UIに使用するデフォルトのフォントを取得する
+< bool GetDefaultUIFont(LOGFONT *pFont)
+< {
+< 	if (pFont==NULL)
+< 		return false;
+< 
+< 	::ZeroMemory(pFont,sizeof(LOGFONT));
+< 
+< 	LOGFONT MessageFont;
+< 	if (GetSystemFont(FONT_MESSAGE,&MessageFont)) {
+< 		// メイリオだと行間が空きすぎるのが…
+< 		if (::lstrcmp(MessageFont.lfFaceName,TEXT("メイリオ"))==0
+< 				|| ::lstrcmpi(MessageFont.lfFaceName,TEXT("Meiryo"))==0) {
+< 			//pFont->lfHeight=MessageFont.lfHeight;
+< 			pFont->lfHeight=-12;
+< 			pFont->lfWeight=FW_NORMAL;
+< 			::lstrcpy(pFont->lfFaceName,TEXT("Meiryo UI"));
+< 			if (IsFontAvailable(*pFont))
+< 				return true;
+< 		} else {
+< 			*pFont=MessageFont;
+< 			return true;
+< 		}
+< 	}
+< 
+< 	return GetSystemFont(FONT_DEFAULT,pFont);
+< }
+< 
+< 
+< bool IsFontAvailable(const LOGFONT &Font,HDC hdc)
+< {
+< 	HFONT hfont=::CreateFontIndirect(&Font);
+< 
+< 	if (hfont==NULL)
+< 		return false;
+< 	HDC hdcMem=NULL;
+< 	if (hdc==NULL) {
+< 		hdcMem=::CreateCompatibleDC(NULL);
+< 		if (hdcMem==NULL)
+< 			return false;
+< 		hdc=hdcMem;
+< 	}
+< 	HFONT hfontOld=SelectFont(hdc,hfont);
+< 	TCHAR szFaceName[LF_FACESIZE];
+< 	bool fAvailable=
+< 		::GetTextFace(hdc,_countof(szFaceName),szFaceName)>0
+< 		&& ::lstrcmpi(szFaceName,Font.lfFaceName)==0;
+< 	::SelectObject(hdc,hfontOld);
+< 	if (hdcMem!=NULL)
+< 		::DeleteDC(hdcMem);
+< 
+< 	return fAvailable;
+< }
+< 
+< 
+< bool IsFontSmoothingEnabled()
+< {
+< 	BOOL fEnabled=FALSE;
+< 	return ::SystemParametersInfo(SPI_GETFONTSMOOTHING,0,&fEnabled,0) && fEnabled;
+< }
+< 
+< 
+< bool IsClearTypeEnabled()
+< {
+< 	UINT Type;
+< 	return IsFontSmoothingEnabled()
+< 		&& ::SystemParametersInfo(SPI_GETFONTSMOOTHINGTYPE,0,&Type,0)
+< 		&& Type==FE_FONTSMOOTHINGCLEARTYPE;
+< }
+< 
+< 
+871,926d478
+< CBrush::CBrush()
+< 	: m_hbr(NULL)
+< {
+< }
+< 
+< CBrush::CBrush(const CBrush &Brush)
+< 	: m_hbr(NULL)
+< {
+< 	*this=Brush;
+< }
+< 
+< CBrush::CBrush(COLORREF Color)
+< 	: m_hbr(NULL)
+< {
+< 	Create(Color);
+< }
+< 
+< CBrush::~CBrush()
+< {
+< 	Destroy();
+< }
+< 
+< CBrush &CBrush::operator=(const CBrush &Brush)
+< {
+< 	if (&Brush!=this) {
+< 		Destroy();
+< 		if (Brush.m_hbr!=NULL) {
+< 			LOGBRUSH lb;
+< 
+< 			if (::GetObject(Brush.m_hbr,sizeof(LOGBRUSH),&lb)==sizeof(LOGBRUSH))
+< 				m_hbr=::CreateBrushIndirect(&lb);
+< 		}
+< 	}
+< 	return *this;
+< }
+< 
+< bool CBrush::Create(COLORREF Color)
+< {
+< 	HBRUSH hbr=::CreateSolidBrush(Color);
+< 
+< 	if (hbr==NULL)
+< 		return false;
+< 	Destroy();
+< 	m_hbr=hbr;
+< 	return true;
+< }
+< 
+< void CBrush::Destroy()
+< {
+< 	if (m_hbr!=NULL) {
+< 		::DeleteObject(m_hbr);
+< 		m_hbr=NULL;
+< 	}
+< }
+< 
+< 
+1109,1641d660
+< 
+< 
+< 
+< 
+< // GDI+のヘッダで整数型の引数にNULLを渡しているので
+< // #define NULL nullptr するとエラーが出る…
+< #if _MSC_VER >= 1600	// VC2010
+< #undef NULL
+< #define NULL 0
+< #endif
+< #include <gdiplus.h>
+< 
+< #pragma comment(lib, "gdiplus.lib")
+< #ifdef WINDOWS2000_SUPPORT
+< //#pragma comment(linker, "/DELAYLOAD:gdiplus.dll")
+< #endif
+< 
+< 
+< class CGdiPlusInitializer
+< {
+< 	bool m_fInitialized;
+< 	ULONG_PTR m_Token;
+< 
+< public:
+< 	CGdiPlusInitializer()
+< 		: m_fInitialized(false)
+< 	{
+< 	}
+< 
+< 	~CGdiPlusInitializer()
+< 	{
+< 		Finalize();
+< 	}
+< 
+< 	bool Initialize()
+< 	{
+< 		if (!m_fInitialized) {
+< #ifdef WINDOWS2000_SUPPORT
+< 			// GDI+ の DLL がロードできるか調べる
+< 			// (gdiplus.dllが無くても起動するように遅延ロードの指定をしている)
+< 			HMODULE hLib=::LoadLibrary(TEXT("gdiplus.dll"));
+< 			if (hLib==NULL)
+< 				return false;
+< 			::FreeLibrary(hLib);
+< #endif
+< 
+< 			Gdiplus::GdiplusStartupInput si;
+< 			si.GdiplusVersion=1;
+< 			si.DebugEventCallback=NULL;
+< 			si.SuppressBackgroundThread=FALSE;
+< 			si.SuppressExternalCodecs=FALSE;
+< 			if (Gdiplus::GdiplusStartup(&m_Token,&si,NULL)!=Gdiplus::Ok)
+< 				return false;
+< 			m_fInitialized=true;
+< 		}
+< 		return true;
+< 	}
+< 
+< 	void Finalize()
+< 	{
+< 		if (m_fInitialized) {
+< 			Gdiplus::GdiplusShutdown(m_Token);
+< 			m_fInitialized=false;
+< 		}
+< 	}
+< };
+< 
+< static CGdiPlusInitializer GdiPlusInitializer;
+< 
+< 
+< CGdiPlus::CGdiPlus()
+< 	: m_fInitialized(false)
+< {
+< }
+< 
+< CGdiPlus::~CGdiPlus()
+< {
+< 	Finalize();
+< }
+< 
+< bool CGdiPlus::Initialize()
+< {
+< 	if (!GdiPlusInitializer.Initialize())
+< 		return false;
+< 	m_fInitialized=true;
+< 	return true;
+< }
+< 
+< void CGdiPlus::Finalize()
+< {
+< 	m_fInitialized=false;
+< }
+< 
+< bool CGdiPlus::DrawImage(CCanvas *pCanvas,CImage *pImage,int x,int y)
+< {
+< 	if (pCanvas!=NULL && pCanvas->m_pGraphics!=NULL
+< 			 && pImage!=NULL && pImage->m_pBitmap!=NULL) {
+< 		return pCanvas->m_pGraphics->DrawImage(pImage->m_pBitmap,x,y,
+< 											   pImage->GetWidth(),
+< 											   pImage->GetHeight())==Gdiplus::Ok;
+< 	}
+< 	return false;
+< }
+< 
+< bool CGdiPlus::DrawImage(CCanvas *pCanvas,int DstX,int DstY,int DstWidth,int DstHeight,
+< 	CImage *pImage,int SrcX,int SrcY,int SrcWidth,int SrcHeight,float Opacity)
+< {
+< 	if (pCanvas!=NULL && pCanvas->m_pGraphics!=NULL
+< 			 && pImage!=NULL && pImage->m_pBitmap!=NULL) {
+< 		Gdiplus::ImageAttributes Attributes;
+< 		Gdiplus::ColorMatrix Matrix = {
+< 			1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+< 			0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+< 			0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+< 			0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+< 			0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+<  		};
+< 		Matrix.m[3][3]=Opacity;
+< 		Attributes.SetColorMatrix(&Matrix);
+< 		return pCanvas->m_pGraphics->DrawImage(pImage->m_pBitmap,
+< 			Gdiplus::Rect(DstX,DstY,DstWidth,DstHeight),
+< 			SrcX,SrcY,SrcWidth,SrcHeight,
+< 			Gdiplus::UnitPixel,&Attributes)==Gdiplus::Ok;
+< 	}
+< 	return false;
+< }
+< 
+< bool CGdiPlus::FillRect(CCanvas *pCanvas,CBrush *pBrush,const RECT *pRect)
+< {
+< 	if (pCanvas!=NULL && pCanvas->m_pGraphics!=NULL
+< 			&& pBrush!=NULL && pBrush->m_pBrush!=NULL && pRect!=NULL) {
+< 		return pCanvas->m_pGraphics->FillRectangle(pBrush->m_pBrush,
+< 												   pRect->left,pRect->top,
+< 												   pRect->right-pRect->left,
+< 												   pRect->bottom-pRect->top)==Gdiplus::Ok;
+< 	}
+< 	return false;
+< }
+< 
+< bool CGdiPlus::FillGradient(CCanvas *pCanvas,COLORREF Color1,COLORREF Color2,
+< 							const RECT &Rect,GradientDirection Direction)
+< {
+< 	if (pCanvas!=NULL && pCanvas->m_pGraphics!=NULL) {
+< 		Gdiplus::RectF rect(
+< 			Gdiplus::REAL(Rect.left)-0.1f,
+< 			Gdiplus::REAL(Rect.top)-0.1f,
+< 			Gdiplus::REAL(Rect.right-Rect.left)+0.2f,
+< 			Gdiplus::REAL(Rect.bottom-Rect.top)+0.2f);
+< 		Gdiplus::LinearGradientBrush Brush(
+< 			rect,
+< 			Gdiplus::Color(GetRValue(Color1),GetGValue(Color1),GetBValue(Color1)),
+< 			Gdiplus::Color(GetRValue(Color2),GetGValue(Color2),GetBValue(Color2)),
+< 			Direction==GRADIENT_DIRECTION_HORZ?
+< 				Gdiplus::LinearGradientModeHorizontal:
+< 				Gdiplus::LinearGradientModeVertical);
+< 		return pCanvas->m_pGraphics->FillRectangle(&Brush,rect)==Gdiplus::Ok;
+< 	}
+< 	return false;
+< }
+< 
+< 
+< CGdiPlus::CImage::CImage()
+< 	: m_pBitmap(NULL)
+< {
+< }
+< 
+< CGdiPlus::CImage::CImage(const CImage &Src)
+< 	: m_pBitmap(NULL)
+< {
+< 	*this=Src;
+< }
+< 
+< CGdiPlus::CImage::~CImage()
+< {
+< 	Free();
+< }
+< 
+< CGdiPlus::CImage &CGdiPlus::CImage::operator=(const CImage &Src)
+< {
+< 	if (&Src!=this) {
+< 		Free();
+< 		if (Src.m_pBitmap!=NULL)
+< 			m_pBitmap=Src.m_pBitmap->Clone(0,0,Src.m_pBitmap->GetWidth(),Src.m_pBitmap->GetHeight(),Src.m_pBitmap->GetPixelFormat());
+< 	}
+< 	return *this;
+< }
+< 
+< void CGdiPlus::CImage::Free()
+< {
+< 	if (m_pBitmap!=NULL) {
+< 		delete m_pBitmap;
+< 		m_pBitmap=NULL;
+< 	}
+< }
+< 
+< bool CGdiPlus::CImage::LoadFromFile(LPCWSTR pszFileName)
+< {
+< 	Free();
+< 	m_pBitmap=Gdiplus::Bitmap::FromFile(pszFileName);
+< 	return m_pBitmap!=NULL;
+< }
+< 
+< bool CGdiPlus::CImage::LoadFromResource(HINSTANCE hinst,LPCWSTR pszName)
+< {
+< 	Free();
+< 	m_pBitmap=Gdiplus::Bitmap::FromResource(hinst,pszName);
+< 	return m_pBitmap!=NULL;
+< }
+< 
+< bool CGdiPlus::CImage::LoadFromResource(HINSTANCE hinst,LPCTSTR pszName,LPCTSTR pszType)
+< {
+< 	Free();
+< 
+< 	HRSRC hRes=::FindResource(hinst,pszName,pszType);
+< 	if (hRes==NULL)
+< 		return false;
+< 	DWORD Size=::SizeofResource(hinst,hRes);
+< 	if (Size==0)
+< 		return false;
+< 	HGLOBAL hData=::LoadResource(hinst,hRes);
+< 	const void *pData=::LockResource(hData);
+< 	if (pData==NULL)
+< 		return false;
+< 	HGLOBAL hBuffer=::GlobalAlloc(GMEM_MOVEABLE,Size);
+< 	if (hBuffer==NULL)
+< 		return false;
+< 	void *pBuffer=::GlobalLock(hBuffer);
+< 	if (pBuffer==NULL) {
+< 		::GlobalFree(hBuffer);
+< 		return false;
+< 	}
+< 	::CopyMemory(pBuffer,pData,Size);
+< 	::GlobalUnlock(hBuffer);
+< 	IStream *pStream;
+< 	if (::CreateStreamOnHGlobal(hBuffer,TRUE,&pStream)!=S_OK) {
+< 		::GlobalFree(hBuffer);
+< 		return false;
+< 	}
+< 	m_pBitmap=Gdiplus::Bitmap::FromStream(pStream);
+< 	pStream->Release();
+< 	return m_pBitmap!=NULL;
+< }
+< 
+< bool CGdiPlus::CImage::Create(int Width,int Height,int BitsPerPixel)
+< {
+< 	Free();
+< 	if (Width<=0 || Height<=0)
+< 		return false;
+< 	Gdiplus::PixelFormat Format;
+< 	switch (BitsPerPixel) {
+< 	case 1:		Format=PixelFormat1bppIndexed;	break;
+< 	case 4:		Format=PixelFormat4bppIndexed;	break;
+< 	case 8:		Format=PixelFormat8bppIndexed;	break;
+< 	case 24:	Format=PixelFormat24bppRGB;	break;
+< 	case 32:	Format=PixelFormat32bppARGB;	break;
+< 	default:	return false;
+< 	}
+< 	m_pBitmap=new Gdiplus::Bitmap(Width,Height,Format);
+< 	if (m_pBitmap==NULL)
+< 		return false;
+< 	Clear();
+< 	return true;
+< }
+< 
+< bool CGdiPlus::CImage::CreateFromBitmap(HBITMAP hbm,HPALETTE hpal)
+< {
+< 	Free();
+< 	m_pBitmap=Gdiplus::Bitmap::FromHBITMAP(hbm,hpal);
+< 	return m_pBitmap!=NULL;
+< }
+< 
+< bool CGdiPlus::CImage::CreateFromDIB(const BITMAPINFO *pbmi,const void *pBits)
+< {
+< 	Free();
+< 	m_pBitmap=new Gdiplus::Bitmap(pbmi,const_cast<void*>(pBits));
+< 	return m_pBitmap!=NULL;
+< }
+< 
+< bool CGdiPlus::CImage::IsCreated() const
+< {
+< 	return m_pBitmap!=NULL;
+< }
+< 
+< int CGdiPlus::CImage::GetWidth() const
+< {
+< 	if (m_pBitmap==NULL)
+< 		return 0;
+< 	return m_pBitmap->GetWidth();
+< }
+< 
+< int CGdiPlus::CImage::GetHeight() const
+< {
+< 	if (m_pBitmap==NULL)
+< 		return 0;
+< 	return m_pBitmap->GetHeight();
+< }
+< 
+< void CGdiPlus::CImage::Clear()
+< {
+< 	if (m_pBitmap!=NULL) {
+< 		Gdiplus::Rect rc(0,0,m_pBitmap->GetWidth(),m_pBitmap->GetHeight());
+< 		Gdiplus::BitmapData Data;
+< 
+< 		if (m_pBitmap->LockBits(&rc,Gdiplus::ImageLockModeWrite,
+< 								m_pBitmap->GetPixelFormat(),&Data)==Gdiplus::Ok) {
+< 			BYTE *pBits=static_cast<BYTE*>(Data.Scan0);
+< 			for (UINT y=0;y<Data.Height;y++) {
+< 				::ZeroMemory(pBits,abs(Data.Stride));
+< 				pBits+=Data.Stride;
+< 			}
+< 			m_pBitmap->UnlockBits(&Data);
+< 		}
+< 	}
+< }
+< 
+< 
+< CGdiPlus::CBrush::CBrush()
+< 	: m_pBrush(NULL)
+< {
+< }
+< 
+< CGdiPlus::CBrush::CBrush(BYTE r,BYTE g,BYTE b,BYTE a)
+< {
+< 	m_pBrush=new Gdiplus::SolidBrush(Gdiplus::Color(a,r,g,b));
+< }
+< 
+< CGdiPlus::CBrush::CBrush(COLORREF Color)
+< {
+< 	m_pBrush=new Gdiplus::SolidBrush(Gdiplus::Color(255,GetRValue(Color),GetGValue(Color),GetBValue(Color)));
+< }
+< 
+< CGdiPlus::CBrush::~CBrush()
+< {
+< 	Free();
+< }
+< 
+< void CGdiPlus::CBrush::Free()
+< {
+< 	if (m_pBrush!=NULL) {
+< 		delete m_pBrush;
+< 		m_pBrush=NULL;
+< 	}
+< }
+< 
+< bool CGdiPlus::CBrush::CreateSolidBrush(BYTE r,BYTE g,BYTE b,BYTE a)
+< {
+< 	Gdiplus::Color Color(a,r,g,b);
+< 
+< 	if (m_pBrush!=NULL) {
+< 		m_pBrush->SetColor(Color);
+< 	} else {
+< 		m_pBrush=new Gdiplus::SolidBrush(Color);
+< 		if (m_pBrush==NULL)
+< 			return false;
+< 	}
+< 	return true;
+< }
+< 
+< 
+< CGdiPlus::CCanvas::CCanvas(HDC hdc)
+< {
+< 	m_pGraphics=new Gdiplus::Graphics(hdc);
+< }
+< 
+< CGdiPlus::CCanvas::CCanvas(CImage *pImage)
+< 	: m_pGraphics(NULL)
+< {
+< 	if (pImage!=NULL)
+< 		m_pGraphics=new Gdiplus::Graphics(pImage->m_pBitmap);
+< }
+< 
+< CGdiPlus::CCanvas::~CCanvas()
+< {
+< 	if (m_pGraphics!=NULL)
+< 		delete m_pGraphics;
+< }
+< 
+< bool CGdiPlus::CCanvas::Clear(BYTE r,BYTE g,BYTE b,BYTE a)
+< {
+< 	if (m_pGraphics==NULL)
+< 		return false;
+< 	return m_pGraphics->Clear(Gdiplus::Color(a,r,g,b))==Gdiplus::Ok;
+< }
+< 
+< 
+< 
+< 
+< #pragma comment(lib, "uxtheme.lib")
+< #ifdef WINDOWS2000_SUPPORT
+< //#pragma comment(linker, "/DELAYLOAD:uxtheme.dll")
+< #endif
+< 
+< 
+< CUxTheme::CUxTheme()
+< 	: m_hTheme(NULL)
+< #ifdef WINDOWS2000_SUPPORT
+< 	, m_hLib(NULL)
+< #endif
+< {
+< }
+< 
+< CUxTheme::~CUxTheme()
+< {
+< 	Close();
+< #ifdef WINDOWS2000_SUPPORT
+< 	if (m_hLib!=NULL)
+< 		::FreeLibrary(m_hLib);
+< #endif
+< }
+< 
+< bool CUxTheme::Initialize()
+< {
+< #ifdef WINDOWS2000_SUPPORT
+< 	if (m_hLib==NULL) {
+< 		// uxtheme.dll がロードできるか調べる
+< 		// (uxtheme.dllが無くても起動するように遅延ロードの指定をしている)
+< 		m_hLib=::LoadLibrary(TEXT("uxtheme.dll"));
+< 		if (m_hLib==NULL)
+< 			return false;
+< 	}
+< #endif
+< 	return true;
+< }
+< 
+< bool CUxTheme::Open(HWND hwnd,LPCWSTR pszClassList)
+< {
+< 	Close();
+< 	if (!Initialize())
+< 		return false;
+< 	m_hTheme=::OpenThemeData(hwnd,pszClassList);
+< 	if (m_hTheme==NULL)
+< 		return false;
+< 	return true;
+< }
+< 
+< void CUxTheme::Close()
+< {
+< 	if (m_hTheme!=NULL) {
+< 		::CloseThemeData(m_hTheme);
+< 		m_hTheme=NULL;
+< 	}
+< }
+< 
+< bool CUxTheme::IsOpen() const
+< {
+< 	return m_hTheme!=NULL;
+< }
+< 
+< bool CUxTheme::IsActive()
+< {
+< #ifdef WINDOWS2000_SUPPORT
+< 	if (m_hLib==NULL)
+< 		return false;
+< #endif
+< 	return ::IsThemeActive()!=FALSE;
+< }
+< 
+< bool CUxTheme::DrawBackground(HDC hdc,int PartID,int StateID,const RECT *pRect)
+< {
+< 	if (m_hTheme==NULL)
+< 		return false;
+< 	return ::DrawThemeBackground(m_hTheme,hdc,PartID,StateID,pRect,NULL)==S_OK;
+< }
+< 
+< bool CUxTheme::DrawBackground(HDC hdc,int PartID,int StateID,
+< 							  int BackgroundPartID,int BackgroundStateID,
+< 							  const RECT *pRect)
+< {
+< 	if (m_hTheme==NULL)
+< 		return false;
+< 	if (::IsThemeBackgroundPartiallyTransparent(m_hTheme,PartID,StateID)) {
+< 		if (::DrawThemeBackground(m_hTheme,hdc,
+< 								  BackgroundPartID,BackgroundStateID,
+< 								  pRect,NULL)!=S_OK)
+< 			return false;
+< 	}
+< 	return ::DrawThemeBackground(m_hTheme,hdc,PartID,StateID,pRect,NULL)==S_OK;
+< }
+< 
+< bool CUxTheme::DrawText(HDC hdc,int PartID,int StateID,LPCWSTR pszText,
+< 						DWORD TextFlags,const RECT *pRect)
+< {
+< 	if (m_hTheme==NULL)
+< 		return false;
+< 	return ::DrawThemeText(m_hTheme,hdc,PartID,StateID,pszText,lstrlenW(pszText),
+< 						   TextFlags,0,pRect)==S_OK;
+< }
+< 
+< bool CUxTheme::GetTextExtent(HDC hdc,int PartID,int StateID,LPCWSTR pszText,
+< 							 DWORD TextFlags,RECT *pExtentRect)
+< {
+< 	if (m_hTheme==NULL)
+< 		return false;
+< 	return ::GetThemeTextExtent(m_hTheme,hdc,PartID,StateID,
+< 								pszText,lstrlenW(pszText),TextFlags,
+< 								NULL,pExtentRect)==S_OK;
+< }
+< 
+< bool CUxTheme::GetMargins(int PartID,int StateID,int PropID,MARGINS *pMargins)
+< {
+< 	if (m_hTheme==NULL)
+< 		return false;
+< 	return ::GetThemeMargins(m_hTheme,NULL,PartID,StateID,PropID,NULL,pMargins)==S_OK;
+< }
+< 
+< bool CUxTheme::GetColor(int PartID,int StateID,int PropID,COLORREF *pColor)
+< {
+< 	if (m_hTheme==NULL)
+< 		return false;
+< 	return ::GetThemeColor(m_hTheme,PartID,StateID,PropID,pColor)==S_OK;
+< }
+< 
+< bool CUxTheme::GetFont(int PartID,int StateID,int PropID,LOGFONT *pFont)
+< {
+< 	if (m_hTheme==NULL)
+< 		return false;
+< 	return ::GetThemeFont(m_hTheme,NULL,PartID,StateID,PropID,pFont)==S_OK;
+< }
+< 
+< bool CUxTheme::GetInt(int PartID,int StateID,int PropID,int *pValue)
+< {
+< 	if (m_hTheme==NULL)
+< 		return false;
+< 	return ::GetThemeInt(m_hTheme,PartID,StateID,PropID,pValue)==S_OK;
+< }
+< 
+< 
+< bool CUxTheme::GetPartSize(HDC hdc,int PartID,int StateID,SIZE *pSize)
+< {
+< 	if (m_hTheme==NULL)
+< 		return false;
+< 	return ::GetThemePartSize(m_hTheme,hdc,PartID,StateID,NULL,TS_TRUE,pSize)==S_OK;
+< }
+diff TVTestStatusView_orig/DrawUtil.h ./DrawUtil.h
+40,44d39
+< bool GlossOverlay(HDC hdc,const RECT *pRect,
+< 				  int Highlight1=192,int Highlight2=32,
+< 				  int Shadow1=32,int Shadow2=0);
+< bool ColorOverlay(HDC hdc,const RECT *pRect,COLORREF Color,BYTE Opacity=128);
+< bool FillBorder(HDC hdc,const RECT *pBorderRect,const RECT *pEmptyRect,const RECT *pPaintRect,HBRUSH hbr);
+46,47d40
+< bool DrawBitmap(HDC hdc,int DstX,int DstY,int DstWidth,int DstHeight,
+< 				HBITMAP hbm,const RECT *pSrcRect=NULL,BYTE Opacity=255);
+53,56d45
+< HBITMAP ResizeBitmap(HBITMAP hbmSrc,int Width,int Height,int BitCount=24,int StretchMode=STRETCH_HALFTONE);
+< 
+< int CalcWrapTextLines(HDC hdc,LPCTSTR pszText,int Width);
+< bool DrawWrapText(HDC hdc,LPCTSTR pszText,const RECT *pRect,int LineHeight);
+68,71d56
+< bool GetDefaultUIFont(LOGFONT *pFont);
+< bool IsFontAvailable(const LOGFONT &Font,HDC hdc=NULL);
+< bool IsFontSmoothingEnabled();
+< bool IsClearTypeEnabled();
+94,110d78
+< bool DrawText(HDC hdc,LPCTSTR pszText,const RECT &Rect,UINT Format,
+< 			  const CFont *pFont=NULL,COLORREF Color=CLR_INVALID);
+< 
+< class CBrush {
+< 	HBRUSH m_hbr;
+< public:
+< 	CBrush();
+< 	CBrush(const CBrush &Brush);
+< 	CBrush(COLORREF Color);
+< 	~CBrush();
+< 	CBrush &operator=(const CBrush &Brush);
+< 	bool Create(COLORREF Color);
+< 	bool IsCreated() const { return m_hbr!=NULL; }
+< 	void Destroy();
+< 	HBRUSH GetHandle() const { return m_hbr; }
+< };
+< 
+135,140d102
+< inline HBRUSH SelectObject(HDC hdc,const CBrush &Brush) {
+< 	return static_cast<HBRUSH>(::SelectObject(hdc,Brush.GetHandle()));
+< }
+< inline HBITMAP SelectObject(HDC hdc,const CBitmap &Bitmap) {
+< 	return static_cast<HBITMAP>(::SelectObject(hdc,Bitmap.GetHandle()));
+< }
+162,271d123
+< 
+< 
+< namespace Gdiplus {
+< class Graphics;
+< class Bitmap;
+< class SolidBrush;
+< }
+< 
+< class CGdiPlus
+< {
+< public:
+< 	class CImage {
+< 		Gdiplus::Bitmap *m_pBitmap;
+< 	public:
+< 		CImage();
+< 		CImage(const CImage &Src);
+< 		~CImage();
+< 		CImage &operator=(const CImage &Src);
+< 		void Free();
+< 		bool LoadFromFile(LPCWSTR pszFileName);
+< 		bool LoadFromResource(HINSTANCE hinst,LPCWSTR pszName);
+< 		bool LoadFromResource(HINSTANCE hinst,LPCTSTR pszName,LPCTSTR pszType);
+< 		bool Create(int Width,int Height,int BitsPerPixel);
+< 		bool CreateFromBitmap(HBITMAP hbm,HPALETTE hpal=NULL);
+< 		bool CreateFromDIB(const BITMAPINFO *pbmi,const void *pBits);
+< 		bool IsCreated() const;
+< 		int GetWidth() const;
+< 		int GetHeight() const;
+< 		void Clear();
+< 		friend CGdiPlus;
+< 		friend class CCanvas;
+< 	};
+< 
+< 	class CBrush {
+< 		Gdiplus::SolidBrush *m_pBrush;
+< 	public:
+< 		CBrush();
+< 		CBrush(BYTE r,BYTE g,BYTE b,BYTE a=255);
+< 		CBrush(COLORREF Color);
+< 		~CBrush();
+< 		void Free();
+< 		bool CreateSolidBrush(BYTE r,BYTE g,BYTE b,BYTE a=255);
+< 		friend CGdiPlus;
+< 	};
+< 
+< 	class CCanvas {
+< 		Gdiplus::Graphics *m_pGraphics;
+< 	public:
+< 		CCanvas(HDC hdc);
+< 		CCanvas(CImage *pImage);
+< 		~CCanvas();
+< 		bool Clear(BYTE r,BYTE g,BYTE b,BYTE a=255);
+< 		friend CGdiPlus;
+< 	};
+< 
+< 	enum GradientDirection {
+< 		GRADIENT_DIRECTION_HORZ,
+< 		GRADIENT_DIRECTION_VERT
+< 	};
+< 
+< 	CGdiPlus();
+< 	~CGdiPlus();
+< 	bool Initialize();
+< 	void Finalize();
+< 	bool IsInitialized() const { return m_fInitialized; }
+< 	bool DrawImage(CCanvas *pCanvas,CImage *pImage,int x,int y);
+< 	bool DrawImage(CCanvas *pCanvas,int DstX,int DstY,int DstWidth,int DstHeight,
+< 				   CImage *pImage,int SrcX,int SrcY,int SrcWidth,int SrcHeight,float Opacity=1.0f);
+< 	bool FillRect(CCanvas *pCanvas,CBrush *pBrush,const RECT *pRect);
+< 	bool FillGradient(CCanvas *pCanvas,COLORREF Color1,COLORREF Color2,
+< 					  const RECT &Rect,GradientDirection Direction);
+< 
+< private:
+< 	bool m_fInitialized;
+< };
+< 
+< 
+< #include <uxtheme.h>
+< #include <vssym32.h>
+< 
+< class CUxTheme
+< {
+< 	HTHEME m_hTheme;
+< #ifdef WINDOWS2000_SUPPORT
+< 	HMODULE m_hLib;
+< #endif
+< 
+< public:
+< 	CUxTheme();
+< 	~CUxTheme();
+< 	bool Initialize();
+< 	bool Open(HWND hwnd,LPCWSTR pszClassList);
+< 	void Close();
+< 	bool IsOpen() const;
+< 	bool IsActive();
+< 	bool DrawBackground(HDC hdc,int PartID,int StateID,const RECT *pRect);
+< 	bool DrawBackground(HDC hdc,int PartID,int StateID,
+< 						int BackgroundPartID,int BackgroundStateID,
+< 						const RECT *pRect);
+< 	bool DrawText(HDC hdc,int PartID,int StateID,LPCWSTR pszText,
+< 				  DWORD TextFlags,const RECT *pRect);
+< 	bool GetTextExtent(HDC hdc,int PartID,int StateID,LPCWSTR pszText,
+< 					   DWORD TextFlags,RECT *pExtentRect);
+< 	bool GetMargins(int PartID,int StateID,int PropID,MARGINS *pMargins);
+< 	bool GetColor(int PartID,int StateID,int PropID,COLORREF *pColor);
+< 	bool GetFont(int PartID,int StateID,int PropID,LOGFONT *pFont);
+< 	bool GetInt(int PartID,int StateID,int PropID,int *pValue);
+< 	bool GetPartSize(HDC hdc,int PartID,int StateID,SIZE *pSize);
+< };
+< 
+diff TVTestStatusView_orig/Settings.cpp ./Settings.cpp
+1c1,2
+< #include "stdafx.h"
+---
+> #include <Windows.h>
+> #include <Shlwapi.h>
+3a5
+> #if 0
+8a11
+> #endif
+10a14,16
+> #ifndef _T
+> #define _T(x) TEXT(x)
+> #endif
+diff TVTestStatusView_orig/StatusView.cpp ./StatusView.cpp
+1,2c1,3
+< #include "stdafx.h"
+< #include "TVTest.h"
+---
+> #include <Windows.h>
+> #include <WindowsX.h>
+> #include "Util.h"
+357a359,362
+> 			if (GetItemRectByIndex(m_HotItem,&rc)) {
+> 				m_ItemList[m_HotItem]->OnMouseMove(x-rc.left,y);
+> 			}
+> 			
+359,361c364,366
+< 				GetItemRectByIndex(m_HotItem,&rc);
+< 				x-=rc.left;
+< 				m_ItemList[m_HotItem]->OnMouseMove(x,y);
+---
+> 				//GetItemRectByIndex(m_HotItem,&rc);
+> 				//x-=rc.left;
+> 				//m_ItemList[m_HotItem]->OnMouseMove(x,y);
+diff TVTestStatusView_orig/StatusView.h ./StatusView.h
+7d6
+< #include "TsUtilClass.h"
+diff TVTestStatusView_orig/Theme.cpp ./Theme.cpp
+1c1
+< #include "stdafx.h"
+---
+> #include <Windows.h>

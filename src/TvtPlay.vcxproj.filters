@@ -1,0 +1,98 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="ソース ファイル">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="ヘッダー ファイル">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="リソース ファイル">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="ソース ファイル\TVTestStatusView">
+      <UniqueIdentifier>{27cbbf44-6030-4e65-9191-0257fd8a44be}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\TVTestStatusView">
+      <UniqueIdentifier>{c47c4194-4158-4d7a-80c1-9a69bea0beb2}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="TVTestPlugin.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="TvtPlay.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Util.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="TsSender.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="BasicWindow.h">
+      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
+    </ClInclude>
+    <ClInclude Include="ColorScheme.h">
+      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
+    </ClInclude>
+    <ClInclude Include="DrawUtil.h">
+      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
+    </ClInclude>
+    <ClInclude Include="Settings.h">
+      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
+    </ClInclude>
+    <ClInclude Include="StatusView.h">
+      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
+    </ClInclude>
+    <ClInclude Include="Theme.h">
+      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
+    </ClInclude>
+    <ClInclude Include="Aero.h">
+      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="TvtPlay.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Util.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="TsSender.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="BasicWindow.cpp">
+      <Filter>ソース ファイル\TVTestStatusView</Filter>
+    </ClCompile>
+    <ClCompile Include="ColorScheme.cpp">
+      <Filter>ソース ファイル\TVTestStatusView</Filter>
+    </ClCompile>
+    <ClCompile Include="DrawUtil.cpp">
+      <Filter>ソース ファイル\TVTestStatusView</Filter>
+    </ClCompile>
+    <ClCompile Include="Settings.cpp">
+      <Filter>ソース ファイル\TVTestStatusView</Filter>
+    </ClCompile>
+    <ClCompile Include="StatusView.cpp">
+      <Filter>ソース ファイル\TVTestStatusView</Filter>
+    </ClCompile>
+    <ClCompile Include="Theme.cpp">
+      <Filter>ソース ファイル\TVTestStatusView</Filter>
+    </ClCompile>
+    <ClCompile Include="Aero.cpp">
+      <Filter>ソース ファイル\TVTestStatusView</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="TvtPlay.rc">
+      <Filter>リソース ファイル</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+</Project>
