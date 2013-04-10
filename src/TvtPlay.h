@@ -32,6 +32,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     TCHAR m_szIniFileName[MAX_PATH];
     TCHAR m_szSpecFileName[MAX_PATH];
     int m_specOffset;
+    bool m_fShowOpenDialog;
 
     // コントロール
     HWND m_hwndFrame;
@@ -40,7 +41,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     bool m_fHoveredFromOutside;
     int m_statusRow, m_statusRowFull;
     int m_statusHeight;
-    bool m_fSeekDrawTot, m_fPosDrawTot;
+    bool m_fSeekDrawOfs, m_fSeekDrawTot, m_fPosDrawTot;
     int m_posItemWidth;
     int m_timeoutOnCmd, m_timeoutOnMove;
     int m_dispCount;
@@ -53,10 +54,10 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     int m_seekList[COMMAND_SEEK_MAX];
     int m_stretchList[COMMAND_STRETCH_MAX];
     TCHAR m_buttonList[BUTTON_MAX][128];
-    int m_buttonNum;
     int m_popupMax;
     TCHAR m_szPopupPattern[MAX_PATH];
     bool m_fPopupDesc, m_fPopuping;
+    bool m_fDialogOpen;
 
     // TS送信
     HANDLE m_hThread, m_hThreadEvent;
@@ -92,14 +93,16 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     void SaveSettings() const;
     bool InitializePlugin();
     bool EnablePlugin(bool fEnable);
-    bool OpenWithDialog(HWND hwndOwner);
+    HWND GetFullscreenWindow();
+    bool OpenWithDialog();
     bool OpenCurrent(int offset = -1);
     bool Open(LPCTSTR fileName, int offset);
     void Close();
     void SetupDestination();
     void ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll);
     bool CalcStatusRect(RECT *pRect, bool fInit = false);
-    void Resize(bool fInit = false);
+    void OnResize(bool fInit = false);
+    void OnFrameResize();
     void EnablePluginByDriverName();
     void OnPreviewChange(bool fPreview);
     static LRESULT CALLBACK EventCallback(UINT Event, LPARAM lParam1, LPARAM lParam2, void *pClientData);
@@ -119,6 +122,7 @@ public:
     bool IsPaused() const { return m_fPaused; }
     bool IsAllRepeat() const { return m_fAllRepeat; }
     bool IsSingleRepeat() const { return m_fSingleRepeat; }
+    bool IsPosDrawTotEnabled() const { return m_fPosDrawTot; }
 
     void SetupWithPopup(const POINT &pt, UINT flags);
     bool OpenWithPopup(const POINT &pt, UINT flags);
@@ -143,7 +147,7 @@ enum {
 class CSeekStatusItem : public CStatusItem
 {
 public:
-    CSeekStatusItem(CTvtPlay *pPlugin, bool fDrawTot);
+    CSeekStatusItem(CTvtPlay *pPlugin, bool fDrawOfs, bool fDrawTot);
     LPCTSTR GetName() const { return TEXT("シークバー"); };
     void Draw(HDC hdc, const RECT *pRect);
     void OnLButtonDown(int x, int y);
@@ -152,21 +156,21 @@ public:
     void SetDrawSeekPos(bool fDraw, int pos);
 private:
     CTvtPlay *m_pPlugin;
-    bool m_fDrawSeekPos, m_fDrawLeft;
+    bool m_fDrawSeekPos;
     int m_seekPos;
-    bool m_fDrawTot;
+    bool m_fDrawOfs, m_fDrawTot;
 };
 
 class CPositionStatusItem : public CStatusItem
 {
 public:
-    CPositionStatusItem(CTvtPlay *pPlugin, bool fDrawTot, int width);
+    CPositionStatusItem(CTvtPlay *pPlugin);
     LPCTSTR GetName() const { return TEXT("再生位置"); };
     void Draw(HDC hdc, const RECT *pRect);
+    int CalcSuitableWidth();
     void OnRButtonDown(int x, int y);
 private:
     CTvtPlay *m_pPlugin;
-    bool m_fDrawTot;
 };
 
 class CButtonStatusItem : public CStatusItem

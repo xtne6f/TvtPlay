@@ -1,8 +1,6 @@
 ﻿#ifndef INCLUDE_UTIL_H
 #define INCLUDE_UTIL_H
 
-#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
-
 #define WM_ASFLT_STRETCH    (WM_APP + 1)
 LRESULT ASFilterSendMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam);

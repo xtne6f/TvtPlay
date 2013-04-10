@@ -16,7 +16,7 @@ int CPlaylist::PushBackListOrFile(LPCTSTR path, bool fMovePos)
 {
     // カレントからの絶対パスに変換
     TCHAR fullPath[MAX_PATH];
-    DWORD rv = ::GetFullPathName(path, ARRAY_SIZE(fullPath), fullPath, NULL);
+    DWORD rv = ::GetFullPathName(path, _countof(fullPath), fullPath, NULL);
     if (rv == 0 || rv >= MAX_PATH) return -1;
 
     int pos = -1;
@@ -28,7 +28,7 @@ int CPlaylist::PushBackListOrFile(LPCTSTR path, bool fMovePos)
     else {
         // TSファイルとして処理
         PLAY_INFO pi;
-        ::lstrcpyn(pi.path, fullPath, ARRAY_SIZE(pi.path));
+        ::lstrcpyn(pi.path, fullPath, _countof(pi.path));
         pos = size();
         push_back(pi);
     }
@@ -44,14 +44,14 @@ int CPlaylist::PushBackList(LPCTSTR fullPath)
     if (pRet) {
         // 相対パスとの結合用
         TCHAR dirName[MAX_PATH];
-        ::lstrcpyn(dirName, fullPath, ARRAY_SIZE(dirName));
+        ::lstrcpyn(dirName, fullPath, _countof(dirName));
         ::PathRemoveFileSpec(dirName);
 
         for (TCHAR *p = pRet; *p;) {
             // 1行取得してpを進める
             TCHAR line[512];
             int len = ::StrCSpn(p, TEXT("\r\n"));
-            ::lstrcpyn(line, p, min(len+1, ARRAY_SIZE(line)));
+            ::lstrcpyn(line, p, min(len+1, _countof(line)));
             p += len;
             if (*p == TEXT('\r') && *(p+1) == TEXT('\n')) ++p;
             if (*p) ++p;
@@ -71,7 +71,7 @@ int CPlaylist::PushBackList(LPCTSTR fullPath)
                     }
                     else {
                         // 絶対パス
-                        ::lstrcpyn(pi.path, line, ARRAY_SIZE(pi.path));
+                        ::lstrcpyn(pi.path, line, _countof(pi.path));
                     }
                     if (::PathFileExists(pi.path)) {
                         if (pos < 0) pos = size();
@@ -107,9 +107,9 @@ bool CPlaylist::MoveCurrentToNext()
     return false;
 }
 
-static bool CompareAsc(const PLAY_INFO& l, const PLAY_INFO& r) { return ::lstrcmpi(l.path, r.path) < 0; }
+static inline bool CompareAsc(const PLAY_INFO& l, const PLAY_INFO& r) { return ::lstrcmpi(l.path, r.path) < 0; }
 
-static bool CompareDesc(const PLAY_INFO& l, const PLAY_INFO& r) { return ::lstrcmpi(l.path, r.path) > 0; }
+static inline bool CompareDesc(const PLAY_INFO& l, const PLAY_INFO& r) { return ::lstrcmpi(l.path, r.path) > 0; }
 
 // ソートする
 bool CPlaylist::Sort(bool fDesc)

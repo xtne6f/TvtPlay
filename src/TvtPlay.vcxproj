@@ -70,6 +70,7 @@
     <LinkIncremental>true</LinkIncremental>
     <IncludePath>$(IncludePath)</IncludePath>
     <TargetExt>.tvtp</TargetExt>
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\Plugins\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
@@ -81,6 +82,7 @@
     <LinkIncremental>false</LinkIncremental>
     <IncludePath>$(VCInstallDir)include;$(VCInstallDir)atlmfc\include;$(WindowsSdkDir)include;$(FrameworkSDKDir)\include;</IncludePath>
     <TargetExt>.tvtp</TargetExt>
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\Plugins\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
@@ -104,6 +106,7 @@
       <ModuleDefinitionFile>Exports.def</ModuleDefinitionFile>
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
+    <PostBuildEvent />
     <PostBuildEvent />
     <PostBuildEvent />
   </ItemDefinitionGroup>
@@ -146,6 +149,7 @@
       <ModuleDefinitionFile>Exports.def</ModuleDefinitionFile>
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
+    <PostBuildEvent />
     <PostBuildEvent />
     <PostBuildEvent />
   </ItemDefinitionGroup>
