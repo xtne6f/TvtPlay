@@ -26,6 +26,8 @@ bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTST
 BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPCTSTR lpFileName);
 LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt);
 
+#define PCR_PER_MSEC 45
+
 typedef struct {
 	int           sync;
 	int           transport_error_indicator;
@@ -92,6 +94,7 @@ typedef struct {
     unsigned int  dts_45khz;
 } PES_HEADER; // (partial)
 
+void reset_pat(PAT *pat);
 void extract_pat(PAT *pat, const unsigned char *payload, int payload_size, int unit_start, int counter);
 void extract_pmt(PMT *pmt, const unsigned char *payload, int payload_size, int unit_start, int counter);
 void extract_pes_header(PES_HEADER *dst, const unsigned char *payload, int payload_size/*, int stream_type*/);
@@ -117,40 +120,25 @@ inline void extract_ts_header(TS_HEADER *dst, const unsigned char *packet)
 
 #define APP_NAME TEXT("TvtPlay")
 
-namespace StdUtil {
-int vsnprintf(wchar_t *s,size_t n,const wchar_t *format,va_list args);
-inline size_t strnlen(const wchar_t *s,size_t n) { return ::wcsnlen(s,n); }
-}
-
-/////////////////////////////////////////////////////////////////////////////
-// クリティカルセクションラッパークラス
-/////////////////////////////////////////////////////////////////////////////
-
 class CCriticalLock
 {
 public:
-	CCriticalLock();
-	virtual ~CCriticalLock();
-
-	void Lock(void);
-	void Unlock(void);
-	//bool TryLock(DWORD TimeOut=0);
+    CCriticalLock() { ::InitializeCriticalSection(&m_section); }
+    ~CCriticalLock() { ::DeleteCriticalSection(&m_section); }
+    void Lock() { ::EnterCriticalSection(&m_section); }
+    void Unlock() { ::LeaveCriticalSection(&m_section); }
+    //CRITICAL_SECTION &GetCriticalSection() { return m_section; }
 private:
-	CRITICAL_SECTION m_CriticalSection;
+    CRITICAL_SECTION m_section;
 };
-
-/////////////////////////////////////////////////////////////////////////////
-// ブロックスコープロッククラス
-/////////////////////////////////////////////////////////////////////////////
 
 class CBlockLock
 {
 public:
-	CBlockLock(CCriticalLock *pCriticalLock);
-	virtual ~CBlockLock();
-		
+    CBlockLock(CCriticalLock *pLock) : m_pLock(pLock) { m_pLock->Lock(); }
+    ~CBlockLock() { m_pLock->Unlock(); }
 private:
-	CCriticalLock *m_pCriticalLock;
+    CCriticalLock *m_pLock;
 };
 
 /////////////////////////////////////////////////////////////////////////////
@@ -168,50 +156,12 @@ protected:
 	virtual void OnTrace(LPCTSTR pszOutput)=0;
 };
 
-__declspec(restrict) LPWSTR DuplicateString(LPCWSTR pszString);
-bool ReplaceString(LPWSTR *ppszString,LPCWSTR pszNewString);
-
 inline bool IsStringEmpty(LPCWSTR pszString) {
 	return pszString==NULL || pszString[0]==L'\0';
-}
-inline LPCWSTR NullToEmptyString(LPCWSTR pszString) {
-	return pszString!=NULL?pszString:L"";
 }
 
 COLORREF MixColor(COLORREF Color1,COLORREF Color2,BYTE Ratio=128);
 bool CompareLogFont(const LOGFONT *pFont1,const LOGFONT *pFont2);
-
-class CDynamicString {
-protected:
-	LPTSTR m_pszString;
-public:
-	CDynamicString();
-	CDynamicString(const CDynamicString &String);
-#ifdef MOVE_SEMANTICS_SUPPORTED
-	CDynamicString(CDynamicString &&String);
-#endif
-	explicit CDynamicString(LPCTSTR pszString);
-	virtual ~CDynamicString();
-	CDynamicString &operator=(const CDynamicString &String);
-#ifdef MOVE_SEMANTICS_SUPPORTED
-	CDynamicString &operator=(CDynamicString &&String);
-#endif
-	CDynamicString &operator+=(const CDynamicString &String);
-	CDynamicString &operator=(LPCTSTR pszString);
-	CDynamicString &operator+=(LPCTSTR pszString);
-	bool operator==(const CDynamicString &String) const;
-	bool operator!=(const CDynamicString &String) const;
-	LPCTSTR Get() const { return m_pszString; }
-	LPCTSTR GetSafe() const { return NullToEmptyString(m_pszString); }
-	bool Set(LPCTSTR pszString);
-	bool Set(LPCTSTR pszString,size_t Length);
-	bool Attach(LPTSTR pszString);
-	int Length() const;
-	void Clear();
-	bool IsEmpty() const;
-	int Compare(LPCTSTR pszString) const;
-	int CompareIgnoreCase(LPCTSTR pszString) const;
-};
 
 class CGlobalLock
 {

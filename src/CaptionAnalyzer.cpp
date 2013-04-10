@@ -1,6 +1,7 @@
 ﻿#include <Windows.h>
 #include <Shlwapi.h>
 #include <vector>
+#include <tchar.h>
 #include "Util.h"
 
 #ifdef EN_SWC
@@ -17,6 +18,16 @@ static const char *CP_STRING_SIZE_NAME[] = {
     "SSZ", "MSZ", "NSZ", "SZX60", "SZX41", "SZX44", "SZX45", "SZX6B", "SZX64"
 };
 
+static void OutputDebugFormat(LPCTSTR format, ...)
+{
+    TCHAR debug[256];
+    va_list args;
+    va_start(args, format);
+    _vsntprintf_s(debug, _countof(debug), _TRUNCATE, format, args);
+    va_end(args);
+    ::OutputDebugString(debug);
+}
+
 CCaptionAnalyzer::CCaptionAnalyzer()
     : m_hCaptionDll(NULL)
     , m_hBregonigDll(NULL)
@@ -25,17 +36,11 @@ CCaptionAnalyzer::CCaptionAnalyzer()
     , m_fShowing(false)
     , m_commandRear(0)
     , m_commandFront(0)
-    , m_pcr(0)
-    , m_pcrPid(-1)
-    , m_pcrPidsLen(0)
-    , m_captionPts(0)
-    , m_fEnCaptionPts(false)
-    , m_captionPid(-1)
-    , m_pfnInitializeUNICODE(NULL)
+    , m_pts(0)
+    , m_fEnPts(false)
     , m_pfnUnInitializeCP(NULL)
     , m_pfnAddTSPacketCP(NULL)
     , m_pfnClearCP(NULL)
-    , m_pfnGetTagInfoCP(NULL)
     , m_pfnGetCaptionDataCP(NULL)
     , m_pfnBMatch(NULL)
     , m_pfnBRegfree(NULL)
@@ -49,7 +54,7 @@ CCaptionAnalyzer::~CCaptionAnalyzer()
 
 bool CCaptionAnalyzer::Initialize(LPCTSTR captionDllPath, LPCTSTR bregonigDllPath, LPCTSTR blacklistPath, int showLateMsec, int clearEarlyMsec)
 {
-    UnInitialize();
+    if (IsInitialized()) return true;
 
     if (captionDllPath[0]) {
         m_hCaptionDll = ::LoadLibrary(captionDllPath);
@@ -58,24 +63,23 @@ bool CCaptionAnalyzer::Initialize(LPCTSTR captionDllPath, LPCTSTR bregonigDllPat
         m_hBregonigDll = ::LoadLibrary(bregonigDllPath);
     }
     if (m_hCaptionDll) {
-        m_pfnInitializeUNICODE   = reinterpret_cast<InitializeUNICODE*>(::GetProcAddress(m_hCaptionDll, "InitializeUNICODE"));
+        InitializeUNICODE *pfnInitializeUNICODE;
+        pfnInitializeUNICODE     = reinterpret_cast<InitializeUNICODE*>(::GetProcAddress(m_hCaptionDll, "InitializeUNICODE"));
         m_pfnUnInitializeCP      = reinterpret_cast<UnInitializeCP*>(::GetProcAddress(m_hCaptionDll, "UnInitializeCP"));
         m_pfnAddTSPacketCP       = reinterpret_cast<AddTSPacketCP*>(::GetProcAddress(m_hCaptionDll, "AddTSPacketCP"));
         m_pfnClearCP             = reinterpret_cast<ClearCP*>(::GetProcAddress(m_hCaptionDll, "ClearCP"));
-        m_pfnGetTagInfoCP        = reinterpret_cast<GetTagInfoCP*>(::GetProcAddress(m_hCaptionDll, "GetTagInfoCP"));
         m_pfnGetCaptionDataCP    = reinterpret_cast<GetCaptionDataCP*>(::GetProcAddress(m_hCaptionDll, "GetCaptionDataCP"));
         if (m_hBregonigDll) {
             m_pfnBMatch          = reinterpret_cast<BMatch*>(::GetProcAddress(m_hBregonigDll, BMatch_NAME));
             m_pfnBRegfree        = reinterpret_cast<BRegfree*>(::GetProcAddress(m_hBregonigDll, BRegfree_NAME));
         }
-        if (m_pfnInitializeUNICODE &&
+        if (pfnInitializeUNICODE &&
             m_pfnUnInitializeCP &&
             m_pfnAddTSPacketCP &&
             m_pfnClearCP &&
-            m_pfnGetTagInfoCP &&
             m_pfnGetCaptionDataCP &&
             (!m_hBregonigDll || m_pfnBMatch && m_pfnBRegfree) &&
-            m_pfnInitializeUNICODE() == CP_NO_ERR)
+            pfnInitializeUNICODE() == TRUE)
         {
             TCHAR *pPatterns = NewReadUtfFileToEnd(blacklistPath, FILE_SHARE_READ);
             if (pPatterns) {
@@ -104,13 +108,11 @@ bool CCaptionAnalyzer::Initialize(LPCTSTR captionDllPath, LPCTSTR bregonigDllPat
                                 m_trexList.push_back(trex);
                             }
                             else {
-                                TCHAR debug[128 + _countof(pattern)];
-                                ::wsprintf(debug, TEXT("CCaptionAnalyzer::Initialize(): trex_compile %.31s: %s\n"), error, pattern);
-                                ::OutputDebugString(debug);
+                                OutputDebugFormat(TEXT(__FUNCTION__) TEXT("(): trex_compile %s: %s\n"), error, pattern);
                             }
                         }
                         else {
-                            ::OutputDebugString(TEXT("CCaptionAnalyzer::Initialize(): _Blacklist format error\n"));
+                            OutputDebugFormat(TEXT(__FUNCTION__) TEXT("(): _Blacklist format error\n"));
                         }
                     }
                     p += len;
@@ -121,6 +123,7 @@ bool CCaptionAnalyzer::Initialize(LPCTSTR captionDllPath, LPCTSTR bregonigDllPat
             }
             m_showLate = showLateMsec * PCR_PER_MSEC;
             m_clearEarly = clearEarlyMsec * PCR_PER_MSEC;
+            ClearShowState();
             return true;
         }
     }
@@ -138,11 +141,8 @@ bool CCaptionAnalyzer::Initialize(LPCTSTR captionDllPath, LPCTSTR bregonigDllPat
 
 void CCaptionAnalyzer::UnInitialize()
 {
-    if (m_hCaptionDll) {
-        m_pfnUnInitializeCP();
-        ::FreeLibrary(m_hCaptionDll);
-        m_hCaptionDll = NULL;
-    }
+    if (!IsInitialized()) return;
+
     if (m_hBregonigDll) {
         std::vector<RXP_PATTERN>::iterator it = m_rxpList.begin();
         for (; it != m_rxpList.end(); ++it) {
@@ -159,28 +159,33 @@ void CCaptionAnalyzer::UnInitialize()
         }
         m_trexList.clear();
     }
+    m_pfnUnInitializeCP();
+    ::FreeLibrary(m_hCaptionDll);
+    m_hCaptionDll = NULL;
+}
+
+// PCRが連続でなくなったとき(シークなど)は呼ぶべき
+void CCaptionAnalyzer::Clear()
+{
+    if (!IsInitialized()) return;
+    m_pfnClearCP();
     ClearShowState();
 }
 
 // 字幕表示状態をクリアする
-// PCRが連続でなくなったとき(シークなど)は呼ぶべき
 void CCaptionAnalyzer::ClearShowState()
 {
     m_fShowing = false;
     m_commandFront = m_commandRear;
-    m_fEnCaptionPts = false;
-
-    // PCR参照PIDをクリア
-    m_pcrPid = -1;
-    m_pcrPidsLen = 0;
+    m_fEnPts = false;
 }
 
 // 字幕表示状態かどうか調べる
-bool CCaptionAnalyzer::CheckShowState()
+bool CCaptionAnalyzer::CheckShowState(DWORD currentPcr)
 {
-    if (!IsInitialized() || m_pcrPid < 0) return false;
+    if (!IsInitialized()) return false;
 
-    while (m_commandFront != m_commandRear && !MSB(m_pcr - m_commandPcr[m_commandFront])) {
+    while (m_commandFront != m_commandRear && !MSB(currentPcr - m_commandPcr[m_commandFront])) {
         if (m_fCommandShow[m_commandFront]) {
             // 字幕表示タイミングに達した
             m_fShowing = true;
@@ -194,6 +199,7 @@ bool CCaptionAnalyzer::CheckShowState()
     return m_fShowing;
 }
 
+// 字幕ストリームを追加する
 void CCaptionAnalyzer::AddPacket(BYTE *pPacket)
 {
     if (!IsInitialized()) return;
@@ -201,47 +207,9 @@ void CCaptionAnalyzer::AddPacket(BYTE *pPacket)
     TS_HEADER header;
     extract_ts_header(&header, pPacket);
 
-    // PCRの取得手順はCTsSenderと同じ
-    if ((header.adaptation_field_control&2)/*2,3*/ &&
-        !header.transport_error_indicator)
-    {
-        // アダプテーションフィールドがある
-        ADAPTATION_FIELD adapt;
-        extract_adaptation_field(&adapt, pPacket + 4);
-
-        if (adapt.pcr_flag) {
-            // 参照PIDが決まっていないとき、最初に3回PCRが出現したPIDを参照PIDとする
-            // 参照PIDのPCRが現れることなく5回別のPCRが出現すれば、参照PIDを変更する
-            if (header.pid != m_pcrPid) {
-                bool fFound = false;
-                for (int i = 0; i < m_pcrPidsLen; i++) {
-                    if (m_pcrPids[i] == header.pid) {
-                        ++m_pcrPidCounts[i];
-                        if (m_pcrPid < 0 && m_pcrPidCounts[i] >= 3 || m_pcrPidCounts[i] >= 5) m_pcrPid = header.pid;
-                        fFound = true;
-                        break;
-                    }
-                }
-                if (!fFound && m_pcrPidsLen < PCR_PIDS_MAX) {
-                    m_pcrPids[m_pcrPidsLen] = header.pid;
-                    m_pcrPidCounts[m_pcrPidsLen] = 1;
-                    m_pcrPidsLen++;
-                }
-            }
-            // 参照PIDのときはPCRを取得する
-            if (header.pid == m_pcrPid) {
-                m_pcrPidsLen = 0;
-                m_pcr = (DWORD)adapt.pcr_45khz;
-            }
-        }
-    }
-
     // 字幕PTSを取得
-    if (header.pid == m_captionPid &&
-        header.payload_unit_start_indicator &&
-        (header.adaptation_field_control&1)/*1,3*/ &&
-        !header.transport_scrambling_control &&
-        !header.transport_error_indicator)
+    if (header.payload_unit_start_indicator &&
+        (header.adaptation_field_control&1)/*1,3*/)
     {
         BYTE *pPayload = pPacket + 4;
         if (header.adaptation_field_control == 3) {
@@ -255,36 +223,29 @@ void CCaptionAnalyzer::AddPacket(BYTE *pPacket)
             PES_HEADER pesHeader;
             extract_pes_header(&pesHeader, pPayload, payloadSize);
             if (pesHeader.packet_start_code_prefix && pesHeader.pts_dts_flags >= 2) {
-                m_captionPts = (DWORD)pesHeader.pts_45khz;
-                m_fEnCaptionPts = true;
+                m_pts = (DWORD)pesHeader.pts_45khz;
+                m_fEnPts = true;
             }
         }
     }
 
     // 字幕ストリームを解析
-    if (header.pid == m_captionPid &&
-        m_pcrPid >= 0 && m_fEnCaptionPts &&
-        !header.transport_scrambling_control &&
-        !header.transport_error_indicator)
-    {
+    if (m_fEnPts) {
         DWORD dwRet = m_pfnAddTSPacketCP(pPacket);
         if (dwRet == CP_NO_ERR_CAPTION) {
             // 字幕文データ
             CAPTION_DATA_DLL *pList;
             DWORD dwListCount;
             if (m_pfnGetCaptionDataCP(0, &pList, &dwListCount) == TRUE) {
-                ::OutputDebugString(TEXT("CCaptionAnalyzer::AddPacket(): GetCaptionDataCP Succeeded\n"));
-                CheckShowState();
+                OutputDebugFormat(TEXT(__FUNCTION__) TEXT("(): GetCaptionDataCP Succeeded\n"));
                 for (DWORD i = 0; i < dwListCount; ++i, ++pList) {
                     if (pList->bClear) {
                         // 画面消去
                         m_fCommandShow[m_commandRear] = false;
-                        m_commandPcr[m_commandRear] = m_captionPts + pList->dwWaitTime * PCR_PER_MSEC - m_clearEarly;
+                        m_commandPcr[m_commandRear] = m_clearEarly<0 ? m_pts + pList->dwWaitTime * PCR_PER_MSEC + (DWORD)(-m_clearEarly) :
+                                                                       m_pts + pList->dwWaitTime * PCR_PER_MSEC - (DWORD)m_clearEarly;
                         m_commandRear = (m_commandRear + 1) % _countof(m_fCommandShow);
-
-                        TCHAR debug[128];
-                        ::wsprintf(debug, TEXT("CCaptionAnalyzer::AddPacket(): %5umsec [CS]\n"), pList->dwWaitTime);
-                        ::OutputDebugString(debug);
+                        OutputDebugFormat(TEXT(__FUNCTION__) TEXT("(): %5umsec [CS]\n"), pList->dwWaitTime);
                     }
                     else {
                         // データユニットを連結
@@ -325,9 +286,7 @@ void CCaptionAnalyzer::AddPacket(BYTE *pPacket)
                                         break;
                                     }
                                     else if (rv < 0) {
-                                        TCHAR debug[128 + _countof(msg) + _countof(it->str)];
-                                        ::wsprintf(debug, TEXT("CCaptionAnalyzer::AddPacket(): BMatch %s: %s\n"), msg, it->str);
-                                        ::OutputDebugString(debug);
+                                        OutputDebugFormat(TEXT(__FUNCTION__) TEXT("(): BMatch %s: %s\n"), msg, it->str);
                                         break;
                                     }
                                 }
@@ -346,17 +305,14 @@ void CCaptionAnalyzer::AddPacket(BYTE *pPacket)
                             if (!fMatch) {
                                 // 字幕表示
                                 m_fCommandShow[m_commandRear] = true;
-                                m_commandPcr[m_commandRear] = m_captionPts + pList->dwWaitTime * PCR_PER_MSEC + m_showLate;
+                                m_commandPcr[m_commandRear] = m_showLate<0 ? m_pts + pList->dwWaitTime * PCR_PER_MSEC - (DWORD)(-m_showLate) :
+                                                                             m_pts + pList->dwWaitTime * PCR_PER_MSEC + (DWORD)m_showLate;
                                 m_commandRear = (m_commandRear + 1) % _countof(m_fCommandShow);
                             }
-                            TCHAR debug[128 + _countof(utf16)];
-                            ::wsprintf(debug, TEXT("CCaptionAnalyzer::AddPacket(): %5umsec %s "), pList->dwWaitTime, fMatch ? TEXT("[X]") : TEXT(""));
-                            ::lstrcat(debug, utf16);
-                            ::lstrcat(debug, TEXT("\n"));
-                            ::OutputDebugString(debug);
+                            OutputDebugFormat(TEXT(__FUNCTION__) TEXT("(): %5umsec %s %s\n"), pList->dwWaitTime, fMatch?TEXT("[X]"):TEXT(""), utf16);
                         }
                         else {
-                            ::OutputDebugString(TEXT("CCaptionAnalyzer::AddPacket(): MultiByteToWideChar Failed!\n"));
+                            OutputDebugFormat(TEXT(__FUNCTION__) TEXT("(): MultiByteToWideChar Failed!\n"));
                         }
                     }
                 }

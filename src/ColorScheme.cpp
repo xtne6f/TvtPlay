@@ -1,4 +1,5 @@
 ﻿#include <Windows.h>
+#include <string>
 #include "Util.h"
 #include "ColorScheme.h"
 #include "Settings.h"
@@ -228,7 +229,11 @@ bool CColorScheme::GetStyle(int Type,Theme::Style *pStyle) const
 
 bool CColorScheme::SetName(LPCTSTR pszName)
 {
-	return m_Name.Set(pszName);
+	if (pszName) {
+		m_Name=pszName;
+		return true;
+	}
+	return false;
 }
 
 
@@ -352,7 +357,11 @@ bool CColorScheme::Load(LPCTSTR pszFileName)
 
 bool CColorScheme::SetFileName(LPCTSTR pszFileName)
 {
-	return m_FileName.Set(pszFileName);
+	if (pszFileName) {
+		m_FileName=pszFileName;
+		return true;
+	}
+	return false;
 }
 
 

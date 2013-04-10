@@ -14,6 +14,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin, public ITvtPlayController
 public:
     // CTVTestPlugin
     CTvtPlay();
+    ~CTvtPlay();
     bool GetPluginInfo(TVTest::PluginInfo *pInfo);
     bool Initialize();
     bool Finalize();
@@ -56,6 +57,7 @@ private:
     void SaveFileInfoSetting(const std::list<HASH_INFO> &hashList) const;
     void UpdateFileInfoSetting(const HASH_INFO &hashInfo) const;
     bool InitializePlugin();
+    int GetCaptionPid();
     bool EnablePlugin(bool fEnable);
     bool IsAppMaximized() { return (::GetWindowLong(m_pApp->GetAppWindow(), GWL_STYLE) & WS_MAXIMIZE) != 0; }
     HWND GetFullscreenWindow();
@@ -160,13 +162,18 @@ private:
 
 #ifdef EN_SWC
     // 字幕でゆっくり
-    CCriticalLock m_streamLock;
     CCaptionAnalyzer m_captionAnalyzer;
     TCHAR m_szCaptionDllPath[MAX_PATH];
     TCHAR m_szBregonigDllPath[MAX_PATH];
     int m_slowerWithCaption;
     int m_swcShowLate;
     int m_swcClearEarly;
+    // ストリーム解析
+    CCriticalLock m_streamLock;
+    DWORD m_pcr;
+    bool m_fResetPat;
+    PAT m_pat;
+    int m_captionPid;
 #endif
 };
 

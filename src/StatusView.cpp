@@ -640,13 +640,13 @@ void CStatusView::SetVisible(bool fVisible)
 void CStatusView::SetSingleText(LPCTSTR pszText)
 {
 	if (pszText!=NULL) {
-		m_SingleText.Set(pszText);
+		m_SingleText=pszText;
 		m_fSingleMode=true;
 		SetHotItem(-1);
 	} else {
 		if (!m_fSingleMode)
 			return;
-		m_SingleText.Clear();
+		m_SingleText.clear();
 		m_fSingleMode=false;
 	}
 	if (m_hwnd!=NULL)
@@ -929,7 +929,7 @@ void CStatusView::Draw(HDC hdc,const RECT *pPaintRect)
 		::SetTextColor(hdcDst,m_Theme.ItemStyle.TextColor);
 		rc.left+=m_ItemMargin.left;
 		rc.right-=m_ItemMargin.right;
-		::DrawText(hdcDst,m_SingleText.Get(),-1,&rc,
+		::DrawText(hdcDst,m_SingleText.c_str(),-1,&rc,
 				   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
 	} else {
 		const int Left=rc.left;

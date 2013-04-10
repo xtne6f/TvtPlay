@@ -345,6 +345,15 @@ static void extract_psi(PSI *psi, const unsigned char *payload, int payload_size
 }
 
 
+void reset_pat(PAT *pat)
+{
+    while (pat->pid_count > 0) {
+        delete pat->pmt[--pat->pid_count];
+    }
+    ::memset(pat, 0, sizeof(PAT));
+}
+
+
 // 参考: ITU-T H.222.0 Sec.2.4.4.3 および ARIB TR-B14 第一分冊第二編8.2
 void extract_pat(PAT *pat, const unsigned char *payload, int payload_size, int unit_start, int counter)
 {
@@ -637,67 +646,7 @@ void extract_adaptation_field(ADAPTATION_FIELD *dst, const unsigned char *data)
 #endif
 
 
-#if 1 // From: TVTest_0.7.23_Src/StdUtil.cpp
-int StdUtil::vsnprintf(wchar_t *s,size_t n,const wchar_t *format,va_list args)
-{
-	int Length;
-
-	if (n>0) {
-		Length=::vswprintf_s(s,n,format,args);
-	} else {
-		Length=0;
-	}
-	return Length;
-}
-#endif
-
-
 #if 1 // From: TVTest_0.7.23_Src/TsUtilClass.cpp
-//////////////////////////////////////////////////////////////////////
-// CCriticalLock クラスの構築/消滅
-//////////////////////////////////////////////////////////////////////
-
-CCriticalLock::CCriticalLock()
-{
-	// クリティカルセクション初期化
-	::InitializeCriticalSection(&m_CriticalSection);
-}
-
-CCriticalLock::~CCriticalLock()
-{
-	// クリティカルセクション削除
-	::DeleteCriticalSection(&m_CriticalSection);
-}
-
-void CCriticalLock::Lock(void)
-{
-	// クリティカルセクション取得
-	::EnterCriticalSection(&m_CriticalSection);
-}
-
-void CCriticalLock::Unlock(void)
-{
-	// クリティカルセクション開放
-	::LeaveCriticalSection(&m_CriticalSection);
-}
-
-//////////////////////////////////////////////////////////////////////
-// CBlockLock クラスの構築/消滅
-//////////////////////////////////////////////////////////////////////
-
-CBlockLock::CBlockLock(CCriticalLock *pCriticalLock)
-	: m_pCriticalLock(pCriticalLock)
-{
-	// ロック取得
-	m_pCriticalLock->Lock();
-}
-
-CBlockLock::~CBlockLock()
-{
-	// ロック開放
-	m_pCriticalLock->Unlock();
-}
-
 /////////////////////////////////////////////////////////////////////////////
 // トレースクラス
 /////////////////////////////////////////////////////////////////////////////
@@ -713,32 +662,8 @@ void CTracer::Trace(LPCTSTR pszOutput, ...)
 
 void CTracer::TraceV(LPCTSTR pszOutput,va_list Args)
 {
-	StdUtil::vsnprintf(m_szBuffer,sizeof(m_szBuffer)/sizeof(TCHAR),pszOutput,Args);
+	_vsntprintf_s(m_szBuffer,sizeof(m_szBuffer)/sizeof(TCHAR),_TRUNCATE,pszOutput,Args);
 	OnTrace(m_szBuffer);
-}
-#endif
-
-
-#if 1 // From: TVTest_0.7.23_Src/StringUtility.cpp
-__declspec(restrict) LPWSTR DuplicateString(LPCWSTR pszString)
-{
-	if (pszString==NULL)
-		return NULL;
-
-	const size_t Length=lstrlenW(pszString)+1;
-	LPWSTR pszNewString=new WCHAR[Length];
-	::CopyMemory(pszNewString,pszString,Length*sizeof(WCHAR));
-	return pszNewString;
-}
-
-
-bool ReplaceString(LPWSTR *ppszString,LPCWSTR pszNewString)
-{
-	if (ppszString==NULL)
-		return false;
-	delete [] *ppszString;
-	*ppszString=DuplicateString(pszNewString);
-	return true;
 }
 #endif
 
@@ -756,187 +681,6 @@ bool CompareLogFont(const LOGFONT *pFont1,const LOGFONT *pFont2)
 {
 	return memcmp(pFont1,pFont2,28/*offsetof(LOGFONT,lfFaceName)*/)==0
 		&& lstrcmp(pFont1->lfFaceName,pFont2->lfFaceName)==0;
-}
-
-
-CDynamicString::CDynamicString()
-	: m_pszString(NULL)
-{
-}
-
-
-CDynamicString::CDynamicString(const CDynamicString &String)
-	: m_pszString(NULL)
-{
-	*this=String;
-}
-
-
-#ifdef MOVE_SEMANTICS_SUPPORTED
-CDynamicString::CDynamicString(CDynamicString &&String)
-	: m_pszString(String.m_pszString)
-{
-	String.m_pszString=NULL;
-}
-#endif
-
-
-CDynamicString::CDynamicString(LPCTSTR pszString)
-	: m_pszString(NULL)
-{
-	Set(pszString);
-}
-
-
-CDynamicString::~CDynamicString()
-{
-	Clear();
-}
-
-
-CDynamicString &CDynamicString::operator=(const CDynamicString &String)
-{
-	if (&String!=this) {
-		ReplaceString(&m_pszString,String.m_pszString);
-	}
-	return *this;
-}
-
-
-#ifdef MOVE_SEMANTICS_SUPPORTED
-CDynamicString &CDynamicString::operator=(CDynamicString &&String)
-{
-	if (&String!=this) {
-		Clear();
-		m_pszString=String.m_pszString;
-		String.m_pszString=NULL;
-	}
-	return *this;
-}
-#endif
-
-
-CDynamicString &CDynamicString::operator+=(const CDynamicString &String)
-{
-	return *this+=String.m_pszString;
-}
-
-
-CDynamicString &CDynamicString::operator=(LPCTSTR pszString)
-{
-	ReplaceString(&m_pszString,pszString);
-	return *this;
-}
-
-
-CDynamicString &CDynamicString::operator+=(LPCTSTR pszString)
-{
-	int Length=0;
-	if (m_pszString!=NULL)
-		Length+=::lstrlen(m_pszString);
-	if (pszString!=NULL)
-		Length+=::lstrlen(pszString);
-	if (Length>0) {
-		LPTSTR pszOldString=m_pszString;
-
-		m_pszString=new TCHAR[Length+1];
-		m_pszString[0]='\0';
-		if (pszOldString!=NULL) {
-			::lstrcpy(m_pszString,pszOldString);
-			delete [] pszOldString;
-		}
-		if (pszString!=NULL)
-			::lstrcat(m_pszString,pszString);
-	}
-	return *this;
-}
-
-
-bool CDynamicString::operator==(const CDynamicString &String) const
-{
-	return Compare(String.m_pszString)==0;
-}
-
-
-bool CDynamicString::operator!=(const CDynamicString &String) const
-{
-	return Compare(String.m_pszString)!=0;
-}
-
-
-bool CDynamicString::Set(LPCTSTR pszString)
-{
-	return ReplaceString(&m_pszString,pszString);
-}
-
-
-bool CDynamicString::Set(LPCTSTR pszString,size_t Length)
-{
-	Clear();
-	if (pszString!=NULL && Length>0) {
-		Length=StdUtil::strnlen(pszString,Length);
-		m_pszString=new TCHAR[Length+1];
-		::CopyMemory(m_pszString,pszString,Length*sizeof(TCHAR));
-		m_pszString[Length]=_T('\0');
-	}
-	return true;
-}
-
-
-bool CDynamicString::Attach(LPTSTR pszString)
-{
-	Clear();
-	m_pszString=pszString;
-	return true;
-}
-
-
-int CDynamicString::Length() const
-{
-	if (m_pszString==NULL)
-		return 0;
-	return ::lstrlen(m_pszString);
-}
-
-
-void CDynamicString::Clear()
-{
-	if (m_pszString!=NULL) {
-		delete [] m_pszString;
-		m_pszString=NULL;
-	}
-}
-
-
-bool CDynamicString::IsEmpty() const
-{
-	return IsStringEmpty(m_pszString);
-}
-
-
-int CDynamicString::Compare(LPCTSTR pszString) const
-{
-	if (IsEmpty()) {
-		if (IsStringEmpty(pszString))
-			return 0;
-		return -1;
-	}
-	if (IsStringEmpty(pszString))
-		return 1;
-	return ::lstrcmp(m_pszString,pszString);
-}
-
-
-int CDynamicString::CompareIgnoreCase(LPCTSTR pszString) const
-{
-	if (IsEmpty()) {
-		if (IsStringEmpty(pszString))
-			return 0;
-		return -1;
-	}
-	if (IsStringEmpty(pszString))
-		return 1;
-	return ::lstrcmpi(m_pszString,pszString);
 }
 
 

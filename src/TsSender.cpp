@@ -4,9 +4,16 @@
 #include "AsyncFileReader.h"
 #include "TsSender.h"
 
-#ifndef __AFX_H__
+#ifndef ASSERT
 #include <cassert>
 #define ASSERT assert
+#endif
+
+#if 0 // アセンブリ検索用
+#define MAGIC_NUMBER(x) { g_dwMagic=(x); }
+static DWORD g_dwMagic;
+#else
+#define MAGIC_NUMBER
 #endif
 
 #define MSB(x) ((x) & 0x80000000)
@@ -29,9 +36,7 @@ void CTsTimestampShifter::SetValue(DWORD shift45khz)
 
 void CTsTimestampShifter::Reset()
 {
-    while (m_pat.pid_count > 0)
-        delete m_pat.pmt[--m_pat.pid_count];
-    memset(&m_pat, 0, sizeof(m_pat));
+    reset_pat(&m_pat);
 }
 
 static void PcrToArray(BYTE *pDest, DWORD clk45khz)
@@ -53,6 +58,7 @@ static void PtsDtsToArray(BYTE *pDest, DWORD clk45khz)
 
 void CTsTimestampShifter::Transform(BYTE *pPacket)
 {
+    MAGIC_NUMBER(0x73658165);
     TS_HEADER header;
     extract_ts_header(&header, pPacket);
 
@@ -733,25 +739,16 @@ DWORD CTsSender::GetAdjTickCount()
 // 戻り値: 0:終端に達した, 1:PCRが現れる前に処理パケット数がlimitに達した, 2:正常に処理した
 int CTsSender::ReadToPcr(int limit, bool fSend, bool fSyncRead)
 {
+    MAGIC_NUMBER(0x76389426);
     bool fPcr;
     do {
-        if (!ReadPacket(fSend, fSyncRead, &fPcr)) return 0;
-        // あまり貯めすぎると再生に影響するため
-        if (m_curr - m_head >= BON_UDP_TSDATASIZE - 1880) RotateBuffer(fSend, fSyncRead);
-    } while (!fPcr && --limit > 0);
-    return fPcr ? 2 : 1;
-}
-
-
-// TSパケットを1つ処理する
-bool CTsSender::ReadPacket(bool fSend, bool fSyncRead, bool *pfPcr)
-{
-    *pfPcr = false;
+#if 1 // TSパケットを1つ処理する
+    fPcr = false;
 
     if (!m_curr || m_tail - m_curr <= m_unitSize) {
         RotateBuffer(fSend, fSyncRead);
         if (!m_curr || m_tail - m_curr <= m_unitSize) {
-            return false;
+            return 0;
         }
     }
 
@@ -762,9 +759,9 @@ bool CTsSender::ReadPacket(bool fSend, bool fSyncRead, bool *pfPcr)
             if ((m_curr = resync(m_curr, m_tail, m_unitSize)) != NULL) break;
             m_curr = m_tail; // 処理済にする
             RotateBuffer(fSend, fSyncRead);
-            if (!m_curr) return false;
+            if (!m_curr) return 0;
         }
-        if (i == RESYNC_FAILURE_LIMIT) return false;
+        if (i == RESYNC_FAILURE_LIMIT) return 0;
         ASSERT(m_tail - m_curr > m_unitSize);
     }
 
@@ -811,7 +808,7 @@ bool CTsSender::ReadPacket(bool fSend, bool fSyncRead, bool *pfPcr)
                     m_rateCtrlMsec = 0;
                     m_fEnPcr = true;
                 }
-                *pfPcr = true;
+                fPcr = true;
             }
         }
     }
@@ -838,7 +835,11 @@ bool CTsSender::ReadPacket(bool fSend, bool fSyncRead, bool *pfPcr)
     if (m_fModTimestamp) m_tsShifter.Transform(m_curr);
 
     m_curr += m_unitSize;
-    return true;
+#endif
+        // あまり貯めすぎると再生に影響するため
+        if (m_curr - m_head >= BON_UDP_TSDATASIZE - 1880) RotateBuffer(fSend, fSyncRead);
+    } while (!fPcr && --limit > 0);
+    return fPcr ? 2 : 1;
 }
 
 

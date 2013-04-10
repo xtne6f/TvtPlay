@@ -10,7 +10,7 @@ public:
     ~CTsTimestampShifter();
     void SetValue(DWORD shift45khz);
     void Reset();
-    inline void Transform(BYTE *pPacket);
+    void Transform(BYTE *pPacket);
 private:
     DWORD m_shift45khz;
     PAT m_pat;
@@ -23,7 +23,6 @@ class CTsSender
     static const int MAX_URI = 256;
     static const int BUFFER_LEN = 1536;
     static const int BON_UDP_TSDATASIZE = 48128;
-    static const int PCR_PER_MSEC = 45;
     static const int TS_SUPPOSED_RATE = 2 * 1024 * 1024;
     static const int PCR_PIDS_MAX = 8;
     static const int RESYNC_FAILURE_LIMIT = 2;
@@ -60,7 +59,6 @@ public:
 private:
     DWORD GetAdjTickCount();
     int ReadToPcr(int limit, bool fSend, bool fSyncRead);
-    inline bool ReadPacket(bool fSend, bool fSyncRead, bool *pfPcr);
     void RotateBuffer(bool fSend, bool fSyncRead);
     bool Seek(__int64 distanceToMove, DWORD dwMoveMethod);
     bool SeekToBoundary(__int64 predicted, __int64 range, BYTE *pWork, int workSize);

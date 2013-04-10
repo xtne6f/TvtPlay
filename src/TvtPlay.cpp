@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2012-06-19
+// 最終更新: 2012-07-11
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -32,7 +32,7 @@
 #include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.9r2)";
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.9r3)";
 static const int INFO_VERSION = 22;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
@@ -186,6 +186,9 @@ CTvtPlay::CTvtPlay()
     , m_slowerWithCaption(0)
     , m_swcShowLate(0)
     , m_swcClearEarly(0)
+    , m_pcr(0)
+    , m_fResetPat(false)
+    , m_captionPid(-1)
 #endif
 {
     m_szIniFileName[0] = 0;
@@ -196,12 +199,19 @@ CTvtPlay::CTvtPlay()
 #ifdef EN_SWC
     m_szCaptionDllPath[0] = 0;
     m_szBregonigDllPath[0] = 0;
+    ::memset(&m_pat, 0, sizeof(m_pat));
 #endif
     m_lastCurPos.x = m_lastCurPos.y = 0;
     m_idleCurPos.x = m_idleCurPos.y = 0;
     CStatusView::Initialize(g_hinstDLL);
 }
 
+CTvtPlay::~CTvtPlay()
+{
+#ifdef EN_SWC
+    reset_pat(&m_pat);
+#endif
+}
 
 bool CTvtPlay::GetPluginInfo(TVTest::PluginInfo *pInfo)
 {
@@ -397,10 +407,10 @@ void CTvtPlay::LoadSettings()
         GetBufferedProfileString(pBuf, TEXT("CaptionDll"), TEXT("Plugins\\TvtPlay_Caption.dll"), m_szCaptionDllPath, _countof(m_szCaptionDllPath));
         GetBufferedProfileString(pBuf, TEXT("BregonigDll"), TEXT(""), m_szBregonigDllPath, _countof(m_szBregonigDllPath));
         m_slowerWithCaption = GetBufferedProfileInt(pBuf, TEXT("SlowerWithCaption"), 0);
-        m_swcShowLate       = GetBufferedProfileInt(pBuf, TEXT("SlowerWithCaptionShowLate"), 0);
-        m_swcShowLate       = min(max(m_swcShowLate, 0), 5000);
-        m_swcClearEarly     = GetBufferedProfileInt(pBuf, TEXT("SlowerWithCaptionClearEarly"), 0);
-        m_swcClearEarly     = min(max(m_swcClearEarly, 0), 5000);
+        m_swcShowLate       = GetBufferedProfileInt(pBuf, TEXT("SlowerWithCaptionShowLate"), 450);
+        m_swcShowLate       = min(max(m_swcShowLate, -5000), 5000);
+        m_swcClearEarly     = GetBufferedProfileInt(pBuf, TEXT("SlowerWithCaptionClearEarly"), -450);
+        m_swcClearEarly     = min(max(m_swcClearEarly, -5000), 5000);
 #endif
         m_seekItemOrder     = GetBufferedProfileInt(pBuf, TEXT("SeekItemOrder"), 99);
         m_posItemOrder      = GetBufferedProfileInt(pBuf, TEXT("StatusItemOrder"), 99);
@@ -844,6 +854,19 @@ bool CTvtPlay::InitializePlugin()
 }
 
 
+// 字幕PIDを取得する(無い場合は-1)
+// プラグインAPIが内部でストリームをロックするので、デッドロックを完成させないように注意
+int CTvtPlay::GetCaptionPid()
+{
+    int index = m_pApp->GetService();
+    TVTest::ServiceInfo si;
+    if (index >= 0 && m_pApp->GetServiceInfo(index, &si) && si.SubtitlePID != 0) {
+        return si.SubtitlePID;
+    }
+    return -1;
+}
+
+
 // プラグインの有効状態が変化した
 bool CTvtPlay::EnablePlugin(bool fEnable) {
     if (fEnable) {
@@ -880,6 +903,8 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
             ::PathRemoveExtension(blacklistPath);
             ::lstrcat(blacklistPath, TEXT("_Blacklist.txt"));
             if (m_captionAnalyzer.Initialize(m_szCaptionDllPath, m_szBregonigDllPath, blacklistPath, m_swcShowLate, m_swcClearEarly)) {
+                m_captionPid = GetCaptionPid();
+                m_fResetPat = true;
                 // ストリームコールバックの登録
                 m_pApp->SetStreamCallback(0, StreamCallback, this);
             }
@@ -2163,14 +2188,8 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         // サービスの構成が変化した
         if (pThis->m_pApp->IsPluginEnabled()) {
             // 字幕PIDをセットする
-            int index = pThis->m_pApp->GetService();
-            TVTest::ServiceInfo si;
-            if (index >= 0 && pThis->m_pApp->GetServiceInfo(index, &si) && si.SubtitlePID != 0) {
-                pThis->m_captionAnalyzer.SetPid(si.SubtitlePID);
-            }
-            else {
-                pThis->m_captionAnalyzer.SetPid(-1);
-            }
+            pThis->m_captionPid = pThis->GetCaptionPid();
+            pThis->m_fResetPat = true;
         }
         break;
 #endif
@@ -2500,7 +2519,7 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
 #ifdef EN_SWC
                 {
                     CBlockLock lock(&pThis->m_streamLock);
-                    fLowSpeed = pThis->m_captionAnalyzer.CheckShowState();
+                    fLowSpeed = pThis->m_captionAnalyzer.CheckShowState(pThis->m_pcr);
                 }
 #endif
                 if (!ASFilterSendMessageTimeout(WM_ASFLT_STRETCH, stretchMode, MAKELPARAM(fLowSpeed?lowSpeed:speed, 100), 1000)) {
@@ -2531,11 +2550,6 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                     if (pThis->m_resetMode==2 || pThis->m_resetMode==3) {
                         pThis->m_tsSender.SendEmptyPat();
                     }
-#ifdef EN_SWC
-                    // PCRが不連続になるので一旦無効にする
-                    CBlockLock lock(&pThis->m_streamLock);
-                    pThis->m_captionAnalyzer.ClearShowState();
-#endif
                 }
                 resetCount += resetCount < 0 ? 1 : -1;
                 if (resetCount > 0) {
@@ -2562,7 +2576,7 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                 int fSetSpeed = false;
                 {
                     CBlockLock lock(&pThis->m_streamLock);
-                    if (pThis->m_captionAnalyzer.CheckShowState()) {
+                    if (pThis->m_captionAnalyzer.CheckShowState(pThis->m_pcr)) {
                         if (!fLowSpeed) {
                             // 低速にする
                             ::OutputDebugString(TEXT("CTvtPlay::TsSenderThread(): *** LOW SPEED ***\n"));
@@ -2602,11 +2616,6 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                 // カット編集やドロップの可能性が高いのでビューアリセットする
                 ::SendMessageTimeout(pThis->m_hwndFrame, WM_QUERY_RESET, 0, 0, SMTO_NORMAL, 1000, &dwRes);
                 DEBUG_OUT(TEXT("CTvtPlay::TsSenderThread(): ResetRateControl\n"));
-#ifdef EN_SWC
-                // PCRが不連続になるので一旦無効にする
-                CBlockLock lock(&pThis->m_streamLock);
-                pThis->m_captionAnalyzer.ClearShowState();
-#endif
             }
         }
 
@@ -2643,19 +2652,103 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
 
 
 #ifdef EN_SWC
+
+#define MSB(x) ((x) & 0x80000000)
+
 // ストリームコールバック(別スレッド)
 BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
 {
-    CTvtPlay *pThis = static_cast<CTvtPlay*>(pClientData);
+    CTvtPlay &t = *static_cast<CTvtPlay*>(pClientData);
+
+    if (t.m_fResetPat) {
+        reset_pat(&t.m_pat);
+        t.m_fResetPat = false;
+        CBlockLock lock(&t.m_streamLock);
+        t.m_captionAnalyzer.ClearShowState();
+    }
+
     TS_HEADER header;
     extract_ts_header(&header, pData);
 
-    // Early reject
-    if ((header.adaptation_field_control&2)/*2,3*/ ||
-        header.pid == pThis->m_captionAnalyzer.GetPid())
+    // PCRを取得
+    if ((header.adaptation_field_control&2)/*2,3*/ &&
+        !header.transport_error_indicator)
     {
-        CBlockLock lock(&pThis->m_streamLock);
-        pThis->m_captionAnalyzer.AddPacket(pData);
+        // アダプテーションフィールドがある
+        ADAPTATION_FIELD adapt;
+        extract_adaptation_field(&adapt, pData + 4);
+
+        if (adapt.pcr_flag) {
+            // 字幕のPCR参照PIDを取得する
+            int pcrPid = -1;
+            for (int i = 0; i < t.m_pat.pid_count; ++i) {
+                PMT *pPmt = t.m_pat.pmt[i];
+                for (int j = 0; j < pPmt->pid_count; ++j) {
+                    if (pPmt->pid[j] == t.m_captionPid) {
+                        pcrPid = pPmt->pcr_pid;
+                        break;
+                    }
+                }
+            }
+            if (pcrPid < 0) {
+                CBlockLock lock(&t.m_streamLock);
+                t.m_captionAnalyzer.ClearShowState();
+            }
+            // 参照PIDのときはPCRを取得する
+            if (header.pid == pcrPid) {
+                CBlockLock lock(&t.m_streamLock);
+                DWORD pcr = (DWORD)adapt.pcr_45khz;
+
+                // PCRの連続性チェック
+                if (MSB(pcr - t.m_pcr) || pcr - t.m_pcr >= 1000 * PCR_PER_MSEC) {
+                    DEBUG_OUT(TEXT(__FUNCTION__) TEXT("(): Discontinuous packet!\n"));
+                    t.m_captionAnalyzer.Clear();
+                }
+                t.m_pcr = pcr;
+            }
+        }
+    }
+
+    // PAT/PMTを取得
+    if ((header.adaptation_field_control&1)/*1,3*/ &&
+        !header.transport_scrambling_control &&
+        !header.transport_error_indicator)
+    {
+        LPCBYTE pPayload = pData + 4;
+        if (header.adaptation_field_control == 3) {
+            // アダプテーションに続けてペイロードがある
+            ADAPTATION_FIELD adapt;
+            extract_adaptation_field(&adapt, pPayload);
+            if (adapt.adaptation_field_length < 0) return TRUE;
+            pPayload += adapt.adaptation_field_length + 1;
+        }
+        int payloadSize = 188 - static_cast<int>(pPayload - pData);
+
+        // PAT監視
+        if (header.pid == 0) {
+            extract_pat(&t.m_pat, pPayload, payloadSize,
+                        header.payload_unit_start_indicator,
+                        header.continuity_counter);
+            return TRUE;
+        }
+        // PATリストにあるPMT監視
+        for (int i = 0; i < t.m_pat.pid_count; ++i) {
+            if (header.pid == t.m_pat.pid[i]/* && header.pid != 0*/) {
+                extract_pmt(t.m_pat.pmt[i], pPayload, payloadSize,
+                            header.payload_unit_start_indicator,
+                            header.continuity_counter);
+                return TRUE;
+            }
+        }
+    }
+
+    // 字幕ストリームを取得
+    if (header.pid == t.m_captionPid &&
+        !header.transport_scrambling_control &&
+        !header.transport_error_indicator)
+    {
+        CBlockLock lock(&t.m_streamLock);
+        t.m_captionAnalyzer.AddPacket(pData);
     }
     return TRUE;
 }

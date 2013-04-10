@@ -68,9 +68,9 @@ public:
 	bool SetBorderType(int Border,Theme::BorderType Type);
 	bool GetBorderInfo(int Border,Theme::BorderInfo *pInfo) const;
 	bool GetStyle(int Type,Theme::Style *pStyle) const;
-	LPCTSTR GetName() const { return m_Name.Get(); }
+	LPCTSTR GetName() const { return m_Name.c_str(); }
 	bool SetName(LPCTSTR pszName);
-	LPCTSTR GetFileName() const { return m_FileName.Get(); }
+	LPCTSTR GetFileName() const { return m_FileName.c_str(); }
 	bool Load(LPCTSTR pszFileName);
 	bool SetFileName(LPCTSTR pszFileName);
 	void SetDefault();
@@ -91,8 +91,8 @@ private:
 	COLORREF m_ColorList[NUM_COLORS];
 	GradientStyle m_GradientList[NUM_GRADIENTS];
 	Theme::BorderType m_BorderList[NUM_BORDERS];
-	CDynamicString m_Name;
-	CDynamicString m_FileName;
+	std::basic_string<TCHAR> m_Name;
+	std::basic_string<TCHAR> m_FileName;
 	struct ColorInfo {
 		COLORREF DefaultColor;
 		LPCTSTR pszText;

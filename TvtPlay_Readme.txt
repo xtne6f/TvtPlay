@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.1.9r2 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.1.9r3 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -38,7 +38,7 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
 用画像の配置転換などで、設定キーButton02～Button15のデフォルトが一部変更されてい
 ます。ボタンアイコンがおかしくなった場合は、一度これらのキーをメモ帳などを使って
 削除してみてください。
-(ver.1.8～ver.1.9からの移行)
+(ver.1.8～ver.1.9r2からの移行)
   TvtPlay.tvtpを置きかえてください。
 (ver.1.3～ver.1.7からの移行)
   TvtPlay.tvtpとBonDriver_Pipe.dllとを置きかえてください。ver.1.8は
@@ -481,6 +481,10 @@ http://2sen.dip.jp/dtv/)のup0598.zip「非公式 TvtPlayシークボタンカ�
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.1.9r3 (2012-07-12)
+・<高速鑑賞機能>参照するPCRを間違えて字幕区間のタイミングがずれる可能性を排除
+・<高速鑑賞機能>設定キーSlowerWithCaptionShowLate/ClearEarlyのデフォルトを変更
+・計算量の多い部分の最適化+冗長コード整理
 ver.1.9r2 (2012-06-19)
 ・StretchPopupを左クリックのボタンコマンドにしたときのアイコン画像処理を忘れてい
   たので修正

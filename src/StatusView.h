@@ -3,6 +3,7 @@
 
 
 #include <vector>
+#include <string>
 #include "BasicWindow.h"
 #include "Theme.h"
 #include "DrawUtil.h"
@@ -139,7 +140,7 @@ private:
 	ThemeInfo m_Theme;
 	std::vector<CStatusItem*> m_ItemList;
 	bool m_fSingleMode;
-	CDynamicString m_SingleText;
+	std::basic_string<TCHAR> m_SingleText;
 	int m_HotItem;
 	CMouseLeaveTrack m_MouseLeaveTrack;
 	bool m_fOnButtonDown;

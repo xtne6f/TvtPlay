@@ -1,4 +1,4 @@
-﻿diff diff_TVTestStatusView_orig/Aero.cpp ./Aero.cpp
+﻿diff TVTestStatusView_orig/Aero.cpp ./Aero.cpp
 1c1
 < #include "stdafx.h"
 ---
@@ -114,7 +114,7 @@
 < 		}
 < 	}
 < 	::EndPaint(hwnd,&ps);
-diff diff_TVTestStatusView_orig/Aero.h ./Aero.h
+diff TVTestStatusView_orig/Aero.h ./Aero.h
 4,18d3
 < 
 < class CAeroGlass
@@ -140,7 +140,7 @@ diff diff_TVTestStatusView_orig/Aero.h ./Aero.h
 < 	void OnPaint(HWND hwnd);
 < };
 < 
-diff diff_TVTestStatusView_orig/BasicWindow.cpp ./BasicWindow.cpp
+diff TVTestStatusView_orig/BasicWindow.cpp ./BasicWindow.cpp
 1,2c1,3
 < #include "stdafx.h"
 < #include "TVTest.h"
@@ -148,24 +148,25 @@ diff diff_TVTestStatusView_orig/BasicWindow.cpp ./BasicWindow.cpp
 > #include <Windows.h>
 > #include <WindowsX.h>
 > #include "Util.h"
-diff diff_TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
-1,4c1,2
+diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
+1,4c1,3
 < #include "stdafx.h"
 < #include <algorithm>
 < #include "TVTest.h"
 < #include "AppMain.h"
 ---
 > #include <Windows.h>
+> #include <string>
 > #include "Util.h"
-7,9d4
+7,9d5
 < #include "DialogUtil.h"
 < #include "DrawUtil.h"
 < #include "resource.h"
-16a12
+16a13
 > #define lengthof _countof
-45d40
+45d41
 < 	{HEXRGB(0xCCCCCC),	TEXT("Splitter"),							TEXT("分割線")},
-47,190d41
+47,190d42
 < 	{HEXRGB(0x666666),	TEXT("PanelBack"),							TEXT("パネル背景")},
 < 	{HEXRGB(0xCCCCCC),	TEXT("PanelText"),							TEXT("パネル文字")},
 < 	{HEXRGB(0xCCCCCC),	TEXT("PanelTabBack"),						TEXT("パネルタブ背景1")},
@@ -310,7 +311,7 @@ diff diff_TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 	{RGB(224,240,255),	TEXT("EPGContentEducation"),				TEXT("EPG番組表趣味/教育番組")},
 < 	{RGB(224,240,255),	TEXT("EPGContentWelfare"),					TEXT("EPG番組表福祉番組")},
 < 	{RGB(240,240,240),	TEXT("EPGContentOther"),					TEXT("EPG番組表その他の番組")},
-200,267d50
+200,267d51
 < 	{TEXT("PanelTabBackGradient"),						Theme::DIRECTION_VERT,	true,
 < 		COLOR_PANELTABBACK1,					COLOR_PANELTABBACK2},
 < 	{TEXT("PanelCurTabBackGradient"),					Theme::DIRECTION_VERT,	true,
@@ -379,7 +380,7 @@ diff diff_TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 		COLOR_PROGRAMGUIDETIMEBACK_18TO20_1,	COLOR_PROGRAMGUIDETIMEBACK_18TO20_2},
 < 	{TEXT("ProgramGuideTime21To23BackGradient"),		Theme::DIRECTION_HORZ,	true,
 < 		COLOR_PROGRAMGUIDETIMEBACK_21TO23_1,	COLOR_PROGRAMGUIDETIMEBACK_21TO23_2},
-281,330d63
+281,330d64
 < 	{TEXT("TitleBarBorder"),					Theme::BORDER_RAISED,
 < 		COLOR_TITLEBARBORDER,						true},
 < 	{TEXT("TitleBarCaptionBorder"),				Theme::BORDER_NONE,
@@ -430,7 +431,7 @@ diff diff_TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 		COLOR_CONTROLPANELITEMBORDER,				false},
 < 	{TEXT("ControlPanelHighlightBorder"),		Theme::BORDER_NONE,
 < 		COLOR_CONTROLPANELHIGHLIGHTBORDER,			false},
-340,383d72
+340,383d73
 < 	{GRADIENT_TITLEBARBACK,						BORDER_TITLEBARCAPTION,
 < 		COLOR_TITLEBARTEXT},
 < 	{GRADIENT_TITLEBARICON,						BORDER_TITLEBARICON,
@@ -475,21 +476,29 @@ diff diff_TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 		COLOR_CONTROLPANELTEXT},
 < 	{GRADIENT_CONTROLPANELHIGHLIGHTBACK,		BORDER_CONTROLPANELHIGHLIGHTITEM,
 < 		COLOR_CONTROLPANELHIGHLIGHTTEXT},
-546c235
+542c232,236
+< 	return m_Name.Set(pszName);
+---
+> 	if (pszName) {
+> 		m_Name=pszName;
+> 		return true;
+> 	}
+> 	return false;
+546c240
 < bool CColorScheme::Load(CSettings &Settings)
 ---
 > bool CColorScheme::Load(LPCTSTR pszFileName)
-547a237
+547a242
 > 	CSettings Settings;
-551c241
+551c246
 < 	if (!Settings.SetSection(TEXT("ColorScheme")))
 ---
 > 	if (!Settings.Open(pszFileName,TEXT("ColorScheme"),CSettings::OPEN_READ))
-574,576d263
+574,576d268
 < 		} else if (i==COLOR_SPLITTER) {
 < 			m_ColorList[i]=::GetSysColor(COLOR_3DFACE);
 < 			SetLoadedFlag(i);
-586,639d272
+586,639d277
 < 				{COLOR_PROGRAMLISTPANEL_CUREVENTBACK1,		COLOR_PROGRAMLISTPANEL_EVENTBACK1},
 < 				{COLOR_PROGRAMLISTPANEL_CUREVENTBACK2,		COLOR_PROGRAMLISTPANEL_EVENTBACK2},
 < 				{COLOR_PROGRAMLISTPANEL_CUREVENTTEXT,		COLOR_PROGRAMLISTPANEL_EVENTTEXT},
@@ -544,12 +553,12 @@ diff diff_TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 				{COLOR_PROGRAMGUIDECURCHANNELBACK2,			COLOR_PROGRAMGUIDECHANNELBACK2},
 < 				{COLOR_PROGRAMGUIDECURCHANNELTEXT,			COLOR_PROGRAMGUIDECHANNELTEXT},
 < 				{COLOR_PROGRAMGUIDETIMELINE,				COLOR_PROGRAMGUIDETIMETEXT},
-646,649d278
+646,649d283
 < 				{COLOR_PANELTITLEBORDER,	COLOR_PANELTITLEBACK1,		COLOR_PANELTITLEBACK2},
 < 				{COLOR_TITLEBARBORDER,		COLOR_TITLEBARBACK1,		COLOR_TITLEBARBACK2},
 < 				{COLOR_SIDEBARCHECKBORDER,	COLOR_SIDEBARCHECKBACK1,	COLOR_SIDEBARCHECKBACK2},
 < 				{COLOR_SIDEBARBORDER,		COLOR_SIDEBARBACK1,			COLOR_SIDEBARBACK2},
-683,691d311
+683,691d316
 < 		} else {
 < 			switch (i) {
 < 			case GRADIENT_TITLEBARICON:
@@ -559,7 +568,7 @@ diff diff_TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 				m_GradientList[i].Type=m_GradientList[GRADIENT_SIDEBARBACK].Type;
 < 				break;
 < 			}
-704,712d323
+704,712d328
 < 		} else {
 < 			switch (i) {
 < 			case GRADIENT_TITLEBARICON:
@@ -569,16 +578,16 @@ diff diff_TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 				m_GradientList[i].Direction=m_GradientList[GRADIENT_SIDEBARBACK].Direction;
 < 				break;
 < 			}
-715a327,328
+715a332,333
 > 	Settings.Close();
 > 
-718c331
+718c336
 < 	if (Settings.SetSection(TEXT("Style"))) {
 ---
 > 	if (Settings.Open(pszFileName,TEXT("Style"),CSettings::OPEN_READ)) {
-731a345
+731a350
 > 		Settings.Close();
-734,780d347
+734,780d352
 < 	return true;
 < }
 < 
@@ -626,7 +635,7 @@ diff diff_TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 	if (!Load(Settings))
 < 		return false;
 < 
-782,789d348
+782,789d353
 < 
 < 	if (m_Name.IsEmpty()) {
 < 		TCHAR szName[MAX_COLORSCHEME_NAME];
@@ -635,7 +644,7 @@ diff diff_TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 		SetName(szName);
 < 	}
 < 
-794,804d352
+794,804d357
 < bool CColorScheme::Save(LPCTSTR pszFileName) const
 < {
 < 	CSettings Settings;
@@ -647,7 +656,15 @@ diff diff_TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < }
 < 
 < 
-920,1841d467
+807c360,364
+< 	return m_FileName.Set(pszFileName);
+---
+> 	if (pszFileName) {
+> 		m_FileName=pszFileName;
+> 		return true;
+> 	}
+> 	return false;
+920,1841d476
 < }
 < 
 < 
@@ -1570,7 +1587,7 @@ diff diff_TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 	}
 < 
 < 	return FALSE;
-diff diff_TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
+diff TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
 5,7d4
 < #include <vector>
 < #include "Options.h"
@@ -1811,11 +1828,24 @@ diff diff_TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
 < 		STYLE_CHANNELPANEL_CURCHANNELEVENTNAME2,
 < 		STYLE_CONTROLPANELITEM,
 < 		STYLE_CONTROLPANELHIGHLIGHTITEM,
-305,306d73
+302c71
+< 	LPCTSTR GetName() const { return m_Name.Get(); }
+---
+> 	LPCTSTR GetName() const { return m_Name.c_str(); }
+304,306c73
+< 	LPCTSTR GetFileName() const { return m_FileName.Get(); }
 < 	bool Load(CSettings &Settings);
 < 	bool Save(CSettings &Settings) const;
+---
+> 	LPCTSTR GetFileName() const { return m_FileName.c_str(); }
 308d74
 < 	bool Save(LPCTSTR pszFileName) const;
+328,329c94,95
+< 	CDynamicString m_Name;
+< 	CDynamicString m_FileName;
+---
+> 	std::basic_string<TCHAR> m_Name;
+> 	std::basic_string<TCHAR> m_FileName;
 361,420d126
 < 
 < class CColorSchemeList
@@ -1877,7 +1907,7 @@ diff diff_TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
 < 	static INT_PTR CALLBACK SaveDlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam);
 < };
 < 
-diff diff_TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
+diff TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
 1c1,2
 < #include "stdafx.h"
 ---
@@ -3213,7 +3243,7 @@ diff diff_TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
 < 		return false;
 < 	return ::GetThemePartSize(m_hTheme,hdc,PartID,StateID,NULL,TS_TRUE,pSize)==S_OK;
 < }
-diff diff_TVTestStatusView_orig/DrawUtil.h ./DrawUtil.h
+diff TVTestStatusView_orig/DrawUtil.h ./DrawUtil.h
 40,47d39
 < bool GlossOverlay(HDC hdc,const RECT *pRect,
 < 				  int Highlight1=192,int Highlight2=32,
@@ -3413,7 +3443,7 @@ diff diff_TVTestStatusView_orig/DrawUtil.h ./DrawUtil.h
 < 	bool GetPartSize(HDC hdc,int PartID,int StateID,SIZE *pSize);
 < };
 < 
-diff diff_TVTestStatusView_orig/Settings.cpp ./Settings.cpp
+diff TVTestStatusView_orig/Settings.cpp ./Settings.cpp
 1,2c1,4
 < #include "stdafx.h"
 < #include "TVTest.h"
@@ -3430,7 +3460,7 @@ diff diff_TVTestStatusView_orig/Settings.cpp ./Settings.cpp
 < 
 ---
 > #define lengthof _countof
-diff diff_TVTestStatusView_orig/StatusView.cpp ./StatusView.cpp
+diff TVTestStatusView_orig/StatusView.cpp ./StatusView.cpp
 1,2c1,3
 < #include "stdafx.h"
 < #include "TVTest.h"
@@ -3468,18 +3498,47 @@ diff diff_TVTestStatusView_orig/StatusView.cpp ./StatusView.cpp
 > 				//GetItemRectByIndex(m_HotItem,&rc);
 > 				//x-=rc.left;
 > 				//m_ItemList[m_HotItem]->OnMouseMove(x,y);
-diff diff_TVTestStatusView_orig/StatusView.h ./StatusView.h
-7d6
+465a455,462
+> 		if (m_HotItem>=0) {
+> 			int x=GET_X_LPARAM(lParam),y=GET_Y_LPARAM(lParam);
+> 			RECT rc;
+> 
+> 			GetItemRectByIndex(m_HotItem,&rc);
+> 			x-=rc.left;
+> 			m_ItemList[m_HotItem]->OnLButtonUp(x,y);
+> 		}
+646c643
+< 		m_SingleText.Set(pszText);
+---
+> 		m_SingleText=pszText;
+652c649
+< 		m_SingleText.Clear();
+---
+> 		m_SingleText.clear();
+935c932
+< 		::DrawText(hdcDst,m_SingleText.Get(),-1,&rc,
+---
+> 		::DrawText(hdcDst,m_SingleText.c_str(),-1,&rc,
+diff TVTestStatusView_orig/StatusView.h ./StatusView.h
+5a6
+> #include <string>
+7d7
 < #include "TsUtilClass.h"
-34,35d32
+34,35d33
 < 	void DrawIcon(HDC hdc,const RECT *pRect,DrawUtil::CMonoColorBitmap &Bitmap,
 < 				  int SrcX=0,int SrcY=0,int IconWidth=16,int IconHeight=16,bool fEnabled=true) const;
-diff diff_TVTestStatusView_orig/Theme.cpp ./Theme.cpp
+54a53
+> 	virtual void OnLButtonUp(int x,int y) {}
+144c143
+< 	CDynamicString m_SingleText;
+---
+> 	std::basic_string<TCHAR> m_SingleText;
+diff TVTestStatusView_orig/Theme.cpp ./Theme.cpp
 1c1
 < #include "stdafx.h"
 ---
 > #include <Windows.h>
-diff diff_TVTestStatusView_orig/WindowUtil.cpp ./WindowUtil.cpp
+diff TVTestStatusView_orig/WindowUtil.cpp ./WindowUtil.cpp
 1c1,2
 < #include "stdafx.h"
 ---

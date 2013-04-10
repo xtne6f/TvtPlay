@@ -3,12 +3,8 @@
 
 // 名前衝突的に危ういので接頭辞CP_を付けさせてもらう
 
-#define CP_ERR_FALSE            FALSE   // 汎用エラー
-#define CP_NO_ERR               TRUE    // 成功
-
 #define CP_ERR_INIT             10
 #define CP_ERR_NOT_INIT         11
-#define CP_ERR_SIZE             12
 
 #define CP_ERR_NEED_NEXT_PACKET 13      // 次のTSパケット入れないと解析できない
 #define CP_ERR_CAN_NOT_ANALYZ   14      // 本当にTSパケット？解析不可能
