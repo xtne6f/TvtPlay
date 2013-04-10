@@ -133,6 +133,7 @@ CTsSender::CTsSender()
     : m_hFile(NULL)
     , m_pBuf(NULL)
     , m_curr(NULL)
+    , m_head(NULL)
     , m_tail(NULL)
     , m_unitSize(0)
     , m_bufSize(0)
@@ -226,6 +227,7 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt, bool fConvTo188, bool fUseQpc)
         m_bufSize = m_unitSize * BUFFER_LEN;
         m_pBuf = new BYTE[m_bufSize];
     }
+    m_curr = m_head = m_tail = m_pBuf;
 
     // PCR参照PIDをクリア
     m_pcrPid = m_pcrPidsLen = 0;
@@ -510,13 +512,16 @@ bool CTsSender::Seek(int msec)
     if (msec < 0) {
         // 約1秒ずつ前方シーク
         // 10ループまでに収束しなければ失敗
+        int mul = 1;
         for (int i = 0; i < 10 && msec < -500; i++) {
             if ((pos = GetFilePosition()) < 0) return false;
             if (pos <= rate) return true;
 
             DWORD prevPcr = m_pcr;
-            if (!Seek(-rate, FILE_CURRENT) || MSB(prevPcr-m_pcr)) return false;
+            if (!Seek(-rate * mul, FILE_CURRENT) || MSB(prevPcr-m_pcr)) return false;
             msec += (int)(prevPcr-m_pcr) / PCR_PER_MSEC;
+            // 動画レートが極端に小さいとき動かない可能性があるため
+            if (m_pcr == prevPcr) ++mul;
         }
         if (msec < -500) return false;
     }
@@ -668,6 +673,8 @@ bool CTsSender::ReadToPcr(int limit, bool fSend)
 {
     do {
         if (!ReadPacket(fSend)) return false;
+        // あまり貯めすぎると再生に影響するため
+        if (m_curr - m_head >= BON_UDP_TSDATASIZE - 1880) RotateBuffer(fSend);
     } while (!m_fPcr && --limit > 0);
 
     return true;
@@ -770,32 +777,37 @@ bool CTsSender::ReadPacket(bool fSend)
 }
 
 
-// 処理済みのTSパケットを転送し、ファイルから読み込む
+// 処理済みのTSパケットを転送し、必要ならファイルから読み込む
 void CTsSender::RotateBuffer(bool fSend)
 {
     ASSERT(m_hFile && m_pBuf);
 
-    if (fSend && m_curr > m_pBuf) {
+    // m_curr:パケット処理位置, m_head:転送開始位置, m_tail:有効データの末尾
+    if (fSend && m_curr > m_head) {
         if (m_fTrimPacket) {
             // 転送する部分だけを188Byte単位に詰める
-            BYTE *p = m_pBuf;
-            BYTE *q = m_pBuf;
+            BYTE *p = m_head;
+            BYTE *q = m_head;
             while (p <= m_curr - m_unitSize) {
                 memmove(q, p, 188);
                 p += m_unitSize;
                 q += 188;
             }
-            memmove(q, p, m_tail - p);
-            m_curr -= p - q;
-            m_tail -= p - q;
+            SendData(m_head, static_cast<int>(q - m_head));
         }
-        SendData(m_pBuf, static_cast<int>(m_curr - m_pBuf));
+        else {
+            SendData(m_head, static_cast<int>(m_curr - m_head));
+        }
     }
+    m_head = m_curr;
+
+    // パケットを処理するだけのデータがあれば読まない
+    if (m_tail - m_curr > m_unitSize) return;
 
     // この繰越し処理によりバッファの先頭とパケットヘッダは同期する
     int carrySize = static_cast<int>(m_tail - m_curr);
     if (carrySize > 0) memmove(m_pBuf, m_curr, carrySize);
-    m_curr = m_pBuf;
+    m_curr = m_head = m_pBuf;
     m_tail = m_pBuf + carrySize;
 
     int numToRead = static_cast<int>(m_pBuf + m_bufSize - m_tail);
@@ -826,12 +838,12 @@ bool CTsSender::Seek(long long distanceToMove, DWORD dwMoveMethod)
     if (!SetPointer(distanceToMove, dwMoveMethod)) return false;
 
     // シーク後はバッファを空にする
-    m_curr = m_tail = m_pBuf;
+    m_curr = m_head = m_tail = m_pBuf;
     m_fEnPcr = false;
     if (!ReadToPcr(40000, false) || !m_fEnPcr) {
         // なるべく呼び出し前の状態に回復させるが、完全とは限らない
         if (SetPointer(lastPos, FILE_BEGIN)) {
-            m_curr = m_tail = m_pBuf;
+            m_curr = m_head = m_tail = m_pBuf;
             m_fEnPcr = false;
             ReadToPcr(40000, false);
         }
@@ -914,8 +926,8 @@ void CTsSender::SendData(BYTE *pData, int dataSize)
             addr.sin_family = AF_INET;
             addr.sin_port = htons(m_udpPort);
             addr.sin_addr.S_un.S_addr = inet_addr(m_udpAddr);
-            // 48128Byte(BonDriver_UDPのキューサイズ)以下に分割して送る
-            int sendUnit = (48128-1024) / m_unitSize * m_unitSize;
+            // BonDriver_UDPのキューサイズ以下に分割して送る
+            int sendUnit = (BON_UDP_TSDATASIZE-1880) / m_unitSize * m_unitSize;
             for (BYTE *p = pData; p < pData + dataSize; p += sendUnit) {
                 int sendSize = min(sendUnit, (int)(pData + dataSize - p));
                 if (::sendto(m_sock, (const char*)p, sendSize, 0,

@@ -18,6 +18,7 @@ class CTsSender
 {
     static const int MAX_URI = 256;
     static const int BUFFER_LEN = 1536;
+    static const int BON_UDP_TSDATASIZE = 48128;
     static const int PCR_PER_MSEC = 45;
     static const int TS_SUPPOSED_RATE = 2 * 1024 * 1024;
     static const int PCR_PIDS_MAX = 8;
@@ -66,7 +67,7 @@ private:
     void SendData(BYTE *pData, int dataSize);
 
     HANDLE m_hFile;
-    BYTE *m_pBuf, *m_curr, *m_tail;
+    BYTE *m_pBuf, *m_curr, *m_head, *m_tail;
     int m_unitSize, m_bufSize;
     bool m_fTrimPacket, m_fModTimestamp;
     CTsTimestampShifter m_tsShifter;

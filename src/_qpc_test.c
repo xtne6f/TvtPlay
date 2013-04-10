@@ -1,4 +1,4 @@
-﻿// 各計時APIの長期的な精度比較コード(2011-12-12)
+﻿// 各計時APIの長期的な精度比較コード(2011-12-14)
 #include <Windows.h>
 #include <stdio.h>
 #pragma comment(lib, "winmm.lib")
@@ -19,7 +19,7 @@ void PrintFileTime(FILETIME *pTime, LONGLONG offset)
     printf("%02d:%02d:%02d.%03d", (int)st.wHour, (int)st.wMinute, (int)st.wSecond, (int)st.wMilliseconds);
 }
 
-int main(void)
+int main(int argc, char *argv[])
 {
     SYSTEMTIME sysTime;
     FILETIME time;
@@ -30,6 +30,11 @@ int main(void)
     GetLocalTime(&sysTime);
     SystemTimeToFileTime(&sysTime, &time);
 
+    if (argc>=2 && argv[1][0]=='-' && argv[1][1]=='a' &&
+        SetThreadAffinityMask(GetCurrentThread(), 1))
+    {
+        printf("SetThreadAffinityMask Done.\n");
+    }
     if (!QueryPerformanceFrequency(&liFreq) ||
         !QueryPerformanceCounter(&liStart))
     {

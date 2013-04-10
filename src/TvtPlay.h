@@ -98,7 +98,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     bool Open(LPCTSTR fileName, int offset);
     void Close();
     void SetupDestination();
-    void ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll);
+    void WaitAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll);
     bool CalcStatusRect(RECT *pRect, bool fInit = false);
     void OnResize(bool fInit = false);
     void OnDispModeChange(bool fStandby, bool fInit = false);

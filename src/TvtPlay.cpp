@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-12-13
+// 最終更新: 2011-12-14
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -16,7 +16,7 @@
 #include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.3r2)";
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.3r3)";
 static const int INFO_VERSION = 14;
 
 #define WM_UPDATE_POSITION  (WM_APP + 1)
@@ -1013,7 +1013,7 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset)
     if (m_pApp->GetVersion() < TVTest::MakeVersion(0,7,21))
         m_pApp->Reset(TVTest::RESET_VIEWER);
 
-    m_hThreadEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
+    m_hThreadEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
     if (!m_hThreadEvent) {
         m_tsSender.Close();
         return false;
@@ -1106,17 +1106,13 @@ void CTvtPlay::SetupDestination()
     }
 }
 
-void CTvtPlay::ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll)
+void CTvtPlay::WaitAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll)
 {
     if (m_hThread) {
         // 転送停止するまで待つ
         m_fHalt = true;
+        ::ResetEvent(m_hThreadEvent);
         ::WaitForSingleObject(m_hThreadEvent, 1000);
-
-        if (m_pApp->GetVersion() < TVTest::MakeVersion(0,7,21)) {
-            // RESET_VIEWERのデッドロック対策のため先にリセットする
-            m_pApp->Reset(fResetAll ? TVTest::RESET_ALL : TVTest::RESET_VIEWER);
-        }
         ::PostThreadMessage(m_threadID, Msg, wParam, lParam);
         m_fHalt = false;
     }
@@ -1124,22 +1120,22 @@ void CTvtPlay::ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool
 
 void CTvtPlay::Pause(bool fPause)
 {
-    ResetAndPostToSender(WM_TS_PAUSE, fPause, 0, false);
+    WaitAndPostToSender(WM_TS_PAUSE, fPause, 0, false);
 }
 
 void CTvtPlay::SeekToBegin()
 {
-    ResetAndPostToSender(WM_TS_SEEK_BGN, 0, 0, m_resetMode != 0);
+    WaitAndPostToSender(WM_TS_SEEK_BGN, 0, 0, m_resetMode != 0);
 }
 
 void CTvtPlay::SeekToEnd()
 {
-    ResetAndPostToSender(WM_TS_SEEK_END, 0, 0, m_resetMode != 0);
+    WaitAndPostToSender(WM_TS_SEEK_END, 0, 0, m_resetMode != 0);
 }
 
 void CTvtPlay::Seek(int msec)
 {
-    ResetAndPostToSender(WM_TS_SEEK, 0, msec, m_resetMode != 0);
+    WaitAndPostToSender(WM_TS_SEEK, 0, msec, m_resetMode != 0);
 }
 
 void CTvtPlay::SetModTimestamp(bool fModTimestamp)
@@ -1693,10 +1689,8 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
         pThis->SeekToBegin();
         break;
     case WM_QUERY_RESET:
-        if (pThis->m_pApp->GetVersion() >= TVTest::MakeVersion(0,7,21)) {
-            if (pThis->m_resetMode <= 2) {
-                pThis->m_pApp->Reset(wParam && pThis->m_resetMode==1 ? TVTest::RESET_ALL : TVTest::RESET_VIEWER);
-            }
+        if (pThis->m_resetMode <= 2) {
+            pThis->m_pApp->Reset(wParam && pThis->m_resetMode==1 ? TVTest::RESET_ALL : TVTest::RESET_VIEWER);
         }
         if (wParam && pThis->m_resetDropInterval > 0) {
             pThis->m_lastDropCount = 0;
@@ -1716,6 +1710,7 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
 DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
 {
     MSG msg;
+    DWORD_PTR dwRes;
     CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(pParam);
     int posSec = -1, durSec = -1, totSec = -1;
     bool fPrevFixed = false;
@@ -1731,7 +1726,6 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
         ::SetEvent(pThis->m_hThreadEvent);
         if (rv) {
             if (msg.message == WM_QUIT) break;
-
             switch (msg.message) {
             case WM_TS_SET_UDP:
                 if (1234 <= msg.lParam && msg.lParam <= 1243)
@@ -1751,7 +1745,7 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                 break;
             case WM_TS_PAUSE:
                 pThis->m_tsSender.Pause(msg.wParam != 0);
-                ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET, 0, 0);
+                ::SendMessageTimeout(pThis->m_hwndFrame, WM_QUERY_RESET, 0, 0, SMTO_NORMAL, 1000, &dwRes);
                 ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, msg.wParam, 0);
                 break;
             case WM_TS_SEEK_BGN:
@@ -1791,22 +1785,20 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
         else if (pThis->m_fHalt) {
             ::Sleep(20);
         }
-        else if (resetCount > 0) {
-            // 大量のリセット要求を抑える
-            if (--resetCount == 0) {
-                ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET, 1, 0);
-                if (pThis->m_resetMode==2 || pThis->m_resetMode==3) {
-                    pThis->m_tsSender.SendEmptyPat();
-                }
-            }
-            ::Sleep(20);
-        }
         else {
-            // 最初のリセット要求はすみやかに発行
-            if (resetCount < 0 && resetCount++ == -RESET_WAIT) {
-                ::PostMessage(pThis->m_hwndFrame, WM_QUERY_RESET, 1, 0);
-                if (pThis->m_resetMode==2 || pThis->m_resetMode==3) {
-                    pThis->m_tsSender.SendEmptyPat();
+            if (resetCount != 0) {
+                // 最初のリセット要求はすみやかに送るが、連続して大量には送らない
+                if (resetCount == -RESET_WAIT || resetCount == 1) {
+                    ::SendMessageTimeout(pThis->m_hwndFrame, WM_QUERY_RESET, 1, 0, SMTO_NORMAL, 1000, &dwRes);
+                    if (pThis->m_resetMode==2 || pThis->m_resetMode==3) {
+                        pThis->m_tsSender.SendEmptyPat();
+                    }
+                }
+                resetCount += resetCount < 0 ? 1 : -1;
+                if (resetCount > 0) {
+                    ::Sleep(20);
+                    // コントロールの表示を更新する必要はないのでcontinueできる
+                    continue;
                 }
             }
 

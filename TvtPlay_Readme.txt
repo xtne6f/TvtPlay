@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.1.3r2(人柱版) + BonDriver_Pipe.dll
+﻿TVTest TvtPlay Plugin ver.1.3r3(人柱版) + BonDriver_Pipe.dll
                                         + TvtAudioStretchFilter.ax
 
 ■概要
@@ -22,7 +22,7 @@ ver.1.xは人柱版です。今後の大幅な機能追加や機能削除、大�
 削除してみてください。
 設定キーToBottomは廃止されました(詳細は「更新履歴」参照)。ToBottomを[=0]で使用し
 ていた方は[=1]の動作にもどるので、新しい設定キーRowPosFullで調整してください。
-(ver.1.3からの移行)
+(ver.1.3、ver.1.3r2からの移行)
   TvtPlay.tvtpを置きかえてください。
 (ver.1.2r2からの移行)
   TvtPlay.tvtpとTvtAudioStretchFilter.axとを置きかえてください。
@@ -344,6 +344,10 @@ http://2sen.dip.jp/)のup0598.zip「非公式 TvtPlayシークボタンカスタ
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.1.3r3 (2011-12-15)
+・ver.1.3以降、再生レート変化の激しい部分で再生が詰まる問題を修正
+・ver.1.3以降、再生レートが極端に小さいデータ(ワンセグのみ等)のシークが失敗する
+  可能性を軽減
 ver.1.3r2 (2011-12-13)
 ・計時APIをQueryPerformanceCounterに変更し、設定キーTsUsePerfCounterを追加
 ver.1.3 (2011-12-10)
