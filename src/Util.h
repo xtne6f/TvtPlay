@@ -3,6 +3,11 @@
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
+#define WM_ASFLT_STRETCH    (WM_APP + 1)
+LRESULT ASFilterSendMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
+BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
+
+int CompareTStrI(const void *str1, const void *str2);
 BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPCTSTR lpFileName);
 LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt);
 

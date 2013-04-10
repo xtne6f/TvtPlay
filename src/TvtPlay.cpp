@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-09-02
+// 最終更新: 2011-09-15
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -14,9 +14,10 @@
 #define WM_UPDATE_POSITION  (WM_APP + 1)
 #define WM_UPDATE_TOT_TIME  (WM_APP + 2)
 #define WM_UPDATE_F_PAUSED  (WM_APP + 3)
-#define WM_QUERY_CLOSE      (WM_APP + 4)
-#define WM_QUERY_SEEK_BGN   (WM_APP + 5)
-#define WM_QUERY_RESET      (WM_APP + 6)
+#define WM_UPDATE_SPEED     (WM_APP + 4)
+#define WM_QUERY_CLOSE      (WM_APP + 5)
+#define WM_QUERY_SEEK_BGN   (WM_APP + 6)
+#define WM_QUERY_RESET      (WM_APP + 7)
 
 #define WM_TS_SET_UDP       (WM_APP + 1)
 #define WM_TS_SET_PIPE      (WM_APP + 2)
@@ -24,6 +25,7 @@
 #define WM_TS_SEEK_BGN      (WM_APP + 4)
 #define WM_TS_SEEK_END      (WM_APP + 5)
 #define WM_TS_SEEK          (WM_APP + 6)
+#define WM_TS_SET_SPEED     (WM_APP + 7)
 
 #define TVTPLAY_FRAME_WINDOW_CLASS  TEXT("TvtPlay Frame")
 #define UDP_ADDR                    "127.0.0.1"
@@ -45,6 +47,10 @@ enum {
     ID_COMMAND_SEEK_F,
     ID_COMMAND_SEEK_G,
     ID_COMMAND_SEEK_H,
+    ID_COMMAND_STRETCH_A,
+    ID_COMMAND_STRETCH_B,
+    ID_COMMAND_STRETCH_C,
+    ID_COMMAND_STRETCH_D,
 };
 
 static const TVTest::CommandInfo COMMAND_LIST[] = {
@@ -63,10 +69,18 @@ static const TVTest::CommandInfo COMMAND_LIST[] = {
     {ID_COMMAND_SEEK_F, L"SeekF", L"シーク:F"},
     {ID_COMMAND_SEEK_G, L"SeekG", L"シーク:G"},
     {ID_COMMAND_SEEK_H, L"SeekH", L"シーク:H"},
+    {ID_COMMAND_STRETCH_A, L"StretchA", L"早送り:A"},
+    {ID_COMMAND_STRETCH_B, L"StretchB", L"早送り:B"},
+    {ID_COMMAND_STRETCH_C, L"StretchC", L"早送り:C"},
+    {ID_COMMAND_STRETCH_D, L"StretchD", L"早送り:D"},
 };
 
 static const int DEFAULT_SEEK_LIST[COMMAND_SEEK_MAX] = {
     -60000, -30000, -15000, -5000, 4000, 14000, 29000, 59000
+};
+
+static const int DEFAULT_STRETCH_LIST[COMMAND_STRETCH_MAX] = {
+    400, 200, 50, 25
 };
 
 // NULL禁止
@@ -76,7 +90,8 @@ static LPCTSTR DEFAULT_BUTTON_LIST[BUTTON_MAX] = {
     TEXT("8,SeekA"), TEXT(";9,SeekB"), TEXT("10,SeekC"), TEXT("11,SeekD"),
     TEXT("6,Pause"),
     TEXT("12,SeekE"), TEXT("13,SeekF"), TEXT(";14,SeekG"), TEXT("15,SeekH"),
-    TEXT("3,SeekToEnd")
+    TEXT("3,SeekToEnd"),
+    TEXT("16,StretchB"), TEXT("18,StretchC")
 };
 
 
@@ -101,24 +116,31 @@ CTvtPlay::CTvtPlay()
     , m_lastDropCount(0)
     , m_resetDropInterval(0)
     , m_buttonNum(0)
+    , m_popupMax(0)
+    , m_fPopuping(false)
     , m_hThread(NULL)
     , m_hThreadEvent(NULL)
     , m_threadID(0)
     , m_position(0)
     , m_duration(0)
     , m_totTime(-1)
+    , m_speed(100)
     , m_fFixed(false)
     , m_fPaused(false)
     , m_fHalt(false)
     , m_fAutoClose(false)
     , m_fAutoLoop(false)
     , m_fResetAllOnSeek(false)
+    , m_stretchMode(0)
+    , m_noMuteMax(0)
+    , m_noMuteMin(0)
     , m_salt(0)
     , m_hashListMax(0)
 {
     m_szIniFileName[0] = 0;
     m_szSpecFileName[0] = 0;
     m_szIconFileName[0] = 0;
+    m_szPopupPattern[0] = 0;
     m_szPrevFileName[0] = 0;
     CStatusView::Initialize(g_hinstDLL);
 }
@@ -213,6 +235,9 @@ void CTvtPlay::LoadSettings()
     m_fResetAllOnSeek = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsResetAllOnSeek"), 0, m_szIniFileName) != 0;
     m_resetDropInterval = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsResetDropInterval"), 1000, m_szIniFileName);
     m_threadPriority = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsThreadPriority"), THREAD_PRIORITY_NORMAL, m_szIniFileName);
+    m_stretchMode = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsStretchMode"), 3, m_szIniFileName);
+    m_noMuteMax = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsStretchNoMuteMax"), 800, m_szIniFileName);
+    m_noMuteMin = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsStretchNoMuteMin"), 50, m_szIniFileName);
     m_fToBottom = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("ToBottom"), 1, m_szIniFileName) != 0;
     m_statusMargin = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("Margin"), defMargin, m_szIniFileName);
     m_fSeekDrawTot = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("DispTot"), 0, m_szIniFileName) != 0;
@@ -223,6 +248,11 @@ void CTvtPlay::LoadSettings()
     m_salt = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("Salt"), defSalt, m_szIniFileName);
     m_hashListMax = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("FileInfoMax"), 0, m_szIniFileName);
     m_hashListMax = min(m_hashListMax, HASH_LIST_MAX_MAX);
+    m_popupMax = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("PopupMax"), 30, m_szIniFileName);
+    m_popupMax = min(m_popupMax, POPUP_MAX_MAX);
+
+    ::GetPrivateProfileString(TEXT("Settings"), TEXT("PopupPattern"), TEXT("%RecordFolder%*.ts"),
+                              m_szPopupPattern, ARRAY_SIZE(m_szPopupPattern), m_szIniFileName);
 
     ::GetPrivateProfileString(TEXT("Settings"), TEXT("IconImage"), TEXT(""),
                               m_szIconFileName, ARRAY_SIZE(m_szIconFileName), m_szIniFileName);
@@ -232,6 +262,14 @@ void CTvtPlay::LoadSettings()
         TCHAR key[16];
         ::wsprintf(key, TEXT("Seek%c"), (TCHAR)i + TEXT('A'));
         m_seekList[i] = ::GetPrivateProfileInt(TEXT("Settings"), key, DEFAULT_SEEK_LIST[i], m_szIniFileName);
+    }
+    
+    // 早送りコマンドの倍率(25%～800%)設定を取得
+    for (int i = 0; i < COMMAND_STRETCH_MAX; i++) {
+        TCHAR key[16];
+        ::wsprintf(key, TEXT("Stretch%c"), (TCHAR)i + TEXT('A'));
+        int r = ::GetPrivateProfileInt(TEXT("Settings"), key, DEFAULT_STRETCH_LIST[i], m_szIniFileName);
+        m_stretchList[i] = min(max(r, 25), 800);
     }
 
     // ボタンアイテムの配置設定を取得
@@ -274,7 +312,7 @@ void CTvtPlay::LoadSettings()
     m_fSettingsLoaded = true;
 
     // デフォルトの設定キーを出力するため
-    if (::GetPrivateProfileInt(TEXT("Settings"), TEXT("FileInfoMax"), -1, m_szIniFileName) == -1)
+    if (::GetPrivateProfileInt(TEXT("Settings"), TEXT("PopupMax"), -1, m_szIniFileName) == -1)
         SaveSettings();
 }
 
@@ -289,6 +327,9 @@ void CTvtPlay::SaveSettings() const
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TsResetAllOnSeek"), m_fResetAllOnSeek, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TsResetDropInterval"), m_resetDropInterval, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TsThreadPriority"), m_threadPriority, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsStretchMode"), m_stretchMode, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsStretchNoMuteMax"), m_noMuteMax, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsStretchNoMuteMin"), m_noMuteMin, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("ToBottom"), m_fToBottom, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("Margin"), m_statusMargin, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("DispTot"), m_fSeekDrawTot, m_szIniFileName);
@@ -298,12 +339,20 @@ void CTvtPlay::SaveSettings() const
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnMouseMove"), m_timeoutOnMove, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("Salt"), m_salt, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("FileInfoMax"), m_hashListMax, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("PopupMax"), m_popupMax, m_szIniFileName);
+    ::WritePrivateProfileString(TEXT("Settings"), TEXT("PopupPattern"), m_szPopupPattern, m_szIniFileName);
     ::WritePrivateProfileString(TEXT("Settings"), TEXT("IconImage"), m_szIconFileName, m_szIniFileName);
     
     for (int i = 0; i < COMMAND_SEEK_MAX; i++) {
         TCHAR key[16];
         ::wsprintf(key, TEXT("Seek%c"), (TCHAR)i + TEXT('A'));
         WritePrivateProfileInt(TEXT("Settings"), key, m_seekList[i], m_szIniFileName);
+    }
+    
+    for (int i = 0; i < COMMAND_STRETCH_MAX; i++) {
+        TCHAR key[16];
+        ::wsprintf(key, TEXT("Stretch%c"), (TCHAR)i + TEXT('A'));
+        WritePrivateProfileInt(TEXT("Settings"), key, m_stretchList[i], m_szIniFileName);
     }
 
     for (int i = 0; i < BUTTON_MAX; i++) {
@@ -436,6 +485,76 @@ bool CTvtPlay::Open(HWND hwndOwner)
 
     if (!::GetOpenFileName(&ofn)) return false;
     return Open(fileName);
+}
+
+
+// ポップアップメニュー選択でファイルを開く
+bool CTvtPlay::Open(HWND hwndOwner, const POINT &pt, UINT flags)
+{
+    if (m_popupMax <= 0) return false;
+
+    // 特定指示子をTVTestの保存先フォルダに置換する(手抜き)
+    TCHAR pattern[MAX_PATH];
+    if (!::StrCmpNI(m_szPopupPattern, TEXT("%RecordFolder%"), 14)) {
+        if (m_pApp->GetSetting(L"RecordFolder", pattern, ARRAY_SIZE(pattern)) <= 0) pattern[0] = 0;
+        ::PathAppend(pattern, m_szPopupPattern + 14);
+    }
+    else {
+        ::lstrcpy(pattern, m_szPopupPattern);
+    }
+
+    // ファイルリスト取得
+    WIN32_FIND_DATA *findList = new WIN32_FIND_DATA[POPUP_MAX_MAX];
+    int count = 0;
+    HANDLE hFind = ::FindFirstFile(pattern, &findList[count]);
+    if (hFind != INVALID_HANDLE_VALUE) {
+        for (count++; count < POPUP_MAX_MAX; count++) {
+            if (!::FindNextFile(hFind, &findList[count])) break;
+        }
+        ::FindClose(hFind);
+    }
+
+    // ファイル名を昇順ソート
+    LPCTSTR nameList[POPUP_MAX_MAX];
+    for (int i = 0; i < count; i++) nameList[i] = findList[i].cFileName;
+    qsort(nameList, count, sizeof(nameList[0]), CompareTStrI);
+    
+    // メニュー生成
+    int selID = 0;
+    HMENU hmenu = ::CreatePopupMenu();
+    if (hmenu) {
+        if (count == 0) {
+            ::AppendMenu(hmenu, MF_STRING | MF_GRAYED, 1, TEXT("(なし)"));
+        }
+        else {
+            for (int i = max(count - m_popupMax, 0); i < count; i++) {
+                TCHAR str[64];
+                ::lstrcpyn(str, nameList[i], 64);
+                if (::lstrlen(str) == 63) ::lstrcpy(&str[60], TEXT("..."));
+                // プレフィクス対策
+                for (LPTSTR p = str; *p; p++)
+                    if (*p == TEXT('&')) *p = TEXT('_');
+                ::AppendMenu(hmenu, MF_STRING, i + 1, str);
+            }
+        }
+
+        m_fPopuping = true;
+        selID = (int)::TrackPopupMenu(hmenu, flags | TPM_NONOTIFY | TPM_RETURNCMD,
+                                      pt.x, pt.y, 0, hwndOwner, NULL);
+        ::DestroyMenu(hmenu);
+        m_fPopuping = false;
+    }
+
+    TCHAR fileName[MAX_PATH];
+    if (selID == 0 || selID - 1 >= count ||
+        !::PathRemoveFileSpec(pattern) ||
+        !::PathCombine(fileName, pattern, nameList[selID - 1]))
+    {
+        fileName[0] = 0;
+    }
+
+    delete [] findList;
+    return fileName[0] ? Open(fileName) : false;
 }
 
 
@@ -603,6 +722,23 @@ void CTvtPlay::SetAutoLoop(bool fAutoLoop)
     SaveSettings();
 }
 
+int CTvtPlay::GetStretchID() const
+{
+    for (int i = 0; i < COMMAND_STRETCH_MAX; i++) {
+        if (m_stretchList[i] == m_speed) return i;
+    }
+    return -1;
+}
+
+void CTvtPlay::Stretch(int stretchID)
+{
+    int speed = 0 <= stretchID && stretchID < COMMAND_STRETCH_MAX ?
+                m_stretchList[stretchID] : 100;
+
+    // 速度が設定値より大or小のときはミュートフラグをつける
+    bool fMute = speed < m_noMuteMin || m_noMuteMax < speed;
+    if (m_hThread) ::PostThreadMessage(m_threadID, WM_TS_SET_SPEED, (fMute?4:0)|m_stretchMode, speed);
+}
 
 void CTvtPlay::Resize()
 {
@@ -692,6 +828,13 @@ void CTvtPlay::OnCommand(int id)
     case ID_COMMAND_SEEK_G:
     case ID_COMMAND_SEEK_H:
         Seek(m_seekList[id - ID_COMMAND_SEEK_A]);
+        break;
+    case ID_COMMAND_STRETCH_A:
+    case ID_COMMAND_STRETCH_B:
+    case ID_COMMAND_STRETCH_C:
+    case ID_COMMAND_STRETCH_D:
+        Stretch(GetStretchID() == id - ID_COMMAND_STRETCH_A ?
+                -1 : id - ID_COMMAND_STRETCH_A);
         break;
     }
     m_dispCount = m_timeoutOnCmd / TIMER_FULL_SCREEN_INTERVAL;
@@ -813,7 +956,7 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
                     pThis->m_lastCurPos = curPos;
                 }
 
-                if (pThis->m_dispCount > 0 || isHoverd) {
+                if (pThis->m_dispCount > 0 || isHoverd || pThis->m_fPopuping) {
                     if (pThis->m_fHide) {
                         ::SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
                         pThis->m_fHide = false;
@@ -869,6 +1012,11 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
         pThis->m_fPaused = static_cast<int>(wParam) ? true : false;
         pThis->m_statusView.UpdateItem(STATUS_ITEM_SEEK);
         pThis->m_statusView.UpdateItem(STATUS_ITEM_BUTTON + ID_COMMAND_PAUSE);
+        break;
+    case WM_UPDATE_SPEED:
+        pThis->m_speed = static_cast<int>(lParam);
+        for (int i = 0; i < COMMAND_STRETCH_MAX; i++) 
+            pThis->m_statusView.UpdateItem(STATUS_ITEM_BUTTON + ID_COMMAND_STRETCH_A + i);
         break;
     case WM_QUERY_CLOSE:
         pThis->Close();
@@ -947,6 +1095,21 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                 pThis->m_tsSender.Seek(static_cast<int>(msg.lParam));
                 resetCount = 5;
                 break;
+            case WM_TS_SET_SPEED:
+                {
+                    int speed = static_cast<int>(msg.lParam);
+                    if (!ASFilterSendMessage(WM_ASFLT_STRETCH, msg.wParam, MAKELPARAM(speed, 100))) {
+                        // コマンド失敗の場合は等速にする
+                        pThis->m_tsSender.SetSpeed(100, 100);
+                        ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_SPEED, 0, 100);
+                    }
+                    else {
+                        // テンポが変化する場合は転送速度を変更する
+                        if (msg.wParam&1) pThis->m_tsSender.SetSpeed(speed, 100);
+                        ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_SPEED, 0, speed);
+                    }
+                }
+                break;
             }
             ::TranslateMessage(&msg);
             ::DispatchMessage(&msg);
@@ -957,6 +1120,14 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
         else {
             bool fRead = pThis->m_tsSender.Send();
             if (!fRead) {
+                int num, den;
+                pThis->m_tsSender.GetSpeed(&num, &den);
+                if (num != 100) {
+                    // 等速に戻しておく
+                    ASFilterPostMessage(WM_ASFLT_STRETCH, 0, MAKELPARAM(100, 100));
+                    pThis->m_tsSender.SetSpeed(100, 100);
+                    ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_SPEED, 0, 100);
+                }
                 if (pThis->m_tsSender.IsFixed()) {
                     // ループ再生時に閉じてはいけない
                     if (pThis->m_fAutoLoop) {
@@ -995,6 +1166,11 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
         }
     }
     
+    // 等速に戻しておく(主スレッドが待っているのでSendMessageしてはいけない)
+    ASFilterPostMessage(WM_ASFLT_STRETCH, 0, MAKELPARAM(100, 100));
+    pThis->m_tsSender.SetSpeed(100, 100);
+    ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_SPEED, 0, 100);
+
     // コントロールの表示をリセット
     pThis->m_tsSender.Pause(false);
     ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, 0, 0);
@@ -1229,9 +1405,12 @@ CButtonStatusItem::CButtonStatusItem(CTvtPlay *pPlugin, int id, LPCTSTR iconFile
 
 void CButtonStatusItem::Draw(HDC hdc, const RECT *pRect)
 {
-    // PauseとLoopは特別扱い
-    if ((m_ID-STATUS_ITEM_BUTTON == ID_COMMAND_PAUSE && (!m_pPlugin->IsOpen() || m_pPlugin->IsPaused())) ||
-        (m_ID-STATUS_ITEM_BUTTON == ID_COMMAND_LOOP && m_pPlugin->IsAutoLoop()))
+    // PauseとLoopとStretchは特別扱い
+    int cmdID = m_ID - STATUS_ITEM_BUTTON;
+    if ((cmdID == ID_COMMAND_PAUSE && (!m_pPlugin->IsOpen() || m_pPlugin->IsPaused())) ||
+        (cmdID == ID_COMMAND_LOOP && m_pPlugin->IsAutoLoop()) ||
+        (ID_COMMAND_STRETCH_A <= cmdID && cmdID <= ID_COMMAND_STRETCH_D &&
+         m_pPlugin->GetStretchID() == cmdID - ID_COMMAND_STRETCH_A))
     {
         DrawIcon(hdc, pRect, m_icons.GetHandle(), (m_iconIndex + 1) * 16);
     }
@@ -1243,4 +1422,16 @@ void CButtonStatusItem::Draw(HDC hdc, const RECT *pRect)
 void CButtonStatusItem::OnLButtonDown(int x, int y)
 {
     m_pPlugin->OnCommand(m_ID - STATUS_ITEM_BUTTON);
+}
+
+void CButtonStatusItem::OnRButtonDown(int x, int y)
+{
+    // Openは特別扱い
+    if (m_ID-STATUS_ITEM_BUTTON == ID_COMMAND_OPEN) {
+        POINT pt;
+        UINT flags;
+        if (GetMenuPos(&pt, &flags)) {
+            m_pPlugin->Open(m_pStatus->GetHandle(), pt, flags);
+        }
+    }
 }

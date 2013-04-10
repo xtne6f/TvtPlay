@@ -7,8 +7,9 @@
 #include "StatusView.h"
 #include "TsSender.h"
 
-#define COMMAND_SEEK_MAX    8
-#define BUTTON_MAX          14
+#define COMMAND_SEEK_MAX        8
+#define COMMAND_STRETCH_MAX     4
+#define BUTTON_MAX              16
 
 class CStatusViewEventHandler : public CStatusView::CEventHandler
 {
@@ -24,6 +25,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     static const int TIMER_ID_RESET_DROP = 2;
     static const int TIMER_FULL_SCREEN_INTERVAL = 100;
     static const int HASH_LIST_MAX_MAX = 10000;
+    static const int POPUP_MAX_MAX = 100;
     bool m_fInitialized;
     bool m_fSettingsLoaded;
     bool m_fForceEnable, m_fIgnoreExt;
@@ -46,8 +48,12 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     CStatusViewEventHandler m_eventHandler;
     TCHAR m_szIconFileName[MAX_PATH];
     int m_seekList[COMMAND_SEEK_MAX];
+    int m_stretchList[COMMAND_STRETCH_MAX];
     TCHAR m_buttonList[BUTTON_MAX][16];
     int m_buttonNum;
+    int m_popupMax;
+    TCHAR m_szPopupPattern[MAX_PATH];
+    bool m_fPopuping;
 
     // TS送信
     HANDLE m_hThread, m_hThreadEvent;
@@ -58,9 +64,11 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     int m_position;
     int m_duration;
     int m_totTime;
+    int m_speed;
     bool m_fFixed, m_fPaused;
     bool m_fHalt, m_fAutoClose, m_fAutoLoop;
     bool m_fResetAllOnSeek;
+    int m_stretchMode, m_noMuteMax, m_noMuteMin;
 
     // ファイルごとの固有情報
     int m_salt, m_hashListMax;
@@ -99,12 +107,15 @@ public:
     bool IsFixed() const { return m_fFixed; }
     bool IsPaused() const { return m_fPaused; }
     bool IsAutoLoop() const { return m_fAutoLoop; }
-
+    
+    bool Open(HWND hwndOwner, const POINT &pt, UINT flags);
     void Pause(bool fPause);
     void SeekToBegin();
     void SeekToEnd();
     void Seek(int msec);
     void SetAutoLoop(bool fAutoLoop);
+    int GetStretchID() const;
+    void Stretch(int stretchID);
     void OnCommand(int id);
 };
 
@@ -149,6 +160,7 @@ public:
     LPCTSTR GetName() const { return TEXT("ボタン"); }
     void Draw(HDC hdc, const RECT *pRect);
     void OnLButtonDown(int x, int y);
+    void OnRButtonDown(int x, int y);
 private:
     CTvtPlay *m_pPlugin;
     DrawUtil::CBitmap m_icons;

@@ -3,6 +3,36 @@
 #include "Util.h"
 
 
+#if 1 // 同一プロセスからTvtAudioStretchFilterへのメッセージ送信コード
+#define ASFLT_FILTER_NAME   TEXT("TvtAudioStretchFilter")
+
+static HWND ASFilterFindWindow()
+{
+    TCHAR szName[128];
+    ::wsprintf(szName, TEXT("%s,%lu"), ASFLT_FILTER_NAME, ::GetCurrentProcessId());
+    return ::FindWindowEx(HWND_MESSAGE, NULL, ASFLT_FILTER_NAME, szName);
+}
+
+LRESULT ASFilterSendMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
+{
+    HWND hwnd = ASFilterFindWindow();
+    return hwnd ? ::SendMessage(hwnd, Msg, wParam, lParam) : FALSE;
+}
+
+BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
+{
+    HWND hwnd = ASFilterFindWindow();
+    return hwnd ? ::PostMessage(hwnd, Msg, wParam, lParam) : FALSE;
+}
+#endif
+
+
+int CompareTStrI(const void *str1, const void *str2)
+{
+    return ::lstrcmpi(*(LPCTSTR*)str1, *(LPCTSTR*)str2);
+}
+
+
 BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPCTSTR lpFileName)
 {
     TCHAR szValue[32];

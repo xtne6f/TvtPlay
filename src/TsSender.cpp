@@ -31,6 +31,8 @@ CTsSender::CTsSender()
     , m_totBase(0)
     , m_totBasePcr(0)
     , m_hash(0)
+    , m_speedNum(100)
+    , m_speedDen(100)
 {
     m_udpAddr[0] = 0;
     m_pipeName[0] = 0;
@@ -185,8 +187,9 @@ bool CTsSender::Send()
 
             DWORD pcrDiff = m_pcr - m_basePcr;
             if (MSB(pcrDiff)) pcrDiff = 0;
-
-            int msec = (int)pcrDiff / PCR_PER_MSEC - (int)tickDiff;
+            
+            // 再生速度が上がる=PCRの進行が遅くなる
+            int msec = (int)((long long)pcrDiff * m_speedDen / m_speedNum / PCR_PER_MSEC) - tickDiff;
 
             // 制御しきれない場合は一度リセット
             if (msec < -2000 || 2000 < msec) {
@@ -289,16 +292,16 @@ void CTsSender::Pause(bool fPause)
 }
 
 
-bool CTsSender::IsPaused() const
+// 等速に対する再生速度比を分子分母で指定
+// 負の値は想定していない
+// denに0を与えてはいけない
+void CTsSender::SetSpeed(int num, int den)
 {
-    return m_fPause;
-}
-
-
-// ファイルサイズが固定されているかどうか
-bool CTsSender::IsFixed() const
-{
-    return m_fFixed;
+    m_speedNum = num;
+    m_speedDen = den;
+    // 基準PCRを設定
+    m_baseTick = ::GetTickCount();
+    m_basePcr = m_pcr;
 }
 
 

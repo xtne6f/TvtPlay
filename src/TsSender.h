@@ -22,8 +22,11 @@ public:
     bool SeekToEnd();
     bool Seek(int msec);
     void Pause(bool fPause);
-    bool IsPaused() const;
-    bool IsFixed() const;
+    void SetSpeed(int num, int den);
+    bool IsPaused() const { return m_fPause; }
+    bool IsFixed() const { return m_fFixed; }
+    void GetSpeed(int *pNum, int *pDen) const { *pNum=m_speedNum; *pDen=m_speedDen; }
+
     long long GetFileSize() const;
     long long GetFilePosition() const;
     int GetDuration() const;
@@ -60,6 +63,7 @@ private:
     int m_totBase;
     DWORD m_totBasePcr;
     long long m_hash;
+    int m_speedNum, m_speedDen;
 };
 
 #endif // INCLUDE_TS_SENDER_H
