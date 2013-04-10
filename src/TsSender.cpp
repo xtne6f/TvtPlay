@@ -20,6 +20,7 @@ static DWORD g_dwMagic;
 
 CTsTimestampShifter::CTsTimestampShifter()
     : m_shift45khz(0)
+    , m_fEnabled(false)
 {
     memset(&m_pat, 0, sizeof(m_pat));
 }
@@ -29,9 +30,10 @@ CTsTimestampShifter::~CTsTimestampShifter()
     Reset();
 }
 
-void CTsTimestampShifter::SetValue(DWORD shift45khz)
+void CTsTimestampShifter::SetInitialPcr(DWORD pcr45khz)
 {
-    m_shift45khz = shift45khz;
+    // PCR_INITIAL_MARGIN-PCR初期値だけPCR/PTS/DTSをシフト
+    m_shift45khz = (DWORD)PCR_INITIAL_MARGIN - pcr45khz;
 }
 
 void CTsTimestampShifter::Reset()
@@ -59,6 +61,8 @@ static void PtsDtsToArray(BYTE *pDest, DWORD clk45khz)
 void CTsTimestampShifter::Transform(BYTE *pPacket)
 {
     MAGIC_NUMBER(0x73658165);
+    if (!m_fEnabled) return;
+
     TS_HEADER header;
     extract_ts_header(&header, pPacket);
 
@@ -143,7 +147,6 @@ CTsSender::CTsSender()
     , m_unitSize(0)
     , m_fTrimPacket(false)
     , m_fUnderrunCtrl(false)
-    , m_fModTimestamp(false)
     , m_pcrDisconThreshold(0xffffffff)
     , m_sock(NULL)
     , m_udpPort(0)
@@ -250,7 +253,8 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     // QueryPerformanceCounterによるTickカウント補正をするかどうか
     m_adjState = fUseQpc ? 1 : 0;
 
-    m_fPause = false;
+    // 初期状態はポーズのほうが都合がよいため
+    m_fPause = true;
     SetSpeed(100, 100);
 
     __int64 fileSize = m_file.GetSize();
@@ -301,8 +305,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     }
     m_fForceSyncRead = false;
 
-    // PCR_LAP_THRESHOLD-PCR初期値だけPCR/PTS/DTSをシフト
-    m_tsShifter.SetValue((DWORD)PCR_LAP_THRESHOLD - m_initPcr);
+    m_tsShifter.SetInitialPcr(m_initPcr);
 
     return true;
 ERROR_EXIT:
@@ -356,7 +359,7 @@ void CTsSender::SetPipeName(LPCTSTR name)
 // ラップアラウンドをなるべく避けるようにPCR/PTS/DTSを変更するかどうか
 void CTsSender::SetModTimestamp(bool fModTimestamp)
 {
-    m_fModTimestamp = fModTimestamp;
+    m_tsShifter.Enable(fModTimestamp);
 }
 
 
@@ -368,7 +371,6 @@ void CTsSender::Close()
     m_udpAddr[0] = 0;
     m_pipeName[0] = 0;
     m_tsShifter.Reset();
-    m_tsShifter.SetValue(0);
 }
 
 
@@ -385,7 +387,7 @@ int CTsSender::Send()
     bool fReadToEof = false;
     if (m_fPause) {
         readyState[0] = 0;
-        ::Sleep(100);
+        ::Sleep(20);
     }
     else {
         // (可能ならば)受信側のバッファ状態を取得しておく
@@ -832,7 +834,7 @@ int CTsSender::ReadToPcr(int limit, bool fSend, bool fSyncRead)
     }
 
     // PCR/PTS/DTSを変更
-    if (m_fModTimestamp) m_tsShifter.Transform(m_curr);
+    if (m_tsShifter.IsEnabled()) m_tsShifter.Transform(m_curr);
 
     m_curr += m_unitSize;
 #endif

@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.1.9r3 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.2.0 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -16,15 +16,16 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
   F11キー等でいい感じにアウトラインが出るようです。
 ○再生26時間に1回ぐらい映像が乱れるのがイヤ
   「設定ファイルについて」→設定キーTsAvoidWraparound を参照
-○TVTest起動時にたまにフリーズする
-  「設定ファイルについて」→設定キーRaiseMainThreadPriority を参照
 ○BonDriver_UDP(Pipe)切り替え時に自動でプラグインを有効にしてほしい
   「TVTest起動オプションについて」を参照
+○TVTest起動時にたまにフリーズする
+  「設定ファイルについて」→設定キーRaiseMainThreadPriority を参照。もしくはこち
+  らの改変版TVTestを使用してください:
+  http://www1.axfc.net/uploader/Sc/so/381174
 ○倍速再生時にしばらくフリーズすることがある
   倍速再生はなるべくBonDriver_Pipeを使ってください。「倍速再生について」を参照
-  最新のTVTest0.7.23では、ドロップしたTSファイルの倍速再生でデッドロックします。
-  そのようなファイルを再生する場合はこちらのTVTestを使用してください:
-  http://www1.axfc.net/uploader/Sc/so/344770.zip (再UP、そのうち公開停止します)
+  最新のTVTest0.8.0では、ドロップしたTSファイルの倍速再生でデッドロックします。
+  そのようなファイルを再生する場合は上述の改変版TVTestを使用してください。
 ○しばらく再生していると映像が途切れとぎれになったりする
   設定キーTsUsePerfCounter/TsEnableUnderrunCtrl を参照
 ○シークがおそい
@@ -32,13 +33,15 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
   TsReadBufferSizeKB を使用することをお勧めします
 ○レジュームは？
   設定キーFileInfoMax を参照
+○チャプターは？
+  「チャプター機能について」を参照
 
 ■以前のバージョンからの移行
 設定ファイルTvtPlay.iniは基本的にそのまま引き継げます。ただし、ボタンのアイコン
 用画像の配置転換などで、設定キーButton02～Button15のデフォルトが一部変更されてい
 ます。ボタンアイコンがおかしくなった場合は、一度これらのキーをメモ帳などを使って
 削除してみてください。
-(ver.1.8～ver.1.9r2からの移行)
+(ver.1.8～ver.1.9r3からの移行)
   TvtPlay.tvtpを置きかえてください。
 (ver.1.3～ver.1.7からの移行)
   TvtPlay.tvtpとBonDriver_Pipe.dllとを置きかえてください。ver.1.8は
@@ -218,11 +221,14 @@ TsUsePerfCounter【ver.1.3r2～】
     # 基本的に[=1]で良いと思います。
     # 詳細は後述の「設定キーTsUsePerfCounterについて(上級者向け)」を参照。
 TsAvoidWraparound【ver.1.1～】
-    ラップアラウンドを避けるようPCR/PTS/DTSタイムスタンプを変更する[=1]かどうか
+    ラップアラウンドを避けるようPCR/PTS/DTSタイムスタンプを変更するかどうか
     # DirectShowのバグによってタイムスタンプが巡回する瞬間に映像が乱れるのを防ぎ
-    # ます。Microsoftがこの問題を修正する(かわかりませんが…)までは[=1]をお勧め
-    # します。ただし、現在再生中のサービスがスクランブルされている場合は[=0]とし
-    # なければ正しく再生されません。
+    # ます。Microsoftがこの問題を修正する(かわかりませんが…)までは利用をお勧め
+    # します。
+    # [=1] ファイル読み込み部分で修正します(従来動作です)。ファイルがスクランブ
+    #      ルされているときは正しく再生できません。
+    # [=2] ストリームコールバックを利用して修正します【ver.2.0～】。ファイルがス
+    #      クランブルされていても再生できます。TVTest0.8.0以降で利用可能です。
     # この設定は再生位置の表示部分を右クリックで変更できます。
 TsPcrDiscontinuityThreshold【ver.1.5r2～】
     カット編集部分の検出しきい値(ミリ秒)
@@ -238,8 +244,6 @@ RaiseMainThreadPriority【ver.1.5r3～】
     プラグイン有効かつ起動時にTVTestの主スレッド優先度を少し上げる[=1]かどうか
     # TVTest起動時に数秒～数十秒間フリーズする現象がみられる場合は試してみてくだ
     # さい。
-    # この現象については現在調査中です。当方環境ではTVTest設定->カードリーダを
-    # 「なし(スクランブル解除しない)」にすることでも回避できるようです。
 AutoHide【ver.1.1～】
     通常表示時にコントロールを隠す[=1]かどうか
     # この設定は再生位置の表示部分を右クリックで変更できます。
@@ -481,6 +485,12 @@ http://2sen.dip.jp/dtv/)のup0598.zip「非公式 TvtPlayシークボタンカ�
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.2.0 (2012-09-26)
+・TVTest0.8.0以降について、スクランブルされたTS再生でもラップアラウンド回避(設定
+  キーTsAvoidWraparound)を利用できるようにした
+・リサイズ時のちらつきを軽減
+・スレッド作成についてバグ(になるかもしれない部分を)修正
+・再生開始部分のコードを少しスマートにした
 ver.1.9r3 (2012-07-12)
 ・<高速鑑賞機能>参照するPCRを間違えて字幕区間のタイミングがずれる可能性を排除
 ・<高速鑑賞機能>設定キーSlowerWithCaptionShowLate/ClearEarlyのデフォルトを変更

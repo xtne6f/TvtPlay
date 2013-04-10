@@ -86,10 +86,10 @@ private:
     static BOOL CALLBACK WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pResult, void *pUserData);
     static LRESULT CALLBACK FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void UpdateInfos();
-    static DWORD WINAPI TsSenderThread(LPVOID pParam);
-#ifdef EN_SWC
+    static unsigned int __stdcall TsSenderThread(LPVOID pParam);
+    void AddStreamCallback();
+    void RemoveStreamCallback();
     static BOOL CALLBACK StreamCallback(BYTE *pData, void *pClientData);
-#endif
 
     // 初期パラメータ
     bool m_fInitialized;
@@ -148,7 +148,8 @@ private:
     int m_supposedDispDelay;
     int m_resetMode;
     int m_stretchMode, m_noMuteMax, m_noMuteMin;
-    bool m_fConvTo188, m_fUnderrunCtrl, m_fUseQpc, m_fModTimestamp;
+    bool m_fConvTo188, m_fUnderrunCtrl, m_fUseQpc;
+    int m_modTimestampMode;
     int m_initialStretchID;
     int m_pcrThresholdMsec;
     int m_salt, m_hashListMax;
@@ -160,6 +161,11 @@ private:
     CChapterMap m_chapter;
     TCHAR m_szChaptersDirName[MAX_PATH];
 
+    CTsTimestampShifter m_tsShifter;
+    CCriticalLock m_streamLock;
+    int m_streamCallbackRefCount;
+    bool m_fResetPat;
+
 #ifdef EN_SWC
     // 字幕でゆっくり
     CCaptionAnalyzer m_captionAnalyzer;
@@ -169,9 +175,7 @@ private:
     int m_swcShowLate;
     int m_swcClearEarly;
     // ストリーム解析
-    CCriticalLock m_streamLock;
     DWORD m_pcr;
-    bool m_fResetPat;
     PAT m_pat;
     int m_captionPid;
 #endif

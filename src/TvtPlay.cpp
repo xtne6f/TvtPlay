@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2012-07-11
+// 最終更新: 2012-09-26
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -8,6 +8,7 @@
 #include <list>
 #include <vector>
 #include <map>
+#include <process.h>
 #include "Util.h"
 #include "Settings.h"
 #include "ColorScheme.h"
@@ -32,7 +33,7 @@
 #include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.9r3)";
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.2.0)";
 static const int INFO_VERSION = 22;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
@@ -51,6 +52,7 @@ static const int INFO_VERSION = 22;
 #define WM_TS_SET_SPEED     (WM_APP + 8)
 #define WM_TS_SET_MOD_TS    (WM_APP + 9)
 #define WM_TS_WATCH_POS_GT  (WM_APP + 10)
+#define WM_TS_INIT_DONE     (WM_APP + 11)
 
 static LPCTSTR SETTINGS = TEXT("Settings");
 static LPCTSTR TVTPLAY_FRAME_WINDOW_CLASS = TEXT("TvtPlay Frame");
@@ -176,18 +178,19 @@ CTvtPlay::CTvtPlay()
     , m_fConvTo188(false)
     , m_fUnderrunCtrl(false)
     , m_fUseQpc(false)
-    , m_fModTimestamp(false)
+    , m_modTimestampMode(0)
     , m_initialStretchID(-1)
     , m_pcrThresholdMsec(0)
     , m_salt(0)
     , m_hashListMax(0)
     , m_fUpdateHashList(false)
+    , m_streamCallbackRefCount(0)
+    , m_fResetPat(false)
 #ifdef EN_SWC
     , m_slowerWithCaption(0)
     , m_swcShowLate(0)
     , m_swcClearEarly(0)
     , m_pcr(0)
-    , m_fResetPat(false)
     , m_captionPid(-1)
 #endif
 {
@@ -381,7 +384,7 @@ void CTvtPlay::LoadSettings()
         m_fConvTo188        = GetBufferedProfileInt(pBuf, TEXT("TsConvTo188"), 1) != 0;
         m_fUnderrunCtrl     = GetBufferedProfileInt(pBuf, TEXT("TsEnableUnderrunCtrl"), 0) != 0;
         m_fUseQpc           = GetBufferedProfileInt(pBuf, TEXT("TsUsePerfCounter"), 1) != 0;
-        m_fModTimestamp     = GetBufferedProfileInt(pBuf, TEXT("TsAvoidWraparound"), 0) != 0;
+        m_modTimestampMode  = GetBufferedProfileInt(pBuf, TEXT("TsAvoidWraparound"), 0);
         m_pcrThresholdMsec  = GetBufferedProfileInt(pBuf, TEXT("TsPcrDiscontinuityThreshold"), 400);
         m_fShowOpenDialog   = GetBufferedProfileInt(pBuf, TEXT("ShowOpenDialog"), 0) != 0;
         m_fRaisePriority    = GetBufferedProfileInt(pBuf, TEXT("RaiseMainThreadPriority"), 0) != 0;
@@ -598,7 +601,7 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
         WritePrivateProfileInt(SETTINGS, TEXT("TsEnableUnderrunCtrl"), m_fUnderrunCtrl, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("TsUsePerfCounter"), m_fUseQpc, m_szIniFileName);
     }
-    WritePrivateProfileInt(SETTINGS, TEXT("TsAvoidWraparound"), m_fModTimestamp, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsAvoidWraparound"), m_modTimestampMode, m_szIniFileName);
     if (fWriteDefault) {
         WritePrivateProfileInt(SETTINGS, TEXT("TsPcrDiscontinuityThreshold"), m_pcrThresholdMsec, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("ShowOpenDialog"), m_fShowOpenDialog, m_szIniFileName);
@@ -873,7 +876,7 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
         if (!InitializePlugin()) return false;
 
         if (!m_hwndFrame) {
-            m_hwndFrame = ::CreateWindow(TVTPLAY_FRAME_WINDOW_CLASS, NULL, WS_POPUP, 
+            m_hwndFrame = ::CreateWindow(TVTPLAY_FRAME_WINDOW_CLASS, NULL, WS_POPUP | WS_CLIPCHILDREN, 
                                          CW_USEDEFAULT, 0, CW_USEDEFAULT, 0,
                                          m_pApp->GetAppWindow(), NULL, g_hinstDLL, this);
             if (!m_hwndFrame) return false;
@@ -906,7 +909,7 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
                 m_captionPid = GetCaptionPid();
                 m_fResetPat = true;
                 // ストリームコールバックの登録
-                m_pApp->SetStreamCallback(0, StreamCallback, this);
+                AddStreamCallback();
             }
         }
 #endif
@@ -922,7 +925,8 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
 #ifdef EN_SWC
         if (m_captionAnalyzer.IsInitialized()) {
             // ストリームコールバックの登録解除
-            m_pApp->SetStreamCallback(TVTest::STREAM_CALLBACK_REMOVE, StreamCallback);
+            RemoveStreamCallback();
+            // ここでは必ず登録解除されていることを前提にしている
             m_captionAnalyzer.UnInitialize();
         }
 #endif
@@ -948,7 +952,10 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
             ::AppendMenu(hmenu, MF_STRING|(m_fAutoHide?MF_UNCHECKED:MF_CHECKED), 1, TEXT("常に表示する"));
         }
         ::AppendMenu(hmenu, MF_STRING|(m_fPosDrawTot?MF_CHECKED:MF_UNCHECKED), 2, TEXT("放送時刻を表示する"));
-        ::AppendMenu(hmenu, MF_STRING|(m_fModTimestamp?MF_CHECKED:MF_UNCHECKED), 3, TEXT("ラップアラウンドを回避する"));
+        ::AppendMenu(hmenu, MF_STRING|(m_modTimestampMode==1?MF_CHECKED:MF_UNCHECKED), 3, TEXT("ラップアラウンドを回避する"));
+        if (m_pApp->GetVersion() >= TVTest::MakeVersion(0,8,0)) {
+            ::AppendMenu(hmenu, MF_STRING|(m_modTimestampMode==2?MF_CHECKED:MF_UNCHECKED), 4, TEXT("ラップアラウンドを回避する(視聴側)"));
+        }
 #ifdef EN_SWC
         HMENU hSubMenu = ::CreatePopupMenu();
         if (hSubMenu) {
@@ -993,8 +1000,13 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
         SaveSettings();
     }
     else if (selID == 3) {
-        m_fModTimestamp = !m_fModTimestamp;
-        SetModTimestamp(m_fModTimestamp);
+        m_modTimestampMode = m_modTimestampMode != 1 ? 1 : 0;
+        SetModTimestamp(m_modTimestampMode == 1);
+        SaveSettings();
+    }
+    else if (selID == 4) {
+        m_modTimestampMode = m_modTimestampMode != 2 ? 2 : 0;
+        SetModTimestamp(false);
         SaveSettings();
     }
 #ifdef EN_SWC
@@ -1535,7 +1547,7 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset, int stretchID)
         m_tsSender.Close();
         return false;
     }
-    m_hThread = ::CreateThread(NULL, 0, TsSenderThread, this, 0, &m_threadID);
+    m_hThread = reinterpret_cast<HANDLE>(_beginthreadex(NULL, 0, TsSenderThread, this, 0, NULL));
     if (!m_hThread) {
         ::CloseHandle(m_hThreadEvent);
         m_hThreadEvent = NULL;
@@ -1554,7 +1566,17 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset, int stretchID)
     SetupDestination();
 
     // PCR/PTS/DTSを変更するかどうか設定
-    SetModTimestamp(m_fModTimestamp);
+    SetModTimestamp(m_modTimestampMode == 1);
+
+    // ストリームコールバックを利用してPCR/PTS/DTSを変更するかどうか設定
+    if (!m_tsShifter.IsEnabled() && m_modTimestampMode == 2) {
+        if (m_pApp->GetVersion() >= TVTest::MakeVersion(0,8,0)) {
+            m_tsShifter.SetInitialPcr(m_tsSender.GetInitialPcr());
+            m_tsShifter.Enable(true);
+            m_fResetPat = true;
+            AddStreamCallback();
+        }
+    }
 
     if (m_hashListMax > 0 && m_fUpdateHashList) {
         ::SetTimer(m_hwndFrame, TIMER_ID_UPDATE_HASH_LIST, TIMER_UPDATE_HASH_LIST_INTERVAL, NULL);
@@ -1567,6 +1589,9 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset, int stretchID)
     // 初期再生速度を設定
     if (stretchID >= 0) m_initialStretchID = stretchID;
     if (m_initialStretchID >= 0) Stretch(m_initialStretchID);
+
+    // 再生初期化が完了したことを知らせる
+    ::PostThreadMessage(m_threadID, WM_TS_INIT_DONE, 0, 0);
 
     m_statusView.Invalidate();
     return true;
@@ -1595,6 +1620,12 @@ void CTvtPlay::Close()
         ::KillTimer(m_hwndFrame, TIMER_ID_WATCH_POS_GT);
         m_chapter.Close();
         m_tsSender.Close();
+
+        // ストリームコールバックを利用したPCR/PTS/DTS変更を無効化
+        if (m_tsShifter.IsEnabled()) {
+            RemoveStreamCallback();
+            m_tsShifter.Enable(false);
+        }
 
         // 閉じる直前の再生速度を保存
         m_initialStretchID = GetStretchID();
@@ -2183,16 +2214,16 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         if (pThis->m_pApp->IsPluginEnabled())
             pThis->SetupDestination();
         break;
-#ifdef EN_SWC
     case TVTest::EVENT_SERVICEUPDATE:
         // サービスの構成が変化した
         if (pThis->m_pApp->IsPluginEnabled()) {
+#ifdef EN_SWC
             // 字幕PIDをセットする
             pThis->m_captionPid = pThis->GetCaptionPid();
+#endif
             pThis->m_fResetPat = true;
         }
         break;
-#endif
     case TVTest::EVENT_PREVIEWCHANGE:
         // プレビュー表示状態が変化した
         if (pThis->m_pApp->IsPluginEnabled())
@@ -2303,19 +2334,19 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
     case WM_CREATE:
         {
             LPCREATESTRUCT pcs = reinterpret_cast<LPCREATESTRUCT>(lParam);
-            pThis = reinterpret_cast<CTvtPlay*>(pcs->lpCreateParams);
+            pThis = static_cast<CTvtPlay*>(pcs->lpCreateParams);
             ::SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pThis));
         }
-        break;
+        return 0;
     case WM_SIZE:
         pThis->OnFrameResize();
-        break;
+        return 0;
     case WM_TIMER:
         switch (wParam) {
         case TIMER_ID_AUTO_HIDE:
             // lParam!=0のときは表示タイムアウト値を減じない
             pThis->ProcessAutoHide(lParam != 0);
-            break;
+            return 0;
         case TIMER_ID_RESET_DROP:
             {
                 TVTest::StatusInfo si;
@@ -2326,7 +2357,7 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
                 }
                 pThis->m_lastDropCount = si.DropPacketCount;
             }
-            break;
+            return 0;
         case TIMER_ID_UPDATE_HASH_LIST:
             if (pThis->IsOpen()) {
                 HASH_INFO hashInfo = {0};
@@ -2336,17 +2367,17 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
                 hashInfo.resumePos = pos <= 5000 || !pThis->IsExtending() && pThis->GetDuration()-5000 <= pos ? -1 : pos;
                 pThis->UpdateFileInfoSetting(hashInfo);
             }
-            break;
+            return 0;
         case TIMER_ID_SYNC_CHAPTER:
             if (pThis->m_chapter.Sync()) {
                 pThis->m_statusView.UpdateItem(STATUS_ITEM_SEEK);
                 pThis->BeginWatchingNextChapter(false);
             }
-            break;
+            return 0;
         case TIMER_ID_WATCH_POS_GT:
             ::KillTimer(hwnd, TIMER_ID_WATCH_POS_GT);
             pThis->BeginWatchingNextChapter(false);
-            break;
+            return 0;
         }
         break;
     case WM_UPDATE_STATUS:
@@ -2358,14 +2389,14 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             pThis->m_statusView.UpdateItem(STATUS_ITEM_SEEK);
             pThis->m_statusView.UpdateItem(STATUS_ITEM_POSITION);
         }
-        break;
+        return 0;
     case WM_QUERY_CLOSE_NEXT:
         pThis->Close();
         if (pThis->m_playlist.Next(pThis->IsAllRepeat())) pThis->OpenCurrent();
-        break;
+        return 0;
     case WM_QUERY_SEEK_BGN:
         pThis->SeekToBegin();
-        break;
+        return 0;
     case WM_QUERY_RESET:
         DEBUG_OUT(TEXT("CTvtPlay::FrameWindowProc(): WM_QUERY_RESET\n"));
         if (pThis->m_resetMode <= 2) {
@@ -2375,7 +2406,7 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             pThis->m_lastDropCount = 0;
             ::SetTimer(hwnd, TIMER_ID_RESET_DROP, pThis->m_resetDropInterval, NULL);
         }
-        break;
+        return 0;
     case WM_SATISFIED_POS_GT:
         DEBUG_OUT(TEXT("CTvtPlay::FrameWindowProc(): WM_SATISFIED_POS_GT\n"));
         if (pThis->m_chapter.IsOpen()) {
@@ -2406,7 +2437,7 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             }
             pThis->BeginWatchingNextChapter(true);
         }
-        break;
+        return 0;
     case WM_APPCOMMAND:
         // メディアキー対策(オーナーウィンドウには自分で送る必要がある)
         ::SendMessage(::GetParent(hwnd), uMsg, wParam, lParam);
@@ -2437,7 +2468,7 @@ void CTvtPlay::UpdateInfos()
 
 
 // TSデータの送信制御スレッド
-DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
+unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
 {
     MSG msg;
     DWORD_PTR dwRes;
@@ -2461,6 +2492,7 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
         fLastPaused = pThis->m_fInfoPaused;
     }
     pThis->m_tsSender.SetupQpc();
+    pThis->m_threadID = ::GetCurrentThreadId();
 
     for (;;) {
         BOOL rv = ::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE);
@@ -2534,6 +2566,9 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                 break;
             case WM_TS_WATCH_POS_GT:
                 posWatch = static_cast<int>(msg.lParam);
+                break;
+            case WM_TS_INIT_DONE:
+                pThis->m_tsSender.Pause(false);
                 break;
             }
             ::TranslateMessage(&msg);
@@ -2651,7 +2686,22 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
 }
 
 
-#ifdef EN_SWC
+void CTvtPlay::AddStreamCallback()
+{
+    if (m_streamCallbackRefCount++ == 0) {
+        m_pApp->SetStreamCallback(0, StreamCallback, this);
+    }
+}
+
+
+void CTvtPlay::RemoveStreamCallback()
+{
+    if (--m_streamCallbackRefCount <= 0) {
+        m_pApp->SetStreamCallback(TVTest::STREAM_CALLBACK_REMOVE, StreamCallback);
+        m_streamCallbackRefCount = 0;
+    }
+}
+
 
 #define MSB(x) ((x) & 0x80000000)
 
@@ -2661,12 +2711,19 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
     CTvtPlay &t = *static_cast<CTvtPlay*>(pClientData);
 
     if (t.m_fResetPat) {
-        reset_pat(&t.m_pat);
-        t.m_fResetPat = false;
         CBlockLock lock(&t.m_streamLock);
+        t.m_tsShifter.Reset();
+#ifdef EN_SWC
+        reset_pat(&t.m_pat);
         t.m_captionAnalyzer.ClearShowState();
+#endif
+        t.m_fResetPat = false;
     }
 
+    // PCR/PTS/DTSを変更
+    if (t.m_tsShifter.IsEnabled()) t.m_tsShifter.Transform(pData);
+
+#ifdef EN_SWC
     TS_HEADER header;
     extract_ts_header(&header, pData);
 
@@ -2750,9 +2807,9 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
         CBlockLock lock(&t.m_streamLock);
         t.m_captionAnalyzer.AddPacket(pData);
     }
+#endif
     return TRUE;
 }
-#endif
 
 
 TVTest::CTVTestPlugin *CreatePluginClass()

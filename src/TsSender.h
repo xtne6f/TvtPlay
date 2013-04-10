@@ -5,15 +5,19 @@
 
 class CTsTimestampShifter
 {
+    static const int PCR_INITIAL_MARGIN = 600 * 1000 * PCR_PER_MSEC;
 public:
     CTsTimestampShifter();
     ~CTsTimestampShifter();
-    void SetValue(DWORD shift45khz);
+    void SetInitialPcr(DWORD pcr45khz);
     void Reset();
     void Transform(BYTE *pPacket);
+    void Enable(bool fEnable) { m_fEnabled = fEnable; }
+    bool IsEnabled() const { return m_fEnabled; };
 private:
     DWORD m_shift45khz;
     PAT m_pat;
+    bool m_fEnabled;
 };
 
 // 以下はClose()するまで呼び出すスレッドを一致させること
@@ -35,6 +39,7 @@ public:
     CTsSender();
     ~CTsSender();
     bool Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, bool fUnderrunCtrl, bool fUseQpc, int pcrDisconThresholdMsec);
+    DWORD GetInitialPcr() { return m_initPcr; }
     void SetupQpc();
     void SetUdpAddress(LPCSTR addr, unsigned short port);
     void SetPipeName(LPCTSTR name);
@@ -74,7 +79,7 @@ private:
     CAsyncFileReader m_file;
     BYTE *m_curr, *m_head, *m_tail;
     int m_unitSize;
-    bool m_fTrimPacket, m_fUnderrunCtrl, m_fModTimestamp;
+    bool m_fTrimPacket, m_fUnderrunCtrl;
     DWORD m_pcrDisconThreshold;
     CTsTimestampShifter m_tsShifter;
 

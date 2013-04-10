@@ -380,7 +380,7 @@ void extract_pat(PAT *pat, const unsigned char *payload, int payload_size, int u
         // 受信済みPMTを調べ、必要ならば新規に生成する
         memset(pmt_exists, 0, sizeof(pmt_exists));
         pos = 3 + 5;
-        while (pos < 3 + pat->psi.section_length - 4) {
+        while (pos + 3 < 3 + pat->psi.section_length - 4/*CRC32*/) {
             program_number = (table[pos]<<8) | (table[pos+1]);
             if (program_number != 0) {
                 pid = ((table[pos+2]&0x1f)<<8) | table[pos+3];
@@ -453,7 +453,7 @@ void extract_pmt(PMT *pmt, const unsigned char *payload, int payload_size, int u
 
         pmt->pid_count = 0;
         pos = 3 + 9 + program_info_length;
-        while (pos < 3 + pmt->psi.section_length - 5) {
+        while (pos + 4 < 3 + pmt->psi.section_length - 4/*CRC32*/) {
             stream_type = table[pos];
             if (stream_type == H_262_VIDEO ||
                 stream_type == PES_PRIVATE_DATA ||
