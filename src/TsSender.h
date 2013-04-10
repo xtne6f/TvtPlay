@@ -29,7 +29,7 @@ class CTsSender
 public:
     CTsSender();
     ~CTsSender();
-    bool Open(LPCTSTR name, DWORD salt, bool fConvTo188, bool fUseQpc);
+    bool Open(LPCTSTR name, DWORD salt, bool fConvTo188, bool fUseQpc, int pcrDisconThresholdMsec);
     void SetupQpc();
     void SetUdpAddress(LPCSTR addr, unsigned short port);
     void SetPipeName(LPCTSTR name);
@@ -55,8 +55,8 @@ public:
     int GetRate() const;
 private:
     DWORD GetAdjTickCount();
-    int ReadToPcr(int limit, bool fSend, bool *pfDiscontinuity = NULL);
-    inline bool ReadPacket(bool fSend, bool *pfPcr, bool *pfDiscontinuity);
+    int ReadToPcr(int limit, bool fSend);
+    inline bool ReadPacket(bool fSend, bool *pfPcr);
     void RotateBuffer(bool fSend);
     bool SetPointer(long long distanceToMove, DWORD dwMoveMethod);
     bool Seek(long long distanceToMove, DWORD dwMoveMethod);
@@ -71,6 +71,7 @@ private:
     BYTE *m_pBuf, *m_curr, *m_head, *m_tail;
     int m_unitSize, m_bufSize;
     bool m_fTrimPacket, m_fModTimestamp;
+    DWORD m_pcrDisconThreshold;
     CTsTimestampShifter m_tsShifter;
     SOCKET m_sock;
     CHAR m_udpAddr[MAX_URI];
@@ -78,9 +79,8 @@ private:
     HANDLE m_hPipe;
     TCHAR m_pipeName[MAX_PATH];
     DWORD m_baseTick, m_renewSizeTick, m_renewDurTick;
-    DWORD m_pcr, m_basePcr, m_initPcr;
+    DWORD m_pcr, m_basePcr, m_initPcr, m_prevPcr;
     bool m_fEnPcr, m_fShareWrite, m_fFixed, m_fPause;
-    int m_patContinuity;
     int m_pcrPid, m_pcrPids[PCR_PIDS_MAX];
     int m_pcrPidCounts[PCR_PIDS_MAX];
     int m_pcrPidsLen;

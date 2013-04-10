@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.1.5 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.1.5r2 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -20,7 +20,7 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
 ver.1.5では、設定キーTsWaitOnStopがTsSupposedDispDelayに変更(吸収)されました。値
 を変更していたときは、後述の「設定ファイルについて」の該当項目を読んで修正してく
 ださい。
-(ver.1.3～ver.1.4からの移行)
+(ver.1.3～ver.1.5からの移行)
   TvtPlay.tvtpを置きかえてください。
 (ver.1.2r2からの移行)
   TvtPlay.tvtpとTvtAudioStretchFilter.axとを置きかえてください。
@@ -94,20 +94,20 @@ Order Mark)の無いものはUTF-8と判断します。
 倍速再生は音声を伸び縮みさせることで実現しています。動画をスキップさせているわけ
 ではないので、速度に応じてシステムの負荷が高まります。また、BonDriver_UDP.dllを
 使っている場合や、動画にドロップやエラーのある箇所では、あまり高速に再生すると数
-秒～数十秒間TVTestが固まるようです。しばらく放っておけば戻りますが、あまり再生速
-度を上げすぎないように注意してください。
+秒～数十秒間TVTestが固まることがあるかもしれません。しばらく放っておけば戻ります
+が、あまり再生速度を上げすぎないように注意してください。
 また、倍速再生に使用するTvtAudioStretchFilterですが、倍速再生時以外は何も処理を
 しない(Waveデータを通過させるだけ)ので、このフィルタを設定するだけで負荷が上がっ
 たりすることはおそらく無いです。
 
 ■TvtAudioStretchFilterの追加機能
+ver.1.3以降に添付のフィルタは5.1ch音声に対応しています。S/PDIFパススルーには未対
+応なので注意してください。
 TVTestの音声フィルタを一つしか指定できないことへの対策として、ver.0.9r3以降に添
 付のTvtAudioStretchFilterでは、接続するDirectShowフィルタを1つだけ指定できるよう
 になりました。たとえば、フィルタを置いたフォルダに"TvtAudioStretchFilter.ini"を
 次のような内容で作成すると、ffdshowがインストールされていて、"Uncompressed"形式
 が有効に設定されていれば、フィルタの後続にffdshow Audio Decoderが接続されます。
-ver.1.3以降に添付のフィルタは5.1ch音声に対応しています。S/PDIFパススルーには未対
-応なので注意してください。
 
 [TvtAudioStretchFilter]
 AddFilter={0F40E1E5-4F79-4988-B1A9-CC98794E6B55}
@@ -185,6 +185,12 @@ TsAvoidWraparound【ver.1.1～】
     # します。ただし、現在再生中のサービスがスクランブルされている場合は[=0]とし
     # なければ正しく再生されません。
     # この設定は再生位置の表示部分を右クリックで変更できます。
+TsPcrDiscontinuityThreshold【ver.1.5r2～】
+    カット編集部分の検出しきい値(ミリ秒)
+    # PCR(Program Clock Reference)値がこのしきい値以上飛んでいる部分をカット編集
+    # (またはドロップ)部分とみなしてビューアリセットをかけます。
+    # 最小値は[=200]、または[=0]とすると検出しません。
+    # 正常なTSファイルであれば、PCRは規定で100ミリ秒以下の間隔で埋め込まれます。
 ShowOpenDialog【ver.1.2～】
     プラグイン有効時に「ファイルを開く」ダイアログを表示する[=1]かどうか
     # /tvtpudp /tvtpipeと組みあわせて利用するとTVTestのチャンネル選択画面などで
@@ -311,7 +317,7 @@ GetTickCount、[=1]ならQueryPerformanceCounterにします。どちらでも�
 PCでは、たとえば時計が一日に数秒～数分単位で遅れるor進む、アナログチューナの音声
 と映像のずれが次第に激しくなる、といった現象もみられるかもしれません。
 
-■チャプター機能(テスト実装中)について
+■チャプター機能について(テスト実装中)
 [ver.1.4からの変更点]
 ・読み込む.chapterファイルの命名ルールが変わりました:
   <旧>foo.ts→foo.ts.chapter <新>foo.ts→foo.chapter
@@ -383,6 +389,11 @@ http://2sen.dip.jp/)のup0598.zip「非公式 TvtPlayシークボタンカスタ
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.1.5r2 (2012-01-22)
+・ver.1.5で、TsTimeKeeper等できれいにカット編集された部分まで検出してビューアリ
+  セットしていたのを修正。関連する設定キーTsPcrDiscontinuityThresholdを追加
+・ver.1.5で、設定値が引用符で囲われている場合に取り除いてなかったのを修正(つまり
+  通常のiniファイルの仕様に戻した)
 ver.1.5 (2012-01-20)
 ・人柱版表記をはずした(人柱さん達に感謝)。チャプター周辺は今後激しく変化するかも
 ・RowPos=0のとき、最大化表示のときにコントロールを隠せるようにした
@@ -393,7 +404,6 @@ ver.1.5 (2012-01-20)
 ・OGMスタイル(chapter.aufスタイル)のチャプターファイルの読み込みに対応
 ・ほか、チャプター機能の細かい機能追加(チャプターのini保存機能はとりあえず保留)
 ・ini読み書きを効率化
-  ・文字列の設定値は引用符で囲わないでください(取り除く処理を入れてないため)
 ・Readmeのスペルミス修正(OpenPupup→OpenPopup)
 ver.1.4 (2011-12-30)
 ・ボタンを18個にしてコマンド指定の自由度を上げた

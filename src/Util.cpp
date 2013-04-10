@@ -31,14 +31,26 @@ BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
 // GetPrivateProfileSection()で取得したバッファから、キーに対応する文字列を取得する
 void GetBufferedProfileString(LPCTSTR lpBuff, LPCTSTR lpKeyName, LPCTSTR lpDefault, LPTSTR lpReturnedString, DWORD nSize)
 {
-    TCHAR szKey[256];
-    int nKeyLen = ::wsprintf(szKey, TEXT("%s="), lpKeyName);
-    while (*lpBuff) {
-        if (!::StrCmpNI(lpBuff, szKey, nKeyLen)) {
-            ::lstrcpyn(lpReturnedString, lpBuff + nKeyLen, nSize);
-            return;
+    int nKeyLen = ::lstrlen(lpKeyName);
+    if (nKeyLen <= 126) {
+        TCHAR szKey[128];
+        ::lstrcpy(szKey, lpKeyName);
+        ::lstrcpy(szKey + (nKeyLen++), TEXT("="));
+        while (*lpBuff) {
+            int nLen = ::lstrlen(lpBuff);
+            if (!::StrCmpNI(lpBuff, szKey, nKeyLen)) {
+                if ((lpBuff[nKeyLen] == TEXT('\'') || lpBuff[nKeyLen] == TEXT('"')) &&
+                    nLen >= nKeyLen + 2 && lpBuff[nKeyLen] == lpBuff[nLen - 1])
+                {
+                    ::lstrcpyn(lpReturnedString, lpBuff + nKeyLen + 1, min(nLen-nKeyLen-1, static_cast<int>(nSize)));
+                }
+                else {
+                    ::lstrcpyn(lpReturnedString, lpBuff + nKeyLen, nSize);
+                }
+                return;
+            }
+            lpBuff += nLen + 1;
         }
-        lpBuff += ::lstrlen(lpBuff) + 1;
     }
     ::lstrcpyn(lpReturnedString, lpDefault, nSize);
 }

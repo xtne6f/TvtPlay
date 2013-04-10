@@ -126,6 +126,7 @@ private:
     int m_resetMode;
     int m_stretchMode, m_noMuteMax, m_noMuteMin;
     bool m_fConvTo188, m_fUseQpc, m_fModTimestamp;
+    int m_pcrThresholdMsec;
 
     // ファイルごとの固有情報
     int m_salt, m_hashListMax;
