@@ -18,13 +18,13 @@ void CStatusViewEventHandler::OnMouseLeave()
     }
 }
 
-CSeekStatusItem::CSeekStatusItem(ITvtPlayController *pPlugin, bool fDrawOfs, bool fDrawTot)
-    : CStatusItem(STATUS_ITEM_SEEK, 128)
+CSeekStatusItem::CSeekStatusItem(ITvtPlayController *pPlugin, bool fDrawOfs, bool fDrawTot, int width)
+    : CStatusItem(STATUS_ITEM_SEEK, max(width, 64))
     , m_pPlugin(pPlugin)
     , m_fDrawOfs(fDrawOfs)
     , m_fDrawTot(fDrawTot)
 {
-    m_MinWidth = 128;
+    m_MinWidth = m_DefaultWidth;
     SetMousePos(-1, -1);
 }
 
@@ -150,8 +150,7 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
     HBRUSH hbr = ::CreateSolidBrush(crText);
     if (hpen && hbr && chMap.IsOpen()) {
         HPEN hpenOld = SelectPen(hdc, hpen);
-        CHAPTER_NAME chInName;
-        chInName.val[0] = 0;
+        bool isIn = false, isX = false;
         CChapterMap::const_iterator it = chMap.begin();
         for (; it != chMap.end(); ++it) {
             int chapX = rcBar.left + ConvUnit(it->first, rcBar.right - rcBar.left, dur);
@@ -163,15 +162,16 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
             SelectBrush(hdc, hbrOld);
 
             // チャプター区間を描画
-            if (chInName.val[0]) {
-                if (it->second.IsOut() && !::lstrcmpi(it->second.val+1, chInName.val+1)) {
+            if (isIn) {
+                if (it->second.IsOut() && (isX && it->second.IsX() || !isX && !it->second.IsX())) {
                     ::LineTo(hdc, chapX, rcBar.top-7);
-                    chInName.val[0] = 0;
+                    isIn = false;
                 }
             }
             else if (it->second.IsIn()) {
                 ::MoveToEx(hdc, chapX, rcBar.top-7, NULL);
-                chInName = it->second;
+                isX = it->second.IsX();
+                isIn = true;
             }
         }
         SelectPen(hdc, hpenOld);
@@ -327,12 +327,12 @@ void CPositionStatusItem::OnRButtonDown(int x, int y)
 }
 
 CButtonStatusItem::CButtonStatusItem(ITvtPlayController *pPlugin, int id, int subID, int width, const DrawUtil::CBitmap &icon)
-    : CStatusItem(id, width)
+    : CStatusItem(id, max(width, 0))
     , m_pPlugin(pPlugin)
     , m_subID(subID)
     , m_icon(icon)
 {
-    m_MinWidth = width;
+    m_MinWidth = m_DefaultWidth;
 }
 
 void CButtonStatusItem::Draw(HDC hdc, const RECT *pRect)

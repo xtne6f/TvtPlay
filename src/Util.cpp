@@ -14,16 +14,18 @@ static HWND ASFilterFindWindow()
     return ::FindWindowEx(HWND_MESSAGE, NULL, ASFLT_FILTER_NAME, szName);
 }
 
-LRESULT ASFilterSendMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
+LRESULT ASFilterSendMessageTimeout(UINT Msg, WPARAM wParam, LPARAM lParam, UINT uTimeout)
 {
     HWND hwnd = ASFilterFindWindow();
-    return hwnd ? ::SendMessage(hwnd, Msg, wParam, lParam) : FALSE;
+    DWORD_PTR dwResult;
+    return hwnd && ::SendMessageTimeout(hwnd, Msg, wParam, lParam, SMTO_NORMAL,
+                                        uTimeout, &dwResult) ? dwResult : FALSE;
 }
 
-BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
+BOOL ASFilterSendNotifyMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
 {
     HWND hwnd = ASFilterFindWindow();
-    return hwnd ? ::PostMessage(hwnd, Msg, wParam, lParam) : FALSE;
+    return hwnd ? ::SendNotifyMessage(hwnd, Msg, wParam, lParam) : FALSE;
 }
 #endif
 

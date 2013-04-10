@@ -14,6 +14,8 @@ private:
     PAT m_pat;
 };
 
+// 以下はClose()するまで呼び出すスレッドを一致させること
+// SetupQpc()、Send()、Send()呼び出し後のSeek*()
 class CTsSender
 {
     static const int MAX_URI = 256;
@@ -25,12 +27,13 @@ class CTsSender
     static const int RESYNC_FAILURE_LIMIT = 2;
     static const int ADJUST_TICK_INTERVAL = 10000;
     static const int RENEW_SIZE_INTERVAL = 3000;
+    static const int RENEW_FSR_INTERVAL = 1000;
     static const int INITIAL_STORE_MSEC = 500;
     static const int PCR_LAP_THRESHOLD = 600 * 1000 * PCR_PER_MSEC;
 public:
     CTsSender();
     ~CTsSender();
-    bool Open(LPCTSTR name, DWORD salt, bool fConvTo188, bool fUseQpc, int pcrDisconThresholdMsec);
+    bool Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, bool fUseQpc, int pcrDisconThresholdMsec);
     void SetupQpc();
     void SetUdpAddress(LPCSTR addr, unsigned short port);
     void SetPipeName(LPCTSTR name);
@@ -43,25 +46,22 @@ public:
     bool Seek(int msec);
     void Pause(bool fPause);
     void SetSpeed(int num, int den);
-    bool IsOpen() const { return m_hFile != NULL; }
+    bool IsOpen() const { return m_file.IsOpen(); }
     bool IsPaused() const { return m_fPause; }
     bool IsFixed(bool *pfSpecialExt = NULL) const { if (pfSpecialExt) *pfSpecialExt=m_fSpecialExtending; return m_fFixed; }
     void GetSpeed(int *pNum, int *pDen) const { *pNum=m_speedNum; *pDen=m_speedDen; }
-    long long GetFileHash() const { return m_hash; }
-    long long GetFileSize() const;
-    long long GetFilePosition() const;
+    __int64 GetFileHash() const { return m_hash; }
     int GetDuration() const;
     int GetPosition() const;
     int GetBroadcastTime() const;
     int GetRate() const;
 private:
     DWORD GetAdjTickCount();
-    int ReadToPcr(int limit, bool fSend);
-    inline bool ReadPacket(bool fSend, bool *pfPcr);
-    void RotateBuffer(bool fSend);
-    bool SetPointer(long long distanceToMove, DWORD dwMoveMethod);
-    bool Seek(long long distanceToMove, DWORD dwMoveMethod);
-    bool SeekToBoundary(long long predicted, long long range, BYTE *pWork, int workSize);
+    int ReadToPcr(int limit, bool fSend, bool fSyncRead);
+    inline bool ReadPacket(bool fSend, bool fSyncRead, bool *pfPcr);
+    void RotateBuffer(bool fSend, bool fSyncRead);
+    bool Seek(__int64 distanceToMove, DWORD dwMoveMethod);
+    bool SeekToBoundary(__int64 predicted, __int64 range, BYTE *pWork, int workSize);
     void OpenSocket();
     void CloseSocket();
     void OpenPipe();
@@ -69,9 +69,9 @@ private:
     void SendData(BYTE *pData, int dataSize);
     static DWORD DiffPcr(DWORD a, DWORD b) { return ((a-b)&0x80000000) && b-a<PCR_LAP_THRESHOLD ? 0 : a-b; }
 
-    HANDLE m_hFile;
-    BYTE *m_pBuf, *m_curr, *m_head, *m_tail;
-    int m_unitSize, m_bufSize;
+    CAsyncFileReader m_file;
+    BYTE *m_curr, *m_head, *m_tail;
+    int m_unitSize;
     bool m_fTrimPacket, m_fModTimestamp;
     DWORD m_pcrDisconThreshold;
     CTsTimestampShifter m_tsShifter;
@@ -80,17 +80,18 @@ private:
     unsigned short m_udpPort;
     HANDLE m_hPipe;
     TCHAR m_pipeName[MAX_PATH];
-    DWORD m_baseTick, m_renewSizeTick, m_renewDurTick;
+    DWORD m_baseTick, m_renewSizeTick, m_renewDurTick, m_renewFsrTick;
     DWORD m_pcr, m_basePcr, m_initPcr, m_prevPcr;
     bool m_fEnPcr, m_fShareWrite, m_fFixed, m_fPause;
+    bool m_fForceSyncRead;
     int m_pcrPid, m_pcrPids[PCR_PIDS_MAX];
     int m_pcrPidCounts[PCR_PIDS_MAX];
     int m_pcrPidsLen;
-    long long m_fileSize;
+    __int64 m_fileSize;
     int m_duration;
     int m_totBase;
     DWORD m_totBasePcr;
-    long long m_hash;
+    __int64 m_hash;
     int m_speedNum, m_speedDen;
     DWORD m_initStore;
     bool m_fSpecialExtending;

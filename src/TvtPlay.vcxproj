@@ -178,6 +178,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Aero.h" />
+    <ClInclude Include="AsyncFileReader.h" />
     <ClInclude Include="BasicWindow.h" />
     <ClInclude Include="ChapterMap.h" />
     <ClInclude Include="ColorScheme.h" />
@@ -196,6 +197,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Aero.cpp" />
+    <ClCompile Include="AsyncFileReader.cpp" />
     <ClCompile Include="BasicWindow.cpp" />
     <ClCompile Include="ChapterMap.cpp" />
     <ClCompile Include="ColorScheme.cpp" />

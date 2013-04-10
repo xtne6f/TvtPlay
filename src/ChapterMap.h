@@ -8,7 +8,7 @@ struct CHAPTER_NAME {
     TCHAR val[CHAPTER_NAME_MAX];
     bool IsIn() const { return !::ChrCmpI(val[0], TEXT('i')); }
     bool IsOut() const { return !::ChrCmpI(val[0], TEXT('o')); }
-    bool IsX() const { return !::lstrcmpi(IsIn()||IsOut() ? val+1 : val, TEXT("x")); }
+    bool IsX() const { return !::ChrCmpI(val[IsIn()||IsOut() ? 1 : 0], TEXT('x')); }
     void InvertPrefix(TCHAR c);
 };
 

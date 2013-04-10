@@ -8,8 +8,8 @@
 #endif
 
 #define WM_ASFLT_STRETCH    (WM_APP + 1)
-LRESULT ASFilterSendMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
-BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
+LRESULT ASFilterSendMessageTimeout(UINT Msg, WPARAM wParam, LPARAM lParam, UINT uTimeout);
+BOOL ASFilterSendNotifyMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 
 #define READ_FILE_MAX_SIZE (256 * 1024)
 #define ICON_SIZE 16

@@ -68,7 +68,7 @@ public:
 class CSeekStatusItem : public CStatusItem
 {
 public:
-    CSeekStatusItem(ITvtPlayController *pPlugin, bool fDrawOfs, bool fDrawTot);
+    CSeekStatusItem(ITvtPlayController *pPlugin, bool fDrawOfs, bool fDrawTot, int width);
     LPCTSTR GetName() const { return TEXT("シークバー"); }
     void Draw(HDC hdc, const RECT *pRect);
     void OnLButtonDown(int x, int y);

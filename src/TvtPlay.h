@@ -66,6 +66,7 @@ private:
     void OnResize(bool fInit = false);
     void OnDispModeChange(bool fStandby, bool fInit = false);
     void OnFrameResize();
+    void ProcessAutoHide(bool fNoDecDispCount);
     void EnablePluginByDriverName();
     void OnPreviewChange(bool fPreview);
     static LRESULT CALLBACK EventCallback(UINT Event, LPARAM lParam1, LPARAM lParam2, void *pClientData);
@@ -95,8 +96,9 @@ private:
     int m_statusRow, m_statusRowFull;
     int m_statusHeight;
     bool m_fSeekDrawOfs, m_fSeekDrawTot, m_fPosDrawTot;
-    int m_posItemWidth;
+    int m_seekItemMinWidth, m_posItemWidth;
     int m_timeoutOnCmd, m_timeoutOnMove;
+    int m_seekItemOrder, m_posItemOrder;
     int m_dispCount;
     DWORD m_lastDropCount;
     int m_resetDropInterval;
@@ -123,6 +125,7 @@ private:
     bool m_fInfoPaused;
     bool m_fHalt, m_fAllRepeat, m_fSingleRepeat;
     bool m_fRepeatChapter, m_fSkipXChapter;
+    int m_readBufSizeKB;
     int m_supposedDispDelay;
     int m_resetMode;
     int m_stretchMode, m_noMuteMax, m_noMuteMin;
