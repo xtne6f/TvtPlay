@@ -1,9 +1,129 @@
 ﻿#include <WinSock2.h>
-#include "TsSender.h"
+#include <Windows.h>
 #include "Util.h"
+#include "TsSender.h"
 
 
 #define MSB(x) ((x) & 0x80000000)
+
+
+CTsTimestampShifter::CTsTimestampShifter()
+    : m_shift45khz(0)
+{
+    memset(&m_pat, 0, sizeof(m_pat));
+}
+
+CTsTimestampShifter::~CTsTimestampShifter()
+{
+    Reset();
+}
+
+void CTsTimestampShifter::SetValue(DWORD shift45khz)
+{
+    m_shift45khz = shift45khz;
+}
+
+void CTsTimestampShifter::Reset()
+{
+    while (m_pat.pid_count > 0)
+        delete m_pat.pmt[--m_pat.pid_count];
+    memset(&m_pat, 0, sizeof(m_pat));
+}
+
+static void PcrToArray(BYTE *pDest, DWORD clk45khz)
+{
+    pDest[0] = (BYTE)(clk45khz>>24);
+    pDest[1] = (BYTE)(clk45khz>>16);
+    pDest[2] = (BYTE)(clk45khz>>8);
+    pDest[3] = (BYTE)clk45khz;
+}
+
+static void PtsDtsToArray(BYTE *pDest, DWORD clk45khz)
+{
+    pDest[0] = (BYTE)((pDest[0]&0xf0)|(clk45khz>>28)|1); // 31:29
+    pDest[1] = (BYTE)(clk45khz>>21);                     // 28:21
+    pDest[2] = (BYTE)((clk45khz>>13)|1);                 // 20:14
+    pDest[3] = (BYTE)(clk45khz>>6);                      // 13:6
+    pDest[4] = (BYTE)((clk45khz<<2)|(pDest[4]&0x02)|1);  // 5:0
+}
+
+void CTsTimestampShifter::Transform(BYTE *pPacket)
+{
+    TS_HEADER header;
+    extract_ts_header(&header, pPacket);
+
+    if ((header.adaptation_field_control&2)/*2,3*/ &&
+        !header.transport_error_indicator)
+    {
+        ADAPTATION_FIELD adapt;
+        extract_adaptation_field(&adapt, pPacket + 4);
+        if (adapt.pcr_flag && header.pid != 0) {
+            // PMTで指定されたPCRのみ変更
+            for (int i = 0; i < m_pat.pid_count; ++i) {
+                if (header.pid == m_pat.pmt[i]->pcr_pid) {
+                    // PCRをシフト
+                    PcrToArray(pPacket + 6, (DWORD)adapt.pcr_45khz + m_shift45khz);
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!(header.adaptation_field_control&1)/*0,2*/ ||
+        header.transport_scrambling_control ||
+        header.transport_error_indicator) return;
+
+    BYTE *pPayload = pPacket + 4;
+    if (header.adaptation_field_control == 3) {
+        // アダプテーションに続けてペイロードがある
+        ADAPTATION_FIELD adapt;
+        extract_adaptation_field(&adapt, pPayload);
+        if (!adapt.adaptation_field_length) return;
+        pPayload += adapt.adaptation_field_length;
+    }
+    int payloadSize = 188 - static_cast<int>(pPayload - pPacket);
+
+    // PAT監視
+    if (header.pid == 0) {
+        extract_pat(&m_pat, pPayload, payloadSize,
+                    header.payload_unit_start_indicator,
+                    header.continuity_counter);
+        return;
+    }
+    // PATリストにあるPMT監視
+    for (int i = 0; i < m_pat.pid_count; ++i) {
+        if (header.pid == m_pat.pid[i]/* && header.pid != 0*/) {
+            extract_pmt(m_pat.pmt[i], pPayload, payloadSize,
+                        header.payload_unit_start_indicator,
+                        header.continuity_counter);
+            return;
+        }
+    }
+    if (header.payload_unit_start_indicator) {
+        // ここに来る頻度はそれほど高くないので最適化していない
+        // 全てのPMTリストにあるPES監視
+        for (int i = 0; i < m_pat.pid_count; ++i) {
+            PMT *pPmt = m_pat.pmt[i];
+            for (int j = 0; j < pPmt->pid_count; ++j) {
+                if (header.pid == pPmt->pid[j]) {
+                    PES_HEADER pesHeader;
+                    extract_pes_header(&pesHeader, pPayload, payloadSize/*, pPmt->stream_type[j]*/);
+                    if (pesHeader.packet_start_code_prefix &&
+                        pesHeader.pts_dts_flags >= 2)
+                    {
+                        // PTSをシフト
+                        PtsDtsToArray(pPayload + 9, (DWORD)pesHeader.pts_45khz + m_shift45khz);
+                        if (pesHeader.pts_dts_flags == 3) {
+                            // DTSをシフト
+                            PtsDtsToArray(pPayload + 14, (DWORD)pesHeader.dts_45khz + m_shift45khz);
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+    }
+}
 
 
 CTsSender::CTsSender()
@@ -14,6 +134,7 @@ CTsSender::CTsSender()
     , m_unitSize(0)
     , m_fConvTo188(false)
     , m_fTrimPacket(false)
+    , m_fModTimestamp(false)
     , m_sock(NULL)
     , m_udpPort(0)
     , m_hPipe(NULL)
@@ -141,6 +262,9 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt)
         m_fileSize = fileSize;
     }
 
+    // +600秒-PCR初期値だけPCR/PTS/DTSをシフト
+    m_tsShifter.SetValue((DWORD)(600*1000*PCR_PER_MSEC) - m_initPcr);
+
     return true;
 ERROR_EXIT:
     Close();
@@ -181,6 +305,13 @@ void CTsSender::SetConvTo188(bool fConvTo188)
 }
 
 
+// ラップアラウンドをなるべく避けるようにPCR/PTS/DTSを変更するかどうか
+void CTsSender::SetModTimestamp(bool fModTimestamp)
+{
+    m_fModTimestamp = fModTimestamp;
+}
+
+
 void CTsSender::Close()
 {
     if (m_hFile) {
@@ -195,6 +326,8 @@ void CTsSender::Close()
     ClosePipe();
     m_udpAddr[0] = 0;
     m_pipeName[0] = 0;
+    m_tsShifter.Reset();
+    m_tsShifter.SetValue(0);
 }
 
 
@@ -475,8 +608,11 @@ bool CTsSender::ReadPacket(int count)
 
     TS_HEADER header;
     extract_ts_header(&header, m_curr);
+    // [統計(地上波)]
+    // adaptation_field_control == 0:0.00%, 1:99.03%, 2:0.21%, 3:0.76%
+    // payload_unit_start_indicator:2.09%
 
-    if (header.adaptation_field_control & 2 &&
+    if ((header.adaptation_field_control&2)/*2,3*/ &&
         !header.transport_error_indicator)
     {
         // アダプテーションフィールドがある
@@ -518,6 +654,7 @@ bool CTsSender::ReadPacket(int count)
     }
 
     if (header.pid == 0x14 && m_pcrCount &&
+        !header.transport_scrambling_control &&
         !header.transport_error_indicator &&
         header.payload_unit_start_indicator &&
         header.adaptation_field_control == 1)
@@ -533,6 +670,9 @@ bool CTsSender::ReadPacket(int count)
             m_totBasePcr = m_pcr;
         }
     }
+
+    // PCR/PTS/DTSを変更
+    if (m_fModTimestamp) m_tsShifter.Transform(m_curr);
 
     m_curr += m_unitSize;
     return true;

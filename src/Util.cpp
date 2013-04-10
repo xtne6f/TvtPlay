@@ -230,6 +230,208 @@ EXIT:
 }
 
 
+static void extract_psi(PSI *psi, const unsigned char *payload, int payload_size, int unit_start, int counter)
+{
+    int pointer;
+    int section_length;
+    const unsigned char *table;
+
+    if (unit_start) {
+        psi->continuity_counter = 0x20|counter;
+        psi->data_count = psi->version_number = 0;
+    }
+    else {
+        psi->continuity_counter = (psi->continuity_counter+1)&0x2f;
+        if (psi->continuity_counter != (0x20|counter)) {
+            psi->continuity_counter = psi->data_count = psi->version_number = 0;
+            return;
+        }
+    }
+    if (psi->data_count + payload_size <= sizeof(psi->data)) {
+        memcpy(psi->data + psi->data_count, payload, payload_size);
+        psi->data_count += payload_size;
+    }
+    // TODO: CRC32
+
+    // psi->version_number != 0 のとき各フィールドは有効
+    if (psi->data_count >= 1) {
+        pointer = psi->data[0];
+        if (psi->data_count >= pointer + 4) {
+            section_length = ((psi->data[pointer+2]&0x03)<<8) | psi->data[pointer+3];
+            if (section_length >= 3 && psi->data_count >= pointer + 4 + section_length) {
+                table = psi->data + 1 + pointer;
+                psi->pointer_field          = pointer;
+                psi->table_id               = table[0];
+                psi->section_length         = section_length;
+                psi->version_number         = 0x20 | ((table[5]>>1)&0x1f);
+                psi->current_next_indicator = table[5] & 0x01;
+            }
+        }
+    }
+}
+
+
+// 参考: ITU-T H.222.0 Sec.2.4.4.3 および ARIB TR-B14 第一分冊第二編8.2
+void extract_pat(PAT *pat, const unsigned char *payload, int payload_size, int unit_start, int counter)
+{
+    int program_number;
+    int found;
+    int pos, i, j, n;
+    int pmt_exists[PAT_PID_MAX];
+    unsigned short pid;
+    const unsigned char *table;
+
+    extract_psi(&pat->psi, payload, payload_size, unit_start, counter);
+
+    if (pat->psi.version_number &&
+        pat->psi.version_number != pat->version_number &&
+        pat->psi.current_next_indicator &&
+        pat->psi.table_id == 0 &&
+        pat->psi.section_length >= 5)
+    {
+        // PAT更新
+        table = pat->psi.data + 1 + pat->psi.pointer_field;
+        pat->transport_stream_id = (table[3]<<8) | table[4];
+        pat->version_number = pat->psi.version_number;
+
+        // 受信済みPMTを調べ、必要ならば新規に生成する
+        memset(pmt_exists, 0, sizeof(pmt_exists));
+        pos = 3 + 5;
+        while (pos < 3 + pat->psi.section_length - 4) {
+            program_number = (table[pos]<<8) | (table[pos+1]);
+            if (program_number != 0) {
+                pid = ((table[pos+2]&0x1f)<<8) | table[pos+3];
+                for (found=0, i=0; i < pat->pid_count; ++i) {
+                    if (pat->pid[i] == pid) {
+                        pmt_exists[i] = found = 1;
+                        break;
+                    }
+                }
+                if (!found && pat->pid_count < PAT_PID_MAX) {
+                    //pat->program_number[pat->pid_count] = program_number;
+                    pat->pid[pat->pid_count] = pid;
+                    pat->pmt[pat->pid_count] = new PMT;
+                    memset(pat->pmt[pat->pid_count], 0, sizeof(PMT));
+                    pmt_exists[pat->pid_count++] = 1;
+                }
+            }
+            pos += 4;
+        }
+        // PATから消えたPMTを破棄する
+        n = pat->pid_count;
+        for (i=0, j=0; i < n; ++i) {
+            if (!pmt_exists[i]) {
+                delete pat->pmt[i];
+                --pat->pid_count;
+            }
+            else {
+                pat->pid[j] = pat->pid[i];
+                pat->pmt[j++] = pat->pmt[i];
+            }
+        }
+    }
+}
+
+
+#define H_262_VIDEO         0x02
+#define PES_PRIVATE_DATA    0x06
+#define ADTS_TRANSPORT      0x0F
+#define AVC_VIDEO           0x1B
+
+
+// 参考: ITU-T H.222.0 Sec.2.4.4.8
+void extract_pmt(PMT *pmt, const unsigned char *payload, int payload_size, int unit_start, int counter)
+{
+    int program_info_length;
+    int es_info_length;
+    int stream_type;
+    int pos;
+    const unsigned char *table;
+
+    extract_psi(&pmt->psi, payload, payload_size, unit_start, counter);
+
+    if (pmt->psi.version_number &&
+        pmt->psi.version_number != pmt->version_number &&
+        pmt->psi.current_next_indicator &&
+        pmt->psi.table_id == 2 &&
+        pmt->psi.section_length >= 9)
+    {
+        // PMT更新
+        table = pmt->psi.data + 1 + pmt->psi.pointer_field;
+        pmt->program_number = (table[3]<<8) | table[4];
+        pmt->version_number = pmt->psi.version_number;
+        pmt->pcr_pid        = ((table[8]&0x1f)<<8) | table[9];
+        program_info_length = ((table[10]&0x03)<<8) | table[11];
+
+        pmt->pid_count = 0;
+        pos = 3 + 9 + program_info_length;
+        while (pos < 3 + pmt->psi.section_length - 5) {
+            stream_type = table[pos];
+            if (stream_type == H_262_VIDEO ||
+                stream_type == PES_PRIVATE_DATA ||
+                stream_type == ADTS_TRANSPORT ||
+                stream_type == AVC_VIDEO)
+            {
+                //pmt->stream_type[pmt->pid_count] = stream_type;
+                pmt->pid[pmt->pid_count++] = (table[pos+1]&0x1f)<<8 | table[pos+2];
+            }
+            es_info_length = (table[pos+3]&0x03)<<8 | table[pos+4];
+            pos += 5 + es_info_length;
+        }
+    }
+}
+
+
+#define PROGRAM_STREAM_MAP          0xBC
+#define PADDING_STREAM              0xBE
+#define PRIVATE_STREAM_2            0xBF
+#define ECM                         0xF0
+#define EMM                         0xF1
+#define PROGRAM_STREAM_DIRECTORY    0xFF
+#define DSMCC_STREAM                0xF2
+#define ITU_T_REC_TYPE_E_STREAM     0xF8
+
+
+// 参考: ITU-T H.222.0 Sec.2.4.3.6
+void extract_pes_header(PES_HEADER *dst, const unsigned char *payload, int payload_size/*, int stream_type*/)
+{
+    const unsigned char *p;
+
+    dst->packet_start_code_prefix = 0;
+    if (payload_size < 19) return;
+
+    p = payload;
+
+    dst->packet_start_code_prefix = (p[0]<<16) | (p[1]<<8) | p[2];
+    if (dst->packet_start_code_prefix != 1) {
+        dst->packet_start_code_prefix = 0;
+        return;
+    }
+
+    dst->stream_id         = p[3];
+    dst->pes_packet_length = (p[4]<<8) | p[5];
+    dst->pts_dts_flags     = 0;
+    if (dst->stream_id != PROGRAM_STREAM_MAP &&
+        dst->stream_id != PADDING_STREAM &&
+        dst->stream_id != PRIVATE_STREAM_2 &&
+        dst->stream_id != ECM &&
+        dst->stream_id != EMM &&
+        dst->stream_id != PROGRAM_STREAM_DIRECTORY &&
+        dst->stream_id != DSMCC_STREAM &&
+        dst->stream_id != ITU_T_REC_TYPE_E_STREAM)
+    {
+        dst->pts_dts_flags = (p[7]>>6) & 0x03;
+        if (dst->pts_dts_flags >= 2) {
+            dst->pts_45khz = ((unsigned int)((p[9]>>1)&7)<<29)|(p[10]<<21)|(((p[11]>>1)&0x7f)<<14)|(p[12]<<6)|((p[13]>>2)&0x3f);
+            if (dst->pts_dts_flags == 3) {
+                dst->dts_45khz = ((unsigned int)((p[14]>>1)&7)<<29)|(p[15]<<21)|(((p[16]>>1)&0x7f)<<14)|(p[17]<<6)|((p[18]>>2)&0x3f);
+            }
+        }
+    }
+    // スタフィング(Sec.2.4.3.5)によりPESのうちここまでは必ず読める
+}
+
+
 #if 1 // From: tsselect-0.1.8/tsselect.c (一部改変)
 int select_unit_size(unsigned char *head, unsigned char *tail)
 {
@@ -301,18 +503,6 @@ unsigned char *resync(unsigned char *head, unsigned char *tail, int unit_size)
 	}
 
 	return NULL;
-}
-
-void extract_ts_header(TS_HEADER *dst, const unsigned char *packet)
-{
-	dst->sync                         =  packet[0];
-	dst->transport_error_indicator    = (packet[1] >> 7) & 0x01;
-	dst->payload_unit_start_indicator = (packet[1] >> 6) & 0x01;
-	dst->transport_priority           = (packet[1] >> 5) & 0x01;
-	dst->pid = ((packet[1] & 0x1f) << 8) | packet[2];
-	dst->transport_scrambling_control = (packet[3] >> 6) & 0x03;
-	dst->adaptation_field_control     = (packet[3] >> 4) & 0x03;
-	dst->continuity_counter           =  packet[3]       & 0x0f;
 }
 
 void extract_adaptation_field(ADAPTATION_FIELD *dst, const unsigned char *data)

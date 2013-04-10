@@ -1,9 +1,21 @@
 ﻿#ifndef INCLUDE_TS_SENDER_H
 #define INCLUDE_TS_SENDER_H
 
-#include <Windows.h>
+class CTsTimestampShifter
+{
+public:
+    CTsTimestampShifter();
+    ~CTsTimestampShifter();
+    void SetValue(DWORD shift45khz);
+    void Reset();
+    void Transform(BYTE *pPacket);
+private:
+    DWORD m_shift45khz;
+    PAT m_pat;
+};
 
-class CTsSender {
+class CTsSender
+{
     static const int MAX_URI = 256;
     static const int BUFFER_LEN = 192;
     static const int PCR_PER_MSEC = 45;
@@ -19,6 +31,7 @@ public:
     void SetUdpAddress(LPCSTR addr, unsigned short port);
     void SetPipeName(LPCTSTR name);
     void SetConvTo188(bool fConvTo188);
+    void SetModTimestamp(bool fModTimestamp);
     void Close();
     bool Send();
     bool SeekToBegin();
@@ -29,7 +42,6 @@ public:
     bool IsPaused() const { return m_fPause; }
     bool IsFixed(bool *pfSpecialExt = NULL) const { if (pfSpecialExt) *pfSpecialExt=m_fSpecialExtending; return m_fFixed; }
     void GetSpeed(int *pNum, int *pDen) const { *pNum=m_speedNum; *pDen=m_speedDen; }
-
     long long GetFileSize() const;
     long long GetFilePosition() const;
     int GetDuration() const;
@@ -51,6 +63,8 @@ private:
     BYTE *m_pBuf, *m_curr, *m_tail;
     int m_unitSize;
     bool m_fConvTo188, m_fTrimPacket;
+    bool m_fModTimestamp;
+    CTsTimestampShifter m_tsShifter;
     SOCKET m_sock;
     CHAR m_udpAddr[MAX_URI];
     unsigned short m_udpPort;

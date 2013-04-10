@@ -6,7 +6,7 @@
 #include "TVTestPlugin.h"
 
 #define COMMAND_SEEK_MAX        8
-#define COMMAND_STRETCH_MAX     4
+#define COMMAND_STRETCH_MAX     6
 #define BUTTON_MAX              16
 
 class CStatusViewEventHandler : public CStatusView::CEventHandler
@@ -18,9 +18,9 @@ public:
 // プラグインクラス
 class CTvtPlay : public TVTest::CTVTestPlugin
 {
-    static const int TIMER_ID_FULL_SCREEN = 1;
+    static const int TIMER_ID_AUTO_HIDE = 1;
     static const int TIMER_ID_RESET_DROP = 2;
-    static const int TIMER_FULL_SCREEN_INTERVAL = 100;
+    static const int TIMER_AUTO_HIDE_INTERVAL = 100;
     static const int HASH_LIST_MAX_MAX = 10000;
     static const int POPUP_MAX_MAX = 100;
     bool m_fInitialized;
@@ -31,24 +31,28 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     bool m_fPausedOnPreviewChange;
     TCHAR m_szIniFileName[MAX_PATH];
     TCHAR m_szSpecFileName[MAX_PATH];
+    int m_specOffset;
 
     // コントロール
     HWND m_hwndFrame;
-    bool m_fFullScreen, m_fHide, m_fToBottom;
-    int m_statusHeight, m_statusMargin;
+    bool m_fFullScreen, m_fHide;
+    bool m_fAutoHide, m_fAutoHideActive;
+    bool m_fHoveredFromOutside;
+    int m_statusRow, m_statusRowFull;
+    int m_statusHeight;
     bool m_fSeekDrawTot, m_fPosDrawTot;
     int m_posItemWidth;
     int m_timeoutOnCmd, m_timeoutOnMove;
     int m_dispCount;
     DWORD m_lastDropCount;
     int m_resetDropInterval;
-    POINT m_lastCurPos;
+    POINT m_lastCurPos, m_idleCurPos;
     CStatusView m_statusView;
     CStatusViewEventHandler m_eventHandler;
     TCHAR m_szIconFileName[MAX_PATH];
     int m_seekList[COMMAND_SEEK_MAX];
     int m_stretchList[COMMAND_STRETCH_MAX];
-    TCHAR m_buttonList[BUTTON_MAX][64];
+    TCHAR m_buttonList[BUTTON_MAX][128];
     int m_buttonNum;
     int m_popupMax;
     TCHAR m_szPopupPattern[MAX_PATH];
@@ -69,6 +73,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     bool m_fResetAllOnSeek;
     int m_stretchMode, m_noMuteMax, m_noMuteMin;
     bool m_fConvTo188;
+    bool m_fModTimestamp;
 
     // ファイルごとの固有情報
     int m_salt, m_hashListMax;
@@ -88,11 +93,12 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     bool InitializePlugin();
     bool EnablePlugin(bool fEnable);
     bool OpenWithDialog(HWND hwndOwner);
-    bool OpenCurrent();
-    bool Open(LPCTSTR fileName);
+    bool OpenCurrent(int offset = -1);
+    bool Open(LPCTSTR fileName, int offset);
     void Close();
-    void SetUpDestination();
+    void SetupDestination();
     void ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll);
+    bool CalcStatusRect(RECT *pRect);
     void Resize();
     void EnablePluginByDriverName();
     void OnPreviewChange(bool fPreview);
@@ -114,12 +120,14 @@ public:
     bool IsAllRepeat() const { return m_fAllRepeat; }
     bool IsSingleRepeat() const { return m_fSingleRepeat; }
 
+    void SetupWithPopup(const POINT &pt, UINT flags);
     bool OpenWithPopup(const POINT &pt, UINT flags);
     bool OpenWithPlayListPopup(const POINT &pt, UINT flags);
     void Pause(bool fPause);
     void SeekToBegin();
     void SeekToEnd();
     void Seek(int msec);
+    void SetModTimestamp(bool fModTimestamp);
     void SetRepeatFlags(bool fAllRepeat, bool fSingleRepeat);
     int GetStretchID() const;
     void Stretch(int stretchID);
@@ -155,6 +163,7 @@ public:
     CPositionStatusItem(CTvtPlay *pPlugin, bool fDrawTot, int width);
     LPCTSTR GetName() const { return TEXT("再生位置"); };
     void Draw(HDC hdc, const RECT *pRect);
+    void OnRButtonDown(int x, int y);
 private:
     CTvtPlay *m_pPlugin;
     bool m_fDrawTot;

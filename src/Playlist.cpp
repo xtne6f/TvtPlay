@@ -160,7 +160,7 @@ bool CPlaylist::ClearWithoutCurrent()
 // 移動できなければfalseを返す
 bool CPlaylist::Prev(bool fLoop)
 {
-    if (fLoop && size() >= 2 && m_pos == 0) {
+    if (fLoop && !empty() && m_pos == 0) {
         m_pos = size() - 1;
         return true;
     }
@@ -175,7 +175,7 @@ bool CPlaylist::Prev(bool fLoop)
 // 移動できなければfalseを返す
 bool CPlaylist::Next(bool fLoop)
 {
-    if (fLoop && size() >= 2 && m_pos+1 >= size()) {
+    if (fLoop && !empty() && m_pos+1 >= size()) {
         m_pos = 0;
         return true;
     }
