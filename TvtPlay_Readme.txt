@@ -1,11 +1,11 @@
-﻿TVTest TvtPlay Plugin ver.1.3(人柱版) + BonDriver_Pipe.dll
-                                      + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.1.3r2(人柱版) + BonDriver_Pipe.dll
+                                        + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
 再生するプラグインです。
 ver.1.xは人柱版です。今後の大幅な機能追加や機能削除、大きな不具合などあるかもし
-れません。問題があればとりあえずver.0.9r5に戻ってください(設定ファイルはそのまま
+れません。問題があればとりあえずver.0.9r6に戻ってください(設定ファイルはそのまま
 で大丈夫です)。
 
 ■動作環境
@@ -22,6 +22,8 @@ ver.1.xは人柱版です。今後の大幅な機能追加や機能削除、大�
 削除してみてください。
 設定キーToBottomは廃止されました(詳細は「更新履歴」参照)。ToBottomを[=0]で使用し
 ていた方は[=1]の動作にもどるので、新しい設定キーRowPosFullで調整してください。
+(ver.1.3からの移行)
+  TvtPlay.tvtpを置きかえてください。
 (ver.1.2r2からの移行)
   TvtPlay.tvtpとTvtAudioStretchFilter.axとを置きかえてください。
 (ver.1.2以前からの移行)
@@ -52,7 +54,7 @@ TVTest起動オプションの最後に拡張子.ts .m2t .m2ts .m3u .tslist い�
 表示されます。
 
 倍速再生を利用する方は音声フィルタの設定が必要です。倍速再生はBonDriver_Pipe.dll
-の使用をお勧めします。同梱のDirectshowフィルタTvtAudioStretchFilter.axを適当なフ
+の使用をお勧めします。同梱のDirectShowフィルタTvtAudioStretchFilter.axを適当なフ
 ォルダに入れ、コマンドプロンプトから管理者権限で regsvr32 {フィルタのパス} と入
 力してください(この辺は「DirectShowフィルタ 登録」あたりでググってください)。無
 事登録されていれば、TVTestの設定->再生->音声フィルタにこのフィルタが現れるので、
@@ -163,6 +165,10 @@ TsStretchNoMuteMax / TsStretchNoMuteMin【ver.0.8～】
     倍速再生の速度が設定値以上/以下なら無音にする
 TsConvTo188【ver.0.9～】
     192ByteTS(Timestamped TS)の場合、188ByteTSに変換して転送する[=1]かどうか
+TsUsePerfCounter【ver.1.3r2～】
+    パフォーマンスカウンタをTSデータ送出タイミングの基準とする[=1]かどうか
+    # 基本的に[=1]で良いと思います。
+    # 詳細は後述の「設定キーTsUsePerfCounterについて(上級者向け)」を参照。
 TsAvoidWraparound【ver.1.1～】
     ラップアラウンドを避けるようPCR/PTS/DTSタイムスタンプを変更する[=1]かどうか
     # DirectShowのバグによってタイムスタンプが巡回する瞬間に映像が乱れるのを防ぎ
@@ -273,6 +279,23 @@ Button[00-15]
 挙動が気持ちわるいひとはTsResetAllOnSeekを1にするかTsResetDropIntervalを大きめの
 値(2000～4000程度)にしてみてください。
 
+■設定キーTsUsePerfCounterについて(上級者向け)
+一部の環境で GetTickCount と QueryPerformanceCounter の2つのAPIの計時結果(瞬間的
+なものではなく数分～数時間単位でのもの)にずれが生じるようです(ウチの環境がそうで
+したorz)。TvtPlayはTSデータをPCR(Program Clock Reference)の示すクロックに同期さ
+せてTVTestに送るので、計時結果のずれが大きくなると音声が途切れとぎれになったりす
+る可能性があります。
+当該設定キーの設定値を変更すると、TvtPlayが基準にするAPIを、[=0]なら従来通りの
+GetTickCount、[=1]ならQueryPerformanceCounterにします。どちらでも負荷は基本的に
+同じです。DirectshowのレンダラはQueryPerformanceCounterを基準としているはずなの
+で、ほとんどの環境で[=1]が適切だと思います。
+
+興味のある方は、src.zipの中にある_qpc_test.exeで2つのAPIの計時結果を比較してみて
+ください。当方環境では、PC負荷が変動(可変クロックCPUのクロック値が頻繁に変化)す
+るような状況でずれが大きく(数分間で1000msecオーダー)なりました。このような環境の
+PCでは、たとえば時計が一日に数秒～数分単位で遅れるor進む、アナログチューナの音声
+と映像のずれが次第に激しくなる、といった現象もみられるかもしれません。
+
 ■仕様
 ・TVTest ver.0.7.20以前では、シーク後に音無しor映像無しになることがあります。当
   方ではシーク200回のうち7回発生しました。発生したときはビューアリセットしたりも
@@ -321,6 +344,8 @@ http://2sen.dip.jp/)のup0598.zip「非公式 TvtPlayシークボタンカスタ
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.1.3r2 (2011-12-13)
+・計時APIをQueryPerformanceCounterに変更し、設定キーTsUsePerfCounterを追加
 ver.1.3 (2011-12-10)
 ・TvtAudioStretchFilterを5.1ch対応にした
 ・容量確保録画の追っかけ再生でのシーク失敗時の挙動を改善

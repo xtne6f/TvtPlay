@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-12-10
+// 最終更新: 2011-12-13
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -16,8 +16,8 @@
 #include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.3)";
-static const int INFO_VERSION = 13;
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.3r2)";
+static const int INFO_VERSION = 14;
 
 #define WM_UPDATE_POSITION  (WM_APP + 1)
 #define WM_UPDATE_TOT_TIME  (WM_APP + 2)
@@ -171,6 +171,7 @@ CTvtPlay::CTvtPlay()
     , m_noMuteMax(0)
     , m_noMuteMin(0)
     , m_fConvTo188(false)
+    , m_fUseQpc(false)
     , m_fModTimestamp(false)
     , m_salt(0)
     , m_hashListMax(0)
@@ -294,6 +295,7 @@ void CTvtPlay::LoadSettings()
     m_noMuteMax = ::GetPrivateProfileInt(SETTINGS, TEXT("TsStretchNoMuteMax"), 800, m_szIniFileName);
     m_noMuteMin = ::GetPrivateProfileInt(SETTINGS, TEXT("TsStretchNoMuteMin"), 50, m_szIniFileName);
     m_fConvTo188 = ::GetPrivateProfileInt(SETTINGS, TEXT("TsConvTo188"), 1, m_szIniFileName) != 0;
+    m_fUseQpc = ::GetPrivateProfileInt(SETTINGS, TEXT("TsUsePerfCounter"), 1, m_szIniFileName) != 0;
     m_fModTimestamp = ::GetPrivateProfileInt(SETTINGS, TEXT("TsAvoidWraparound"), 0, m_szIniFileName) != 0;
     m_fShowOpenDialog = ::GetPrivateProfileInt(SETTINGS, TEXT("ShowOpenDialog"), 0, m_szIniFileName) != 0;
     m_fAutoHide = ::GetPrivateProfileInt(SETTINGS, TEXT("AutoHide"), 1, m_szIniFileName) != 0;
@@ -507,6 +509,7 @@ void CTvtPlay::SaveSettings() const
     WritePrivateProfileInt(SETTINGS, TEXT("TsStretchNoMuteMax"), m_noMuteMax, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsStretchNoMuteMin"), m_noMuteMin, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsConvTo188"), m_fConvTo188, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("TsUsePerfCounter"), m_fUseQpc, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsAvoidWraparound"), m_fModTimestamp, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("ShowOpenDialog"), m_fShowOpenDialog, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("AutoHide"), m_fAutoHide, m_szIniFileName);
@@ -984,7 +987,7 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset)
 {
     Close();
 
-    if (!m_tsSender.Open(fileName, m_salt, m_fConvTo188)) return false;
+    if (!m_tsSender.Open(fileName, m_salt, m_fConvTo188, m_fUseQpc)) return false;
 
     if (offset >= 0) {
         // オフセットが指定されているのでシーク
@@ -1720,8 +1723,8 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
     int resetCount = -RESET_WAIT;
 
     // コントロールの表示をリセット
-    pThis->m_tsSender.Pause(false);
     ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, 0, 0);
+    pThis->m_tsSender.SetupQpc();
 
     for (;;) {
         BOOL rv = ::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE);
@@ -1858,11 +1861,9 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
 
     // 等速に戻しておく(主スレッドが待っているのでSendMessageしてはいけない)
     ASFilterPostMessage(WM_ASFLT_STRETCH, 0, MAKELPARAM(100, 100));
-    pThis->m_tsSender.SetSpeed(100, 100);
     ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_SPEED, 0, 100);
 
     // コントロールの表示をリセット
-    pThis->m_tsSender.Pause(false);
     ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, 0, 0);
     ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_POSITION, 0, 0);
     ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_TOT_TIME, 0, -1);

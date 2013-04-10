@@ -164,9 +164,16 @@ CTsSender::CTsSender()
     , m_initStore(INITIAL_STORE_MSEC)
     , m_fSpecialExtending(false)
     , m_specialExtendInitRate(0)
+    , m_adjState(0)
+    , m_adjBaseTick(0)
+    , m_adjHoldTick(0)
+    , m_adjAmount(0)
+    , m_adjDelta(0)
 {
     m_udpAddr[0] = 0;
     m_pipeName[0] = 0;
+    m_liAdjFreq.QuadPart = 0;
+    m_liAdjBase.QuadPart = 0;
 }
 
 
@@ -177,7 +184,7 @@ CTsSender::~CTsSender()
 }
 
 
-bool CTsSender::Open(LPCTSTR name, DWORD salt, bool fConvTo188)
+bool CTsSender::Open(LPCTSTR name, DWORD salt, bool fConvTo188, bool fUseQpc)
 {
     Close();
 
@@ -226,6 +233,12 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt, bool fConvTo188)
     // TOT-PCR対応情報をクリア
     m_totBase = -1;
 
+    // QueryPerformanceCounterによるTickカウント補正をするかどうか
+    m_adjState = fUseQpc ? 1 : 0;
+
+    m_fPause = false;
+    SetSpeed(100, 100);
+
     long long fileSize = GetFileSize();
     if (fileSize < 0) goto ERROR_EXIT;
 
@@ -273,7 +286,7 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt, bool fConvTo188)
 
     // 定期的にファイルサイズの更新状況を取得するため
     if (m_fShareWrite) {
-        m_renewSizeTick = m_renewDurTick = ::GetTickCount();
+        m_renewSizeTick = m_renewDurTick = GetAdjTickCount();
         m_fileSize = fileSize;
     }
 
@@ -284,6 +297,23 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt, bool fConvTo188)
 ERROR_EXIT:
     Close();
     return false;
+}
+
+
+// Tickカウント補正の初期設定をする
+void CTsSender::SetupQpc()
+{
+    if (m_adjState == 1) {
+        // msdnの推奨に従って現在スレッドのプロセッサ固定
+        ::SetThreadAffinityMask(::GetCurrentThread(), 1);
+        if (::QueryPerformanceFrequency(&m_liAdjFreq) &&
+            ::QueryPerformanceCounter(&m_liAdjBase))
+        {
+            m_adjBaseTick = m_adjHoldTick = GetAdjTickCount();
+            m_adjAmount = m_adjDelta = 0;
+            m_adjState = 2;
+        }
+    }
 }
 
 
@@ -341,9 +371,16 @@ bool CTsSender::Send()
 {
     if (!m_hFile) return false;
 
+    bool rv = true;
+    if (m_fPause) ::Sleep(100);
+    else {
+        if (!ReadToPcr(40000, true) || !m_fPcr) rv = false;
+    }
+    // 補正により一気に増加する可能性を避けるため定期的に呼ぶ
+    DWORD tick = GetAdjTickCount();
+
     // 動画の長さ情報を更新
     if (m_fShareWrite) {
-        DWORD tick = ::GetTickCount();
         DWORD diff = tick - m_renewSizeTick;
         if (diff >= RENEW_SIZE_INTERVAL) {
             long long fileSize = GetFileSize();
@@ -369,15 +406,9 @@ bool CTsSender::Send()
         m_renewDurTick = tick;
     }
 
-    if (m_fPause) {
-        ::Sleep(100);
-    }
-    else {
-        if (!ReadToPcr(40000, true) || !m_fPcr) return false;
-
+    if (!m_fPause && rv) {
         // 転送レート制御
-        DWORD tickDiff = ::GetTickCount() - m_baseTick;
-
+        DWORD tickDiff = tick - m_baseTick;
         DWORD pcrDiff = m_pcr - m_basePcr;
         if (MSB(pcrDiff)) pcrDiff = 0;
 
@@ -387,12 +418,12 @@ bool CTsSender::Send()
         // 制御しきれない場合は一度リセット
         if (msec < -2000 || 2000 * m_speedDen / m_speedNum < msec) {
             // 基準PCRを設定(受信側のストアを増やすため少し引く)
-            m_baseTick = ::GetTickCount() - m_initStore;
+            m_baseTick = tick - m_initStore;
             m_basePcr = m_pcr;
         }
         else if (msec > 0) ::Sleep(msec);
     }
-    return true;
+    return rv;
 }
 
 
@@ -510,7 +541,7 @@ void CTsSender::Pause(bool fPause)
 {
     if (m_fPause && !fPause) {
         // 基準PCRを設定(受信側のストアを増やすため少し引く)
-        m_baseTick = ::GetTickCount() - m_initStore;
+        m_baseTick = GetAdjTickCount() - m_initStore;
         m_basePcr = m_pcr;
     }
     m_fPause = fPause;
@@ -525,7 +556,7 @@ void CTsSender::SetSpeed(int num, int den)
     m_speedDen = den;
     m_initStore = min(INITIAL_STORE_MSEC * den / num, INITIAL_STORE_MSEC);
     // 基準PCRを設定
-    m_baseTick = ::GetTickCount();
+    m_baseTick = GetAdjTickCount();
     m_basePcr = m_pcr;
 }
 
@@ -595,6 +626,39 @@ int CTsSender::GetRate() const
                static_cast<int>(fileSize * 1000 / m_duration);
     }
     return min(max(rate, TS_SUPPOSED_RATE/128), TS_SUPPOSED_RATE*4);
+}
+
+
+// 補正済みのTickカウントを取得する
+DWORD CTsSender::GetAdjTickCount()
+{
+    DWORD tick = ::GetTickCount();
+    if (m_adjState != 2) return tick;
+
+    if (!m_adjDelta) {
+        if (tick - m_adjHoldTick >= ADJUST_TICK_INTERVAL) {
+            LARGE_INTEGER liNow;
+            if (::QueryPerformanceCounter(&liNow)) {
+                LONGLONG llDiff = (liNow.QuadPart - m_liAdjBase.QuadPart) * 1000 / m_liAdjFreq.QuadPart;
+                m_adjDelta = (static_cast<DWORD>(llDiff) - (tick - m_adjBaseTick)) - m_adjAmount;
+            }
+            m_adjHoldTick = tick;
+        }
+    }
+    if (m_adjDelta) {
+        // 巻き戻り防止
+        if (!MSB(tick + m_adjDelta - m_adjHoldTick)) {
+            m_adjAmount += m_adjDelta;
+            m_adjDelta = 0;
+        }
+    }
+    DWORD adjTick = (m_adjDelta ? m_adjHoldTick : tick) + m_adjAmount;
+#ifdef _DEBUG
+    static DWORD last;
+    ASSERT(!last || !MSB(adjTick - last));
+    last = adjTick;
+#endif
+    return adjTick;
 }
 
 
@@ -671,7 +735,7 @@ bool CTsSender::ReadPacket(bool fSend)
                 m_pcr = (DWORD)adapt.pcr_45khz;
                 if (!m_fEnPcr) {
                     // 基準PCRを設定(受信側のストアを増やすため少し引く)
-                    m_baseTick = ::GetTickCount() - m_initStore;
+                    m_baseTick = GetAdjTickCount() - m_initStore;
                     m_basePcr = m_pcr;
                     m_fEnPcr = true;
                 }
