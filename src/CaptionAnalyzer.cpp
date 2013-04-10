@@ -7,8 +7,7 @@
 #ifdef EN_SWC
 
 #include "Caption.h"
-#include "bregdef.h"
-#include "trex.h"
+#include <regex>
 #include "CaptionAnalyzer.h"
 
 #define MSB(x) ((x) & 0x80000000)
@@ -30,7 +29,6 @@ static void OutputDebugFormat(LPCTSTR format, ...)
 
 CCaptionAnalyzer::CCaptionAnalyzer()
     : m_hCaptionDll(NULL)
-    , m_hBregonigDll(NULL)
     , m_showLate(0)
     , m_clearEarly(0)
     , m_fShowing(false)
@@ -42,8 +40,6 @@ CCaptionAnalyzer::CCaptionAnalyzer()
     , m_pfnAddTSPacketCP(NULL)
     , m_pfnClearCP(NULL)
     , m_pfnGetCaptionDataCP(NULL)
-    , m_pfnBMatch(NULL)
-    , m_pfnBRegfree(NULL)
 {
 }
 
@@ -52,15 +48,12 @@ CCaptionAnalyzer::~CCaptionAnalyzer()
     UnInitialize();
 }
 
-bool CCaptionAnalyzer::Initialize(LPCTSTR captionDllPath, LPCTSTR bregonigDllPath, LPCTSTR blacklistPath, int showLateMsec, int clearEarlyMsec)
+bool CCaptionAnalyzer::Initialize(LPCTSTR captionDllPath, LPCTSTR blacklistPath, int showLateMsec, int clearEarlyMsec)
 {
     if (IsInitialized()) return true;
 
     if (captionDllPath[0]) {
         m_hCaptionDll = ::LoadLibrary(captionDllPath);
-    }
-    if (bregonigDllPath[0]) {
-        m_hBregonigDll = ::LoadLibrary(bregonigDllPath);
     }
     if (m_hCaptionDll) {
         InitializeUNICODE *pfnInitializeUNICODE;
@@ -69,51 +62,32 @@ bool CCaptionAnalyzer::Initialize(LPCTSTR captionDllPath, LPCTSTR bregonigDllPat
         m_pfnAddTSPacketCP       = reinterpret_cast<AddTSPacketCP*>(::GetProcAddress(m_hCaptionDll, "AddTSPacketCP"));
         m_pfnClearCP             = reinterpret_cast<ClearCP*>(::GetProcAddress(m_hCaptionDll, "ClearCP"));
         m_pfnGetCaptionDataCP    = reinterpret_cast<GetCaptionDataCP*>(::GetProcAddress(m_hCaptionDll, "GetCaptionDataCP"));
-        if (m_hBregonigDll) {
-            m_pfnBMatch          = reinterpret_cast<BMatch*>(::GetProcAddress(m_hBregonigDll, BMatch_NAME));
-            m_pfnBRegfree        = reinterpret_cast<BRegfree*>(::GetProcAddress(m_hBregonigDll, BRegfree_NAME));
-        }
         if (pfnInitializeUNICODE &&
             m_pfnUnInitializeCP &&
             m_pfnAddTSPacketCP &&
             m_pfnClearCP &&
             m_pfnGetCaptionDataCP &&
-            (!m_hBregonigDll || m_pfnBMatch && m_pfnBRegfree) &&
             pfnInitializeUNICODE() == TRUE)
         {
             TCHAR *pPatterns = NewReadUtfFileToEnd(blacklistPath, FILE_SHARE_READ);
             if (pPatterns) {
                 // コンパイルブロックのリストを作成しておく
+                const std::basic_regex<TCHAR> rePattern(TEXT("m?(.)(.+?)\\1s"));
+                std::match_results<LPCTSTR> m;
                 for (const TCHAR *p = pPatterns; *p;) {
                     int len = ::StrCSpn(p, TEXT("\r\n"));
-                    if (m_hBregonigDll) {
-                        // bregonig
-                        if (len < PATTERN_MAX) {
-                            RXP_PATTERN pattern;
-                            ::lstrcpyn(pattern.str, p, len + 1);
-                            pattern.rxp = NULL;
-                            m_rxpList.push_back(pattern);
+                    if (std::regex_match(p, &p[len], m, rePattern)) {
+                        std::basic_regex<TCHAR> re;
+                        try {
+                            re.assign(m[2].first, m[2].length());
+                            m_reList.push_back(re);
+                        }
+                        catch (std::regex_error&) {
+                            OutputDebugFormat(TEXT(__FUNCTION__) TEXT("(): regex_assign error\n"));
                         }
                     }
                     else {
-                        // T-Rex: "m?/pattern/s"となってる場合のみ受けいれる
-                        if (len >= 1 && p[0] == TEXT('m')) { ++p; --len; }
-
-                        if (3 <= len && len < PATTERN_MAX+3 && p[0] == p[len-2] && p[len-1] == TEXT('s')) {
-                            TCHAR pattern[PATTERN_MAX];
-                            ::lstrcpyn(pattern, p + 1, len - 2);
-                            LPCTSTR error = NULL;
-                            TRex *trex = trex_compile(pattern, &error);
-                            if (trex) {
-                                m_trexList.push_back(trex);
-                            }
-                            else {
-                                OutputDebugFormat(TEXT(__FUNCTION__) TEXT("(): trex_compile %s: %s\n"), error, pattern);
-                            }
-                        }
-                        else {
-                            OutputDebugFormat(TEXT(__FUNCTION__) TEXT("(): _Blacklist format error\n"));
-                        }
+                        OutputDebugFormat(TEXT(__FUNCTION__) TEXT("(): _Blacklist format error\n"));
                     }
                     p += len;
                     if (*p == TEXT('\r') && *(p+1) == TEXT('\n')) ++p;
@@ -132,10 +106,6 @@ bool CCaptionAnalyzer::Initialize(LPCTSTR captionDllPath, LPCTSTR bregonigDllPat
         ::FreeLibrary(m_hCaptionDll);
         m_hCaptionDll = NULL;
     }
-    if (m_hBregonigDll) {
-        ::FreeLibrary(m_hBregonigDll);
-        m_hBregonigDll = NULL;
-    }
     return false;
 }
 
@@ -143,22 +113,7 @@ void CCaptionAnalyzer::UnInitialize()
 {
     if (!IsInitialized()) return;
 
-    if (m_hBregonigDll) {
-        std::vector<RXP_PATTERN>::iterator it = m_rxpList.begin();
-        for (; it != m_rxpList.end(); ++it) {
-            if (it->rxp) m_pfnBRegfree(it->rxp);
-        }
-        m_rxpList.clear();
-        ::FreeLibrary(m_hBregonigDll);
-        m_hBregonigDll = NULL;
-    }
-    else {
-        std::vector<TRex*>::iterator it = m_trexList.begin();
-        for (; it != m_trexList.end(); ++it) {
-            trex_free(*it);
-        }
-        m_trexList.clear();
-    }
+    m_reList.clear();
     m_pfnUnInitializeCP();
     ::FreeLibrary(m_hCaptionDll);
     m_hCaptionDll = NULL;
@@ -275,31 +230,11 @@ void CCaptionAnalyzer::AddPacket(BYTE *pPacket)
                         if (::MultiByteToWideChar(CP_UTF8, 0, utf8, -1, utf16, _countof(utf16))) {
                             // パターンマッチした字幕は除外する
                             bool fMatch = false;
-                            if (m_hBregonigDll) {
-                                // bregonig
-                                std::vector<RXP_PATTERN>::iterator it = m_rxpList.begin();
-                                for (; it != m_rxpList.end(); ++it) {
-                                    TCHAR msg[BREGEXP_MAX_ERROR_MESSAGE_LEN];
-                                    int rv = m_pfnBMatch(it->str, utf16, utf16 + ::lstrlen(utf16), &it->rxp, msg);
-                                    if (rv > 0) {
-                                        fMatch = true;
-                                        break;
-                                    }
-                                    else if (rv < 0) {
-                                        OutputDebugFormat(TEXT(__FUNCTION__) TEXT("(): BMatch %s: %s\n"), msg, it->str);
-                                        break;
-                                    }
-                                }
-                            }
-                            else {
-                                // T-Rex
-                                std::vector<TRex*>::iterator it = m_trexList.begin();
-                                for (; it != m_trexList.end(); ++it) {
-                                    LPCTSTR outBegin, outEnd;
-                                    if (trex_search(*it, utf16, &outBegin, &outEnd) != TRex_False) {
-                                        fMatch = true;
-                                        break;
-                                    }
+                            std::vector<std::basic_regex<TCHAR>>::const_iterator it = m_reList.begin();
+                            for (; it != m_reList.end(); ++it) {
+                                if (std::regex_match(utf16, *it)) {
+                                    fMatch = true;
+                                    break;
                                 }
                             }
                             if (!fMatch) {

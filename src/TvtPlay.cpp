@@ -20,8 +20,7 @@
 
 #ifdef EN_SWC
 #include "Caption.h"
-#include "bregdef.h"
-#include "trex.h"
+#include <regex>
 #include "CaptionAnalyzer.h"
 #endif
 
@@ -202,7 +201,6 @@ CTvtPlay::CTvtPlay()
     m_szChaptersDirName[0] = 0;
 #ifdef EN_SWC
     m_szCaptionDllPath[0] = 0;
-    m_szBregonigDllPath[0] = 0;
     ::memset(&m_pat, 0, sizeof(m_pat));
 #endif
     m_lastCurPos.x = m_lastCurPos.y = 0;
@@ -409,7 +407,6 @@ void CTvtPlay::LoadSettings()
         GetBufferedProfileString(pBuf, TEXT("ChaptersFolderName"), TEXT("chapters"), m_szChaptersDirName, _countof(m_szChaptersDirName));
 #ifdef EN_SWC
         GetBufferedProfileString(pBuf, TEXT("CaptionDll"), TEXT("Plugins\\TvtPlay_Caption.dll"), m_szCaptionDllPath, _countof(m_szCaptionDllPath));
-        GetBufferedProfileString(pBuf, TEXT("BregonigDll"), TEXT(""), m_szBregonigDllPath, _countof(m_szBregonigDllPath));
         m_slowerWithCaption = GetBufferedProfileInt(pBuf, TEXT("SlowerWithCaption"), 0);
         m_swcShowLate       = GetBufferedProfileInt(pBuf, TEXT("SlowerWithCaptionShowLate"), 450);
         m_swcShowLate       = min(max(m_swcShowLate, -5000), 5000);
@@ -631,7 +628,6 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
         ::WritePrivateProfileString(SETTINGS, TEXT("ChaptersFolderName"), m_szChaptersDirName, m_szIniFileName);
 #ifdef EN_SWC
         ::WritePrivateProfileString(SETTINGS, TEXT("CaptionDll"), m_szCaptionDllPath, m_szIniFileName);
-        ::WritePrivateProfileString(SETTINGS, TEXT("BregonigDll"), m_szBregonigDllPath, m_szIniFileName);
     }
     WritePrivateProfileInt(SETTINGS, TEXT("SlowerWithCaption"), m_slowerWithCaption, m_szIniFileName);
     if (fWriteDefault) {
@@ -906,7 +902,7 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
         if (::GetModuleFileName(g_hinstDLL, blacklistPath, MAX_PATH)) {
             ::PathRemoveExtension(blacklistPath);
             ::lstrcat(blacklistPath, TEXT("_Blacklist.txt"));
-            if (m_captionAnalyzer.Initialize(m_szCaptionDllPath, m_szBregonigDllPath, blacklistPath, m_swcShowLate, m_swcClearEarly)) {
+            if (m_captionAnalyzer.Initialize(m_szCaptionDllPath, blacklistPath, m_swcShowLate, m_swcClearEarly)) {
                 m_captionPid = GetCaptionPid();
                 m_fResetPat = true;
                 // ストリームコールバックの登録

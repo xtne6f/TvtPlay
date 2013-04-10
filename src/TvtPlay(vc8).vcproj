@@ -202,10 +202,6 @@
 				>
 			</File>
 			<File
-				RelativePath=".\trex.c"
-				>
-			</File>
-			<File
 				RelativePath=".\TsSender.cpp"
 				>
 				<FileConfiguration
@@ -289,10 +285,6 @@
 			</File>
 			<File
 				RelativePath=".\resource.h"
-				>
-			</File>
-			<File
-				RelativePath=".\trex.h"
 				>
 			</File>
 			<File

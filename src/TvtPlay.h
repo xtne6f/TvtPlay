@@ -171,7 +171,6 @@ private:
     // 字幕でゆっくり
     CCaptionAnalyzer m_captionAnalyzer;
     TCHAR m_szCaptionDllPath[MAX_PATH];
-    TCHAR m_szBregonigDllPath[MAX_PATH];
     int m_slowerWithCaption;
     int m_swcShowLate;
     int m_swcClearEarly;

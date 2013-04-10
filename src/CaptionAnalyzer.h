@@ -3,12 +3,11 @@
 
 class CCaptionAnalyzer
 {
-    static const int PATTERN_MAX = 256;
     static const int CAPTION_MAX = 512;
 public:
     CCaptionAnalyzer();
     ~CCaptionAnalyzer();
-    bool Initialize(LPCTSTR captionDllPath, LPCTSTR bregonigDllPath, LPCTSTR blacklistPath, int showLateMsec, int clearEarlyMsec);
+    bool Initialize(LPCTSTR captionDllPath, LPCTSTR blacklistPath, int showLateMsec, int clearEarlyMsec);
     void UnInitialize();
     void Clear();
     void ClearShowState();
@@ -16,7 +15,7 @@ public:
     void AddPacket(BYTE *pPacket);
     bool IsInitialized() const { return m_hCaptionDll != NULL; }
 private:
-    HMODULE m_hCaptionDll, m_hBregonigDll;
+    HMODULE m_hCaptionDll;
     int m_showLate, m_clearEarly;
     bool m_fShowing;
     int m_commandRear, m_commandFront;
@@ -28,14 +27,7 @@ private:
     AddTSPacketCP       *m_pfnAddTSPacketCP;
     ClearCP             *m_pfnClearCP;
     GetCaptionDataCP    *m_pfnGetCaptionDataCP;
-    BMatch              *m_pfnBMatch;
-    BRegfree            *m_pfnBRegfree;
-    struct RXP_PATTERN {
-        BREGEXP *rxp;
-        TCHAR str[PATTERN_MAX];
-    };
-    std::vector<RXP_PATTERN> m_rxpList;
-    std::vector<TRex*> m_trexList;
+    std::vector<std::basic_regex<TCHAR>> m_reList;
 };
 
 #endif // INCLUDE_CAPTION_ANALYZER_H
