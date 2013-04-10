@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.1.5r2 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.1.5r3 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -20,7 +20,7 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
 ver.1.5では、設定キーTsWaitOnStopがTsSupposedDispDelayに変更(吸収)されました。値
 を変更していたときは、後述の「設定ファイルについて」の該当項目を読んで修正してく
 ださい。
-(ver.1.3～ver.1.5からの移行)
+(ver.1.3～ver.1.5r2からの移行)
   TvtPlay.tvtpを置きかえてください。
 (ver.1.2r2からの移行)
   TvtPlay.tvtpとTvtAudioStretchFilter.axとを置きかえてください。
@@ -53,10 +53,10 @@ TVTest起動オプションの最後に拡張子.ts .m2t .m2ts .m3u .tslist い�
 
 倍速再生を利用する方は音声フィルタの設定が必要です。倍速再生はBonDriver_Pipe.dll
 の使用をお勧めします。同梱のDirectShowフィルタTvtAudioStretchFilter.axを適当なフ
-ォルダに入れ、コマンドプロンプトから管理者権限で regsvr32 {フィルタのパス} と入
-力してください(この辺は「DirectShowフィルタ 登録」あたりでググってください)。無
-事登録されていれば、TVTestの設定->再生->音声フィルタにこのフィルタが現れるので、
-これを選択してください。
+ォルダ(ただし64bit版OSはSystem32以外)に入れ、コマンドプロンプトから管理者権限で
+regsvr32 {フィルタのパス} と入力してください(この辺は「DirectShowフィルタ 登録」
+あたりでググってください)。無事登録されていれば、TVTestの設定->再生->音声フィル
+タにこのフィルタが現れるので、これを選択してください。
 
 *** 以下、必要に応じてお読みください ***
 
@@ -71,7 +71,7 @@ BonDriver_UDPのプロセス間通信方式をパイプに改変したもので�
 
 ■TVTest起動オプションについて
 TVTest起動時につぎのようなオプションを追加することで、プラグインの有効・無効の自
-動化などが可能です。
+動化などが可能です。設定キーTvtpCmdOptionでも指定できます【ver.1.5r3～】。
 /tvtpudp          BonDriver_UDP.dllの使用の有無でプラグインを有効・無効にする
 /tvtpudp /tvtplay 上述の動作＋ファイルパスの拡張子を問わない
 /tvtpipe          BonDriver_Pipe.dllについて/tvtpudpと同様(同時指定もできる)
@@ -135,11 +135,19 @@ AddFilter={0F40E1E5-4F79-4988-B1A9-CC98794E6B55}
 設定ファイル"TvtPlay.ini"は初回使用時プラグインフォルダに自動作成されます。必要
 な場合はこれを直接編集してカスタマイズしてください。以下は設定キーの説明です。
 
+Version【ver.1.0～】
+    設定ファイルのバージョン
+    # デフォルト値を出力するために使います。特にユーザがいじる必要はありません。
+    # あるキーを削除する(=デフォルト値にもどす)ときは、同時にこのキーも削除して
+    # おくと、デフォルト値を再出力できます。
+TvtpCmdOption【ver.1.5r3～】
+    追加の起動オプション
 TsRepeatAll / TsRepeatSingle【ver.1.0～】
     再生リスト全体/1ファイルをリピート再生する[=1]かどうか
 TsRepeatChapter【ver.1.4～】
     チャプターリピートする[=1]かどうか
-    # 現在再生中の開始チャプターと終了チャプターの間をリピート再生します。
+    # 現在再生中の開始チャプターと終了チャプター(名前が"i"もしくは"o"で始まるチ
+    # ャプター)の間をリピート再生します。
 TsSkipXChapter【ver.1.4～】
     チャプタースキップする[=1]かどうか
     # スキップチャプター(名前が"ix"もしくは"ox"のチャプター)をスキップします。
@@ -195,6 +203,12 @@ ShowOpenDialog【ver.1.2～】
     プラグイン有効時に「ファイルを開く」ダイアログを表示する[=1]かどうか
     # /tvtpudp /tvtpipeと組みあわせて利用するとTVTestのチャンネル選択画面などで
     # 便利かもしれません。
+RaiseMainThreadPriority【ver.1.5r3～】
+    プラグイン有効かつ起動時にTVTestの主スレッド優先度を少し上げる[=1]かどうか
+    # TVTest起動時に数秒～数十秒間フリーズする現象がみられる場合は試してみてくだ
+    # さい。
+    # この現象については現在調査中です。当方環境ではTVTest設定->カードリーダを
+    # 「なし(スクランブル解除しない)」にすることでも回避できるようです。
 AutoHide【ver.1.1～】
     通常表示時にコントロールを隠す[=1]かどうか
     # この設定は再生位置の表示部分を右クリックで変更できます。
@@ -389,6 +403,11 @@ http://2sen.dip.jp/)のup0598.zip「非公式 TvtPlayシークボタンカスタ
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.1.5r3 (2012-02-03)
+・ver.1.5r2で、13.2時間以上のTSファイルの総再生時間がおかしくなる(はず)のを修正
+・TVTest起動時まれに数秒～数十秒間フリーズする現象への対策として、設定キー
+  RaiseMainThreadPriorityを追加
+・ついでに設定キーTvtpCmdOptionを追加
 ver.1.5r2 (2012-01-22)
 ・ver.1.5で、TsTimeKeeper等できれいにカット編集された部分まで検出してビューアリ
   セットしていたのを修正。関連する設定キーTsPcrDiscontinuityThresholdを追加

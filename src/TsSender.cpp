@@ -9,7 +9,6 @@
 #endif
 
 #define MSB(x) ((x) & 0x80000000)
-#define DIFF_DWORD(a,b) (static_cast<int>( MSB((a)-(b)) ? 0 : ((a)-(b)) ))
 
 CTsTimestampShifter::CTsTimestampShifter()
     : m_shift45khz(0)
@@ -259,8 +258,8 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt, bool fConvTo188, bool fUseQpc, in
     m_fSpecialExtending = false;
     if (Seek(-TS_SUPPOSED_RATE * 2, FILE_END)) {
         // ファイル末尾が正常である場合
-        m_duration = DIFF_DWORD(m_pcr, m_initPcr) / PCR_PER_MSEC + 2000;
-        m_duration = DIFF_DWORD(m_pcr, m_initPcr) / PCR_PER_MSEC +
+        m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 2000;
+        m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) +
                      (int)((long long)TS_SUPPOSED_RATE * 2000 / GetRate());
     }
     else if (m_fShareWrite &&
@@ -269,7 +268,7 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt, bool fConvTo188, bool fUseQpc, in
     {
         // 書き込み共有かつファイル末尾が正常でない場合
         long long filePos = GetFilePosition();
-        m_duration = DIFF_DWORD(m_pcr, m_initPcr) / PCR_PER_MSEC + 2000;
+        m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 2000;
         // ファイルサイズからレートを計算できないため
         m_specialExtendInitRate = filePos < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
                                   static_cast<int>((filePos + TS_SUPPOSED_RATE * 2) * 1000 / m_duration);
@@ -293,8 +292,8 @@ bool CTsSender::Open(LPCTSTR name, DWORD salt, bool fConvTo188, bool fUseQpc, in
         m_fileSize = fileSize;
     }
 
-    // +600秒-PCR初期値だけPCR/PTS/DTSをシフト
-    m_tsShifter.SetValue((DWORD)(600*1000*PCR_PER_MSEC) - m_initPcr);
+    // PCR_LAP_THRESHOLD-PCR初期値だけPCR/PTS/DTSをシフト
+    m_tsShifter.SetValue((DWORD)PCR_LAP_THRESHOLD - m_initPcr);
 
     return true;
 ERROR_EXIT:
@@ -413,7 +412,7 @@ int CTsSender::Send()
     if (!m_fPause && rv) {
         // 転送レート制御
         DWORD tickDiff = tick - m_baseTick;
-        int pcrDiff = DIFF_DWORD(m_pcr, m_basePcr);
+        DWORD pcrDiff = DiffPcr(m_pcr, m_basePcr);
         // 再生速度が上がる=PCRの進行が遅くなる
         int msec = (int)((long long)pcrDiff * m_speedDen / m_speedNum / PCR_PER_MSEC) - tickDiff;
         // PCRの連続性チェックのため
@@ -606,7 +605,7 @@ int CTsSender::GetDuration() const
 // 動画の再生位置(ミリ秒)を取得する
 int CTsSender::GetPosition() const
 {
-    return !m_fEnPcr ? 0 : DIFF_DWORD(m_pcr, m_initPcr) / PCR_PER_MSEC;
+    return !m_fEnPcr ? 0 : DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC;
 }
 
 
@@ -616,7 +615,7 @@ int CTsSender::GetBroadcastTime() const
 {
     if (m_totBase < 0) return -1;
 
-    int totInit = m_totBase - DIFF_DWORD(m_totBasePcr, m_initPcr) / PCR_PER_MSEC;
+    int totInit = m_totBase - (int)(DiffPcr(m_totBasePcr, m_initPcr) / PCR_PER_MSEC);
     if (totInit < 0) totInit += 24 * 3600000; // 1日足す
     return totInit;
 }

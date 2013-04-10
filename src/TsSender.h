@@ -26,6 +26,7 @@ class CTsSender
     static const int ADJUST_TICK_INTERVAL = 10000;
     static const int RENEW_SIZE_INTERVAL = 3000;
     static const int INITIAL_STORE_MSEC = 500;
+    static const int PCR_LAP_THRESHOLD = 600 * 1000 * PCR_PER_MSEC;
 public:
     CTsSender();
     ~CTsSender();
@@ -66,6 +67,7 @@ private:
     void OpenPipe();
     void ClosePipe();
     void SendData(BYTE *pData, int dataSize);
+    static DWORD DiffPcr(DWORD a, DWORD b) { return ((a-b)&0x80000000) && b-a<PCR_LAP_THRESHOLD ? 0 : a-b; }
 
     HANDLE m_hFile;
     BYTE *m_pBuf, *m_curr, *m_head, *m_tail;

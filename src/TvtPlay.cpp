@@ -22,8 +22,8 @@
 #include "TvtPlay.h"
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.5r2)";
-static const int INFO_VERSION = 17;
+static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.5r3)";
+static const int INFO_VERSION = 18;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
 #define WM_QUERY_CLOSE_NEXT (WM_APP + 2)
@@ -111,6 +111,7 @@ CTvtPlay::CTvtPlay()
     , m_fPausedOnPreviewChange(false)
     , m_specOffset(-1)
     , m_fShowOpenDialog(false)
+    , m_fRaisePriority(false)
     , m_hwndFrame(NULL)
     , m_fAutoHide(false)
     , m_fAutoHideActive(false)
@@ -190,7 +191,6 @@ void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst)
     int argc;
     LPTSTR *argv = ::CommandLineToArgvW(cmdLine, &argc);
     if (argv) {
-        int specOffset = -1;
         for (int i = fIgnoreFirst; i < argc; ++i) {
             // オプションは複数起動禁止時に無効->有効にすることができる
             if (argv[i][0] == TEXT('/') || argv[i][0] == TEXT('-')) {
@@ -200,11 +200,11 @@ void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst)
                 else if (!::lstrcmpi(argv[i]+1, TEXT("tvtpofs")) && i+1 < argc) {
                     ++i;
                     if (TEXT('0') <= argv[i][0] && argv[i][0] <= TEXT('9')) {
-                        specOffset = ::StrToInt(argv[i]);
+                        m_specOffset = ::StrToInt(argv[i]);
                         int n = ::StrCSpn(argv[i], TEXT("+-"));
                         if (argv[i][n] == TEXT('+')) ++n;
-                        specOffset += ::StrToInt(argv[i] + n);
-                        if (specOffset < 0) specOffset = 0;
+                        m_specOffset += ::StrToInt(argv[i] + n);
+                        if (m_specOffset < 0) m_specOffset = 0;
                     }
                 }
             }
@@ -226,7 +226,6 @@ void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst)
             }
             if (fSpec) {
                 ::lstrcpyn(m_szSpecFileName, argv[argc-1], _countof(m_szSpecFileName));
-                m_specOffset = specOffset;
             }
         }
 
@@ -278,7 +277,13 @@ bool CTvtPlay::Initialize()
     // イベントコールバック関数を登録
     m_pApp->SetEventCallback(EventCallback, this);
 
+    TCHAR cmdOption[128];
+    ::GetPrivateProfileString(SETTINGS, TEXT("TvtpCmdOption"), TEXT(""), cmdOption, _countof(cmdOption), m_szIniFileName);
+    AnalyzeCommandLine(cmdOption, false);
+
+    int preSpecOffset = m_specOffset;
     AnalyzeCommandLine(::GetCommandLine(), true);
+    if (m_specOffset < 0) m_specOffset = preSpecOffset;
     return true;
 }
 
@@ -324,6 +329,7 @@ void CTvtPlay::LoadSettings()
         m_fModTimestamp     = GetBufferedProfileInt(pBuf, TEXT("TsAvoidWraparound"), 0) != 0;
         m_pcrThresholdMsec  = GetBufferedProfileInt(pBuf, TEXT("TsPcrDiscontinuityThreshold"), 400);
         m_fShowOpenDialog   = GetBufferedProfileInt(pBuf, TEXT("ShowOpenDialog"), 0) != 0;
+        m_fRaisePriority    = GetBufferedProfileInt(pBuf, TEXT("RaiseMainThreadPriority"), 0) != 0;
         m_fAutoHide         = GetBufferedProfileInt(pBuf, TEXT("AutoHide"), 0) != 0;
         m_statusRow         = GetBufferedProfileInt(pBuf, TEXT("RowPos"), 0);
         m_statusRowFull     = GetBufferedProfileInt(pBuf, TEXT("RowPosFull"), 0);
@@ -375,7 +381,7 @@ void CTvtPlay::LoadSettings()
     // キー番号が小さいものほど新しい
     m_hashList.clear();
     if (m_hashListMax > 0) {
-       TCHAR *pBuf = NULL;
+        TCHAR *pBuf = NULL;
         for (int bufSize = m_hashListMax * 96; bufSize < 1024*1024; bufSize *= 2) {
             delete [] pBuf;
             pBuf = new TCHAR[bufSize];
@@ -523,6 +529,11 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
     // 起動中に値を変えない設定値はfWriteDefaultのときだけ書く
     if (fWriteDefault) {
         WritePrivateProfileInt(SETTINGS, TEXT("Version"), INFO_VERSION, m_szIniFileName);
+        TCHAR val[2];
+        ::GetPrivateProfileString(SETTINGS, TEXT("TvtpCmdOption"), TEXT("!"), val, _countof(val), m_szIniFileName);
+        if (val[0] == TEXT('!')) {
+            ::WritePrivateProfileString(SETTINGS, TEXT("TvtpCmdOption"), TEXT(";/tvtpudp ;/tvtpipe"), m_szIniFileName);
+        }
     }
     WritePrivateProfileInt(SETTINGS, TEXT("TsRepeatAll"), m_fAllRepeat, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("TsRepeatSingle"), m_fSingleRepeat, m_szIniFileName);
@@ -543,6 +554,7 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
     if (fWriteDefault) {
         WritePrivateProfileInt(SETTINGS, TEXT("TsPcrDiscontinuityThreshold"), m_pcrThresholdMsec, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("ShowOpenDialog"), m_fShowOpenDialog, m_szIniFileName);
+        WritePrivateProfileInt(SETTINGS, TEXT("RaiseMainThreadPriority"), m_fRaisePriority, m_szIniFileName);
     }
     WritePrivateProfileInt(SETTINGS, TEXT("AutoHide"), m_fAutoHide, m_szIniFileName);
     if (fWriteDefault) {
@@ -1835,7 +1847,6 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
                 pThis->OpenCurrent(pThis->m_specOffset);
             }
             pThis->m_szSpecFileName[0] = 0;
-            pThis->m_specOffset = -1;
         }
         break;
     case TVTest::EVENT_CHANNELCHANGE:
@@ -1866,13 +1877,18 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
             pThis->m_fEventStartupDone = true;
         }
         pThis->EnablePluginByDriverName();
-        // コマンドラインにパスが指定されていれば開く
-        if (pThis->m_pApp->IsPluginEnabled() && pThis->m_szSpecFileName[0]) {
-            if (pThis->m_playlist.PushBackListOrFile(pThis->m_szSpecFileName, true) >= 0) {
-                pThis->OpenCurrent(pThis->m_specOffset);
+        if (pThis->m_pApp->IsPluginEnabled()) {
+            // コマンドラインにパスが指定されていれば開く
+            if (pThis->m_szSpecFileName[0]) {
+                if (pThis->m_playlist.PushBackListOrFile(pThis->m_szSpecFileName, true) >= 0) {
+                    pThis->OpenCurrent(pThis->m_specOffset);
+                }
+                pThis->m_szSpecFileName[0] = 0;
             }
-            pThis->m_szSpecFileName[0] = 0;
-            pThis->m_specOffset = -1;
+            // 起動時フリーズ対策(仮)
+            if (pThis->m_fRaisePriority) {
+                ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+            }
         }
         break;
     }
@@ -2129,7 +2145,7 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
 {
     MSG msg;
     DWORD_PTR dwRes;
-    CTvtPlay *pThis = reinterpret_cast<CTvtPlay*>(pParam);
+    CTvtPlay *pThis = static_cast<CTvtPlay*>(pParam);
     int posSec, durSec, lastTot, lastExtMode, lastSpeed;
     bool fLastPaused;
     int speed = 100, posWatch = -1;

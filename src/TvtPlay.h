@@ -86,6 +86,7 @@ private:
     TCHAR m_szSpecFileName[MAX_PATH];
     int m_specOffset;
     bool m_fShowOpenDialog;
+    bool m_fRaisePriority;
 
     // コントロール
     HWND m_hwndFrame;
