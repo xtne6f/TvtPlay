@@ -1,7 +1,7 @@
 ﻿#include <Windows.h>
 #include "Util.h"
-#include "Settings.h"
 #include "ColorScheme.h"
+#include "Settings.h"
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -11,6 +11,7 @@ static char THIS_FILE[]=__FILE__;
 
 #define lengthof _countof
 
+#define MAX_COLORSCHEME_NAME 128
 
 static const LPCTSTR GradientDirectionList[] = {
 	TEXT("horizontal"),
@@ -231,12 +232,13 @@ bool CColorScheme::SetName(LPCTSTR pszName)
 }
 
 
-bool CColorScheme::Load(CSettings &Settings)
+bool CColorScheme::Load(LPCTSTR pszFileName)
 {
-	TCHAR szText[128];
+	CSettings Settings;
+	TCHAR szText[MAX_COLORSCHEME_NAME];
 	int i;
 
-	if (!Settings.SetSection(TEXT("ColorScheme")))
+	if (!Settings.Open(pszFileName,TEXT("ColorScheme"),CSettings::OPEN_READ))
 		return false;
 	if (Settings.Read(TEXT("Name"),szText,lengthof(szText)))
 		SetName(szText);
@@ -263,18 +265,37 @@ bool CColorScheme::Load(CSettings &Settings)
 			static const struct {
 				int To,From;
 			} Map[] = {
-				{COLOR_STATUSBORDER,						COLOR_STATUSBACK1},
+			//	{COLOR_STATUSBORDER,						COLOR_STATUSBACK1},
 				{COLOR_STATUSBOTTOMITEMBACK1,				COLOR_STATUSBACK2},
 				{COLOR_STATUSBOTTOMITEMBACK2,				COLOR_STATUSBOTTOMITEMBACK1},
 				{COLOR_STATUSBOTTOMITEMTEXT,				COLOR_STATUSTEXT},
 				{COLOR_STATUSBOTTOMITEMBORDER,				COLOR_STATUSBOTTOMITEMBACK1},
 			};
 
+			static const struct {
+				int To,From1,From2;
+			} MixMap[] = {
+				{COLOR_STATUSBORDER,		COLOR_STATUSBACK1,			COLOR_STATUSBACK2},
+			};
+
+			bool fFound=false;
+
 			for (int j=0;j<lengthof(Map);j++) {
 				if (Map[j].To==i && IsLoaded(Map[j].From)) {
 					m_ColorList[i]=m_ColorList[Map[j].From];
 					SetLoadedFlag(i);
+					fFound=true;
 					break;
+				}
+			}
+
+			if (!fFound) {
+				for (int j=0;j<lengthof(MixMap);j++) {
+					if (MixMap[j].To==i && IsLoaded(MixMap[j].From1) && IsLoaded(MixMap[j].From2)) {
+						m_ColorList[i]=MixColor(m_ColorList[MixMap[j].From1],m_ColorList[MixMap[j].From2]);
+						SetLoadedFlag(i);
+						break;
+					}
 				}
 			}
 		}
@@ -303,9 +324,11 @@ bool CColorScheme::Load(CSettings &Settings)
 		}
 	}
 
+	Settings.Close();
+
 	for (i=0;i<NUM_BORDERS;i++)
 		m_BorderList[i]=m_BorderInfoList[i].DefaultType;
-	if (Settings.SetSection(TEXT("Style"))) {
+	if (Settings.Open(pszFileName,TEXT("Style"),CSettings::OPEN_READ)) {
 		for (i=0;i<NUM_BORDERS;i++) {
 			if (Settings.Read(m_BorderInfoList[i].pszText,szText,lengthof(szText))) {
 				if (::lstrcmpi(szText,TEXT("none"))==0) {
@@ -319,24 +342,10 @@ bool CColorScheme::Load(CSettings &Settings)
 					m_BorderList[i]=Theme::BORDER_RAISED;
 			}
 		}
+		Settings.Close();
 	}
 
-	return true;
-}
-
-
-bool CColorScheme::Load(LPCTSTR pszFileName)
-{
-	CSettings Settings;
-
-	if (!Settings.Open(pszFileName,CSettings::OPEN_READ))
-		return false;
-
-	if (!Load(Settings))
-		return false;
-
 	SetFileName(pszFileName);
-
 	return true;
 }
 

@@ -301,7 +301,7 @@ bool DrawMonoColorDIB(HDC hdcDst,int DstX,int DstY,
 }
 
 
-HBITMAP CreateDIB(int Width,int Height,int BitCount)
+HBITMAP CreateDIB(int Width,int Height,int BitCount,void **ppBits)
 {
 	struct {
 		BITMAPINFOHEADER bmiHeader;
@@ -316,7 +316,12 @@ HBITMAP CreateDIB(int Width,int Height,int BitCount)
 	bmi.bmiHeader.biPlanes=1;
 	bmi.bmiHeader.biBitCount=BitCount;
 	bmi.bmiHeader.biCompression=BI_RGB;
-	return ::CreateDIBSection(NULL,(BITMAPINFO*)&bmi,DIB_RGB_COLORS,&pBits,NULL,0);
+	HBITMAP hbm=::CreateDIBSection(NULL,(BITMAPINFO*)&bmi,DIB_RGB_COLORS,&pBits,NULL,0);
+	if (hbm==NULL)
+		return NULL;
+	if (ppBits!=NULL)
+		*ppBits=pBits;
+	return hbm;
 }
 
 

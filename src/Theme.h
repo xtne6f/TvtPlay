@@ -66,6 +66,7 @@ namespace Theme {
 	bool DrawBorder(HDC hdc,RECT *pRect,const BorderInfo *pInfo);
 	bool AddBorderRect(const BorderInfo *pInfo,RECT *pRect);
 	bool SubtractBorderRect(const BorderInfo *pInfo,RECT *pRect);
+	bool GetBorderWidths(const BorderInfo *pInfo,RECT *pRect);
 
 	struct Style {
 		GradientInfo Gradient;

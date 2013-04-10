@@ -1,28 +1,26 @@
-﻿#ifndef TVTEST_SETTINGS_H
-#define TVTEST_SETTINGS_H
-
-
-#include "IniFile.h"
+﻿#ifndef SETTINGS_H
+#define SETTINGS_H
 
 
 class CSettings
 {
-	TVTest::CIniFile m_IniFile;
+	enum { MAX_SECTION=MAX_PATH };
+	TCHAR m_szFileName[MAX_PATH];
+	TCHAR m_szSection[MAX_SECTION];
 	unsigned int m_OpenFlags;
 
 public:
 	enum {
-		OPEN_READ  = 0x00000001U,
-		OPEN_WRITE = 0x00000002U
+		OPEN_READ  = 0x00000001,
+		OPEN_WRITE = 0x00000002
 	};
 
 	CSettings();
 	~CSettings();
-	bool Open(LPCTSTR pszFileName,unsigned int Flags);
+	bool Open(LPCTSTR pszFileName,LPCTSTR pszSection,unsigned int Flags);
 	void Close();
-	bool IsOpened() const;
 	bool Clear();
-	bool SetSection(LPCTSTR pszSection);
+	void Flush();
 	bool Read(LPCTSTR pszValueName,int *pData);
 	bool Write(LPCTSTR pszValueName,int Data);
 	bool Read(LPCTSTR pszValueName,unsigned int *pData);
@@ -37,16 +35,39 @@ public:
 	bool Write(LPCTSTR pszValueName,const LOGFONT *pFont);
 };
 
+class CSettingsFile
+{
+public:
+	enum {
+		OPEN_READ  = CSettings::OPEN_READ,
+		OPEN_WRITE = CSettings::OPEN_WRITE
+	};
+
+	CSettingsFile();
+	~CSettingsFile();
+	bool Open(LPCTSTR pszFileName,unsigned int Flags);
+	void Close();
+	void Flush();
+	bool OpenSection(CSettings *pSettings,LPCTSTR pszSection);
+	bool GetFileName(LPTSTR pszFileName,int MaxLength) const;
+	DWORD GetLastError() const { return m_LastError; }
+
+private:
+	TCHAR m_szFileName[MAX_PATH];
+	unsigned int m_OpenFlags;
+	DWORD m_LastError;
+};
+
 class ABSTRACT_CLASS(CSettingsBase)
 {
 public:
 	CSettingsBase();
 	CSettingsBase(LPCTSTR pszSection);
 	virtual ~CSettingsBase();
+	virtual bool LoadSettings(CSettingsFile &File);
+	virtual bool SaveSettings(CSettingsFile &File);
 	virtual bool ReadSettings(CSettings &Settings) { return false; }
 	virtual bool WriteSettings(CSettings &Settings) { return false; }
-	virtual bool LoadSettings(CSettings &Settings);
-	virtual bool SaveSettings(CSettings &Settings);
 	bool LoadSettings(LPCTSTR pszFileName);
 	bool SaveSettings(LPCTSTR pszFileName);
 	bool IsChanged() const { return m_fChanged; }

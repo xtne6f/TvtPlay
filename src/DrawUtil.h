@@ -41,7 +41,7 @@ bool DrawMonoColorDIB(HDC hdcDst,int DstX,int DstY,
 					  HDC hdcSrc,int SrcX,int SrcY,int Width,int Height,COLORREF Color);
 bool DrawMonoColorDIB(HDC hdcDst,int DstX,int DstY,
 					  HBITMAP hbm,int SrcX,int SrcY,int Width,int Height,COLORREF Color);
-HBITMAP CreateDIB(int Width,int Height,int BitCount);
+HBITMAP CreateDIB(int Width,int Height,int BitCount,void **ppBits=NULL);
 
 enum FontType {
 	FONT_DEFAULT,
@@ -120,6 +120,5 @@ public:
 };
 
 }	// namespace DrawUtil
-
 
 #endif

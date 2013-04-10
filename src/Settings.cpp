@@ -1,5 +1,6 @@
 ﻿#include <Windows.h>
 #include <Shlwapi.h>
+#include <tchar.h>
 #include "Util.h"
 #include "Settings.h"
 
@@ -11,13 +12,7 @@ static char THIS_FILE[]=__FILE__;
 #endif
 #endif
 
-#ifndef _T
-#define _T(x) TEXT(x)
-#endif
-
 #define lengthof _countof
-
-using namespace TVTest;
 
 
 static unsigned int StrToUInt(LPCTSTR pszValue)
@@ -59,38 +54,23 @@ CSettings::~CSettings()
 }
 
 
-bool CSettings::Open(LPCTSTR pszFileName,unsigned int Flags)
+bool CSettings::Open(LPCTSTR pszFileName,LPCTSTR pszSection,unsigned int Flags)
 {
 	Close();
-
 	if (IsStringEmpty(pszFileName) || ::lstrlen(pszFileName)>=MAX_PATH
-			|| (Flags & (OPEN_READ | OPEN_WRITE))==0)
+			|| IsStringEmpty(pszSection)
+			|| Flags==0)
 		return false;
-
-	UINT IniFlags=0;
-	if ((Flags&OPEN_READ)!=0)
-		IniFlags|=CIniFile::OPEN_READ;
-	if ((Flags&OPEN_WRITE)!=0)
-		IniFlags|=CIniFile::OPEN_WRITE;
-	if (!m_IniFile.Open(pszFileName,IniFlags))
-		return false;
-
+	lstrcpy(m_szFileName,pszFileName);
+	lstrcpyn(m_szSection,pszSection,MAX_SECTION);
 	m_OpenFlags=Flags;
-
 	return true;
 }
 
 
 void CSettings::Close()
 {
-	m_IniFile.Close();
 	m_OpenFlags=0;
-}
-
-
-bool CSettings::IsOpened() const
-{
-	return m_OpenFlags!=0;
 }
 
 
@@ -99,16 +79,14 @@ bool CSettings::Clear()
 	if ((m_OpenFlags&OPEN_WRITE)==0)
 		return false;
 
-	return m_IniFile.ClearSection();
+	return WritePrivateProfileString(m_szSection,NULL,NULL,m_szFileName)!=FALSE;
 }
 
 
-bool CSettings::SetSection(LPCTSTR pszSection)
+void CSettings::Flush()
 {
-	if (m_OpenFlags==0)
-		return false;
-
-	return m_IniFile.SelectSection(pszSection);
+	if ((m_OpenFlags&OPEN_WRITE)!=0)
+		WritePrivateProfileString(NULL,NULL,NULL,m_szFileName);
 }
 
 
@@ -157,15 +135,20 @@ bool CSettings::Read(LPCTSTR pszValueName,LPTSTR pszData,unsigned int Max)
 	if ((m_OpenFlags&OPEN_READ)==0)
 		return false;
 
+	TCHAR cBack[2];
+
 	if (pszData==NULL)
 		return false;
-
-	String Value;
-	if (!m_IniFile.GetValue(pszValueName,&Value))
+	cBack[0]=pszData[0];
+	if (Max>1)
+		cBack[1]=pszData[1];
+	GetPrivateProfileString(m_szSection,pszValueName,TEXT("\x1A"),pszData,Max,m_szFileName);
+	if (pszData[0]==_T('\x1A')) {
+		pszData[0]=cBack[0];
+		if (Max>1)
+			pszData[1]=cBack[1];
 		return false;
-
-	::lstrcpyn(pszData,Value.c_str(),Max);
-
+	}
 	return true;
 }
 
@@ -177,18 +160,38 @@ bool CSettings::Write(LPCTSTR pszValueName,LPCTSTR pszData)
 
 	if (pszData==NULL)
 		return false;
-
 	// 文字列が ' か " で囲まれていると読み込み時に除去されてしまうので、
 	// 余分に " で囲っておく。
 	if (pszData[0]==_T('"') || pszData[0]==_T('\'')) {
-		String Buff;
-		Buff=TEXT("\"");
-		Buff+=pszData;
-		Buff+=TEXT("\"");
-		return m_IniFile.SetValue(pszValueName,Buff.c_str());
-	}
+		LPCTSTR p;
+		TCHAR Quote;
 
-	return m_IniFile.SetValue(pszValueName,pszData);
+		p=pszData;
+		Quote=*p++;
+		while (*p!=_T('\0')) {
+			if (*p==Quote && *(p+1)==_T('\0'))
+				break;
+#ifndef UNICODE
+			if (IsDBCSLeadByteEx(CP_ACP,*p))
+				p++;
+#endif
+			p++;
+		}
+		if (*p==Quote) {
+			size_t Length=::lstrlen(pszData);
+			LPTSTR pszBuff=new TCHAR[Length+3];
+
+			pszBuff[0]=_T('\"');
+			::CopyMemory(&pszBuff[1],pszData,Length*sizeof(TCHAR));
+			pszBuff[Length+1]=_T('\"');
+			pszBuff[Length+2]=_T('\0');
+			bool fOK=WritePrivateProfileString(m_szSection,pszValueName,
+											   pszBuff,m_szFileName)!=0;
+			delete [] pszBuff;
+			return fOK;
+		}
+	}
+	return WritePrivateProfileString(m_szSection,pszValueName,pszData,m_szFileName)!=FALSE;
 }
 
 
@@ -318,6 +321,92 @@ bool CSettings::Write(LPCTSTR pszValueName,const LOGFONT *pFont)
 
 
 
+CSettingsFile::CSettingsFile()
+	: m_OpenFlags(0)
+	, m_LastError(ERROR_SUCCESS)
+{
+	m_szFileName[0]=_T('\0');
+}
+
+
+CSettingsFile::~CSettingsFile()
+{
+	//Close();
+}
+
+
+bool CSettingsFile::Open(LPCTSTR pszFileName,unsigned int Flags)
+{
+	Close();
+
+	if (IsStringEmpty(pszFileName) || ::lstrlen(pszFileName)>=MAX_PATH
+			|| Flags==0) {
+		m_LastError=ERROR_INVALID_PARAMETER;
+		return false;
+	}
+
+	::lstrcpy(m_szFileName,pszFileName);
+	m_OpenFlags=Flags;
+	m_LastError=ERROR_SUCCESS;
+
+#ifdef UNICODE
+	if ((m_OpenFlags&OPEN_WRITE)!=0 && !::PathFileExists(pszFileName)) {
+		HANDLE hFile=::CreateFile(pszFileName,GENERIC_WRITE,0,NULL,
+								  CREATE_NEW,FILE_ATTRIBUTE_NORMAL,NULL);
+		if (hFile!=INVALID_HANDLE_VALUE) {
+			// Unicode(UTF-16 LE)のiniファイルになるようにBOMを書き出す
+			static const WORD BOM=0xFEFF;
+			DWORD Write;
+			::WriteFile(hFile,&BOM,2,&Write,NULL);
+			::FlushFileBuffers(hFile);
+			::CloseHandle(hFile);
+		} else {
+			DWORD Error=::GetLastError();
+			if (Error!=ERROR_ALREADY_EXISTS) {
+				m_LastError=Error;
+			}
+		}
+	}
+#endif
+
+	return true;
+}
+
+
+void CSettingsFile::Close()
+{
+	m_szFileName[0]=_T('\0');
+	m_OpenFlags=0;
+	m_LastError=ERROR_SUCCESS;
+}
+
+
+void CSettingsFile::Flush()
+{
+	if ((m_OpenFlags&OPEN_WRITE)!=0)
+		::WritePrivateProfileString(NULL,NULL,NULL,m_szFileName);
+}
+
+
+bool CSettingsFile::OpenSection(CSettings *pSettings,LPCTSTR pszSection)
+{
+	if (m_OpenFlags==0 || pSettings==NULL)
+		return false;
+	return pSettings->Open(m_szFileName,pszSection,m_OpenFlags);
+}
+
+
+bool CSettingsFile::GetFileName(LPTSTR pszFileName,int MaxLength) const
+{
+	if (pszFileName==NULL || MaxLength<=::lstrlen(m_szFileName))
+		return false;
+	::lstrcpy(pszFileName,m_szFileName);
+	return true;
+}
+
+
+
+
 CSettingsBase::CSettingsBase()
 	: m_pszSection(TEXT("Settings"))
 	, m_fChanged(false)
@@ -337,17 +426,21 @@ CSettingsBase::~CSettingsBase()
 }
 
 
-bool CSettingsBase::LoadSettings(CSettings &Settings)
+bool CSettingsBase::LoadSettings(CSettingsFile &File)
 {
-	if (!Settings.SetSection(m_pszSection))
+	CSettings Settings;
+
+	if (!File.OpenSection(&Settings,m_pszSection))
 		return false;
 	return ReadSettings(Settings);
 }
 
 
-bool CSettingsBase::SaveSettings(CSettings &Settings)
+bool CSettingsBase::SaveSettings(CSettingsFile &File)
 {
-	if (!Settings.SetSection(m_pszSection))
+	CSettings Settings;
+
+	if (!File.OpenSection(&Settings,m_pszSection))
 		return false;
 	return WriteSettings(Settings);
 }
@@ -355,19 +448,19 @@ bool CSettingsBase::SaveSettings(CSettings &Settings)
 
 bool CSettingsBase::LoadSettings(LPCTSTR pszFileName)
 {
-	CSettings Settings;
+	CSettingsFile File;
 
-	if (!Settings.Open(pszFileName,CSettings::OPEN_READ))
+	if (!File.Open(pszFileName,CSettingsFile::OPEN_READ))
 		return false;
-	return LoadSettings(Settings);
+	return LoadSettings(File);
 }
 
 
 bool CSettingsBase::SaveSettings(LPCTSTR pszFileName)
 {
-	CSettings Settings;
+	CSettingsFile File;
 
-	if (!Settings.Open(pszFileName,CSettings::OPEN_WRITE))
+	if (!File.Open(pszFileName,CSettingsFile::OPEN_WRITE))
 		return false;
-	return SaveSettings(Settings);
+	return LoadSettings(File);
 }

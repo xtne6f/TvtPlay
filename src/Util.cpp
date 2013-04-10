@@ -1,6 +1,7 @@
 ﻿#include <Windows.h>
 #include <stdio.h>
 #include <Shlwapi.h>
+#include <tchar.h>
 #include "Util.h"
 
 
@@ -160,7 +161,7 @@ LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt)
     BYTE pbHash[16];
     DWORD dwHashLen = 16;
     if (!::CryptGetHashParam(hHash, HP_HASHVAL, pbHash, &dwHashLen, 0)) goto EXIT;
-    
+
     llRet = ((LONGLONG)pbHash[0]<<48) | ((LONGLONG)pbHash[1]<<40) | ((LONGLONG)pbHash[2]<<32) |
             ((LONGLONG)pbHash[3]<<24) | (pbHash[4]<<16) | (pbHash[5]<<8) | pbHash[6];
 
@@ -299,7 +300,7 @@ void extract_adaptation_field(ADAPTATION_FIELD *dst, const unsigned char *data)
 #endif
 
 
-#if 1 // From: TVTest_0.7.20_Src/StdUtil.cpp
+#if 1 // From: TVTest_0.7.23_Src/StdUtil.cpp
 int StdUtil::vsnprintf(wchar_t *s,size_t n,const wchar_t *format,va_list args)
 {
 	int Length;
@@ -314,7 +315,7 @@ int StdUtil::vsnprintf(wchar_t *s,size_t n,const wchar_t *format,va_list args)
 #endif
 
 
-#if 1 // From: TVTest_0.7.20_Src/TsUtilClass.cpp
+#if 1 // From: TVTest_0.7.23_Src/TsUtilClass.cpp
 /////////////////////////////////////////////////////////////////////////////
 // トレースクラス
 /////////////////////////////////////////////////////////////////////////////
@@ -336,12 +337,43 @@ void CTracer::TraceV(LPCTSTR pszOutput,va_list Args)
 #endif
 
 
-#if 1 // From: TVTest_0.7.20_Src/Util.cpp
+#if 1 // From: TVTest_0.7.23_Src/StringUtility.cpp
+__declspec(restrict) LPWSTR DuplicateString(LPCWSTR pszString)
+{
+	if (pszString==NULL)
+		return NULL;
+
+	const size_t Length=lstrlenW(pszString)+1;
+	LPWSTR pszNewString=new WCHAR[Length];
+	::CopyMemory(pszNewString,pszString,Length*sizeof(WCHAR));
+	return pszNewString;
+}
+
+
+bool ReplaceString(LPWSTR *ppszString,LPCWSTR pszNewString)
+{
+	if (ppszString==NULL)
+		return false;
+	delete [] *ppszString;
+	*ppszString=DuplicateString(pszNewString);
+	return true;
+}
+#endif
+
+
+#if 1 // From: TVTest_0.7.23_Src/Util.cpp
 COLORREF MixColor(COLORREF Color1,COLORREF Color2,BYTE Ratio)
 {
 	return RGB((GetRValue(Color1)*Ratio+GetRValue(Color2)*(255-Ratio))/255,
 			   (GetGValue(Color1)*Ratio+GetGValue(Color2)*(255-Ratio))/255,
 			   (GetBValue(Color1)*Ratio+GetBValue(Color2)*(255-Ratio))/255);
+}
+
+
+bool CompareLogFont(const LOGFONT *pFont1,const LOGFONT *pFont2)
+{
+	return memcmp(pFont1,pFont2,28/*offsetof(LOGFONT,lfFaceName)*/)==0
+		&& lstrcmp(pFont1->lfFaceName,pFont2->lfFaceName)==0;
 }
 
 
@@ -463,7 +495,7 @@ bool CDynamicString::Set(LPCTSTR pszString,size_t Length)
 		Length=StdUtil::strnlen(pszString,Length);
 		m_pszString=new TCHAR[Length+1];
 		::CopyMemory(m_pszString,pszString,Length*sizeof(TCHAR));
-		m_pszString[Length]=TEXT('\0');
+		m_pszString[Length]=_T('\0');
 	}
 	return true;
 }
@@ -523,13 +555,6 @@ int CDynamicString::CompareIgnoreCase(LPCTSTR pszString) const
 	if (IsStringEmpty(pszString))
 		return 1;
 	return ::lstrcmpi(m_pszString,pszString);
-}
-
-
-bool CompareLogFont(const LOGFONT *pFont1,const LOGFONT *pFont2)
-{
-	return memcmp(pFont1,pFont2,28/*offsetof(LOGFONT,lfFaceName)*/)==0
-		&& lstrcmp(pFont1->lfFaceName,pFont2->lfFaceName)==0;
 }
 
 

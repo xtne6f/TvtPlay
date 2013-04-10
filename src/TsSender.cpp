@@ -246,7 +246,7 @@ bool CTsSender::Send()
 
             DWORD pcrDiff = m_pcr - m_basePcr;
             if (MSB(pcrDiff)) pcrDiff = 0;
-            
+
             // 再生速度が上がる=PCRの進行が遅くなる
             int msec = (int)((long long)pcrDiff * m_speedDen / m_speedNum / PCR_PER_MSEC) - tickDiff;
 
@@ -303,16 +303,16 @@ bool CTsSender::Seek(int msec)
         long long approx = pos + rate * msec / 1000;
         if (approx > size - rate*2) approx = size - rate*2;
         if (approx < 0) approx = 0;
-        
+
         DWORD prevPcr = m_pcr;
         if (!Seek(approx, FILE_BEGIN) || !m_pcrCount) return false;
-        
+
         // 移動分を差し引く
         msec += MSB(m_pcr-prevPcr) ? (int)(prevPcr-m_pcr) / PCR_PER_MSEC :
                                     -(int)(m_pcr-prevPcr) / PCR_PER_MSEC;
     }
     if (!m_pcrCount || msec < -5000 || 5000 < msec) return false;
-    
+
     if (msec < 0) {
         // 約1秒ずつ前方シーク
         // 10ループまでに収束しなければ失敗
@@ -456,7 +456,7 @@ bool CTsSender::ReadPacket(int count)
             m_tail += readBytes;
         }
     }
-    
+
     // バッファにTSパケットを読めるだけのデータがない
     if (m_curr + m_unitSize >= m_tail) return false;
 
@@ -470,12 +470,12 @@ bool CTsSender::ReadPacket(int count)
         m_curr = p;
         if (m_curr + m_unitSize > m_tail) return ReadPacket(count - 1);
     }
-    
+
     m_fPcr = false;
 
     TS_HEADER header;
     extract_ts_header(&header, m_curr);
-    
+
     if (header.adaptation_field_control & 2 &&
         !header.transport_error_indicator)
     {
@@ -506,7 +506,7 @@ bool CTsSender::ReadPacket(int count)
             if (header.pid == m_pcrPid) {
                 m_pcrPidsLen = 0;
                 m_pcr = (DWORD)adapt.pcr_45khz;
-            
+
                 if (m_pcrCount++ == 0) {
                     // 基準PCRを設定(受信側のストアを増やすため少し引く)
                     m_baseTick = ::GetTickCount() - m_initStore;

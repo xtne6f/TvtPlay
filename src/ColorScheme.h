@@ -71,7 +71,6 @@ public:
 	LPCTSTR GetName() const { return m_Name.Get(); }
 	bool SetName(LPCTSTR pszName);
 	LPCTSTR GetFileName() const { return m_FileName.Get(); }
-	bool Load(CSettings &Settings);
 	bool Load(LPCTSTR pszFileName);
 	bool SetFileName(LPCTSTR pszFileName);
 	void SetDefault();
@@ -125,6 +124,5 @@ private:
 	static const BorderInfo m_BorderInfoList[NUM_BORDERS];
 	static const StyleInfo m_StyleList[NUM_STYLES];
 };
-
 
 #endif

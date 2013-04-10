@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.0.9r2 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.0.9r3 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -11,14 +11,16 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
 ・x64版:  Visual C++ 2010 SP1 再頒布可能パッケージ (x64)
           # ↑ver.0.9以降、x64版はSP1の方をインストールする必要があるので注意
 
-■ver.0.9からの移行
-・TvtPlay.tvtpまたはTvtPlay(x64).tvtpのみ、置きかえてください。
+■ver.0.9、ver.0.9r2からの移行
+・TvtPlay.tvtpとTvtAudioStretchFilter.axを置きかえてください。
 
 ■以前のバージョン(～ver.0.8r2)からの移行
-・TvtPlay.tvtpとBonDriver_Pipe.dllを置きかえてください。設定ファイルはそのまま引
-  き継げます。
+・TvtPlay.tvtpとBonDriver_Pipe.dllとTvtAudioStretchFilter.axとを置きかえてくださ
+  い。設定ファイルはそのまま引き継げます。
 ・ver.0.9ではBonDriver_Pipe.dllに倍速再生に関する修正があります。必ず置き換えて
   ください。
+・ver.0.9r3ではTvtAudioStretchFilter.axに変更があります(後述の「
+  TvtAudioStretchFilterの追加機能」を参照)。必要ならば置き換えてください。
 ・ver.0.9ではデフォルトのアイコンデザインが一部変わりました。設定キーのButton04
   ～Button15を一度削除すると新しいデザインになります。
 ・ver.0.8では倍速再生ボタン2個が追加されました。アイコン画像をカスタマイズしてい
@@ -81,6 +83,31 @@ TVTest起動時につぎのようなオプションを追加することで、�
 また、倍速再生に使用するTvtAudioStretchFilterですが、倍速再生時以外は何も処理を
 しない(Waveデータを通過させるだけ)ので、このフィルタを設定するだけで負荷が上がっ
 たりすることはおそらく無いです。
+
+■TvtAudioStretchFilterの追加機能
+TVTestの音声フィルタを一つしか指定できないことへの対策として、ver.0.9r3以降に添
+付のTvtAudioStretchFilterでは、接続するDirectShowフィルタを1つだけ指定できるよう
+になりました。たとえば、フィルタを置いたフォルダに"TvtAudioStretchFilter.ini"を
+次のような内容で作成すると、(ffdshowがインストールされていれば)このフィルタの後
+続にffdshow Audio Decoderが接続されます。
+
+[TvtAudioStretchFilter]
+AddFilter={0F40E1E5-4F79-4988-B1A9-CC98794E6B55}
+
+(エラーメッセージ)
+  「追加のフィルタを生成できません。」
+  AddFilterに指定したDirectShowフィルタが見つからなかったときに表示されます。
+  
+  「追加のフィルタを接続できません。」
+  おもにフィルタの入出力ピンがPCM形式をサポートしていない(たとえばffdshow Audio
+  Decoderの設定で"Uncompressed"形式を有効にしていないなど)ときに表示されます。
+
+(上級者向け)
+  一般に1入力1出力のPCM音声フィルタであれば(おそらく)何でも追加できます。
+  AddFilterにはDirectShowフィルタのクラス識別子(CLSID)を指定してください。CLSID
+  はGraphEditを使うか、レジストリキーHKEY_CLASSES_ROOT\CLSID内部をフィルタ名(
+  FriendlyName)で検索すれば取得できます。
+  フィルタをどのように追加するかは、GraphEditで観察するとよく分かると思います。
 
 ■容量確保録画中の追っかけ再生について
 ファイル末尾(2秒ぐらい)に有効なTSデータがないとき、そのファイルはEpgDataCap_Bon
@@ -231,8 +258,8 @@ TvtAudioStretchFilterフィルタは、再生レート制御のために、Sound
 デフォルトのアイコン画像"Buttons.bmp"は、「HDUS関係ファイル置き場」(
 http://2sen.dip.jp/)のup0598.zip「非公式 TvtPlayシークボタンカスタマイズ用アイコ
 ン 修正2」のデザインをもとに作成しています。
-また、TVTest ver.0.7.22r2からソースコードを流用しています。特に以下のファイルは
-ほぼ改変なしに流用しています(差分は"diff_TVTestStatusView_orig.txt"を参照)
+また、おもにTVTest ver.0.7.23からソースコードを流用しています。特に以下のファイ
+ルはほぼ改変なしに流用しています(差分は"diff_TVTestStatusView_orig.txt"を参照)
   "Aero.cpp"
   "Aero.h"
   "BasicWindow.cpp"
@@ -241,14 +268,10 @@ http://2sen.dip.jp/)のup0598.zip「非公式 TvtPlayシークボタンカスタ
   "ColorScheme.h"
   "DrawUtil.h"
   "DrawUtil.cpp"
-  "IniFile.cpp"
-  "IniFile.h"
-  "Settings.cpp"
-  "Settings.h"
+  "Settings.cpp"(From: ver.0.7.21r2)
+  "Settings.h"(From: ver.0.7.21r2)
   "StatusView.cpp"
   "StatusView.h"
-  "StringUtility.cpp"
-  "StringUtility.h"
   "Theme.cpp"
   "Theme.h"
   "WindowUtil.cpp"
@@ -257,6 +280,12 @@ http://2sen.dip.jp/)のup0598.zip「非公式 TvtPlayシークボタンカスタ
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.0.9r3 (2011-10-20)
+・TVTest ver.0.7.23でボーダーの配色方法が微妙に変化したので追随
+・"TVTest.ini"の読み込み部分を0.7.21r2ベースに戻して軽量化+今後のTVH264に対応
+・"TvtPlay.ini"のFileInfoセクションの読み込み部分を効率化
+・TvtAudioStretchFilterに機能追加
+・ver.1.0は人柱版になるかもしれない(ならないかもしれない)
 ver.0.9r2 (2011-10-03)
 ・ドライバ変更時のチャンネル設定の問題が解決されたので、TVTest ver.0.7.22以降に
   ついて、ver.0.8r2での仮対応を元にもどした

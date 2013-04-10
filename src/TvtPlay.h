@@ -109,7 +109,7 @@ public:
     bool IsFixed(bool *pfSpecialExt = NULL) const { if (pfSpecialExt) *pfSpecialExt=m_fSpecialExt; return m_fFixed; }
     bool IsPaused() const { return m_fPaused; }
     bool IsAutoLoop() const { return m_fAutoLoop; }
-    
+
     bool Open(const POINT &pt, UINT flags);
     void Pause(bool fPause);
     void SeekToBegin();

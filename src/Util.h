@@ -1,8 +1,6 @@
 ﻿#ifndef INCLUDE_UTIL_H
 #define INCLUDE_UTIL_H
 
-#include "StringUtility.h"
-
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
 #define WM_ASFLT_STRETCH    (WM_APP + 1)
@@ -71,7 +69,18 @@ protected:
 	virtual void OnTrace(LPCTSTR pszOutput)=0;
 };
 
+__declspec(restrict) LPWSTR DuplicateString(LPCWSTR pszString);
+bool ReplaceString(LPWSTR *ppszString,LPCWSTR pszNewString);
+
+inline bool IsStringEmpty(LPCWSTR pszString) {
+	return pszString==NULL || pszString[0]==L'\0';
+}
+inline LPCWSTR NullToEmptyString(LPCWSTR pszString) {
+	return pszString!=NULL?pszString:L"";
+}
+
 COLORREF MixColor(COLORREF Color1,COLORREF Color2,BYTE Ratio=128);
+bool CompareLogFont(const LOGFONT *pFont1,const LOGFONT *pFont2);
 
 class CDynamicString {
 protected:
@@ -104,8 +113,6 @@ public:
 	int Compare(LPCTSTR pszString) const;
 	int CompareIgnoreCase(LPCTSTR pszString) const;
 };
-
-bool CompareLogFont(const LOGFONT *pFont1,const LOGFONT *pFont2);
 
 class CGlobalLock
 {

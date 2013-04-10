@@ -83,6 +83,21 @@ bool DrawBorder(HDC hdc,const RECT &Rect,const BorderInfo *pInfo)
 }
 
 
+inline BYTE RGBIntensity(COLORREF Color)
+{
+	return (BYTE)((GetRValue(Color)*19672+GetGValue(Color)*38621+GetBValue(Color)*7500)>>16);
+}
+
+inline COLORREF GetHighlightColor(COLORREF Color)
+{
+	return MixColor(RGB(255,255,255),Color,48+RGBIntensity(Color)/3);
+}
+
+inline COLORREF GetShadowColor(COLORREF Color)
+{
+	return MixColor(Color,RGB(0,0,0),96+RGBIntensity(Color)/2);
+}
+
 bool DrawBorder(HDC hdc,RECT *pRect,const BorderInfo *pInfo)
 {
 	if (hdc==NULL || pRect==NULL || pInfo==NULL)
@@ -102,20 +117,20 @@ bool DrawBorder(HDC hdc,RECT *pRect,const BorderInfo *pInfo)
 		::Rectangle(hdc,rc.left,rc.top,rc.right,rc.bottom);
 		break;
 	case BORDER_SUNKEN:
-		::SetDCPenColor(hdc,MixColor(pInfo->Color,RGB(255,255,255)));
+		::SetDCPenColor(hdc,GetHighlightColor(pInfo->Color));
 		::MoveToEx(hdc,rc.left+1,rc.bottom-1,NULL);
 		::LineTo(hdc,rc.right-1,rc.bottom-1);
 		::LineTo(hdc,rc.right-1,rc.top);
-		::SetDCPenColor(hdc,MixColor(pInfo->Color,0));
+		::SetDCPenColor(hdc,GetShadowColor(pInfo->Color));
 		::LineTo(hdc,rc.left,rc.top);
 		::LineTo(hdc,rc.left,rc.bottom);
 		break;
 	case BORDER_RAISED:
-		::SetDCPenColor(hdc,MixColor(pInfo->Color,RGB(255,255,255)));
+		::SetDCPenColor(hdc,GetHighlightColor(pInfo->Color));
 		::MoveToEx(hdc,rc.right-2,rc.top,NULL);
 		::LineTo(hdc,rc.left,rc.top);
 		::LineTo(hdc,rc.left,rc.bottom-1);
-		::SetDCPenColor(hdc,MixColor(pInfo->Color,0));
+		::SetDCPenColor(hdc,GetShadowColor(pInfo->Color));
 		::LineTo(hdc,rc.right-1,rc.bottom-1);
 		::LineTo(hdc,rc.right-1,rc.top-1);
 		break;
@@ -151,6 +166,22 @@ bool SubtractBorderRect(const BorderInfo *pInfo,RECT *pRect)
 		return false;
 	if (pInfo->Type!=BORDER_NONE)
 		::InflateRect(pRect,-1,-1);
+	return true;
+}
+
+
+bool GetBorderWidths(const BorderInfo *pInfo,RECT *pRect)
+{
+	if (pInfo==NULL || pRect==NULL)
+		return false;
+	if (pInfo->Type!=BORDER_NONE) {
+		pRect->left=1;
+		pRect->top=1;
+		pRect->right=1;
+		pRect->bottom=1;
+	} else {
+		::SetRectEmpty(pRect);
+	}
 	return true;
 }
 

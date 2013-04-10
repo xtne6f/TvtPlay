@@ -35,6 +35,8 @@ BOOL ASFilterPostMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
 static const GUID CLSID_TvtAudioStretchFilter = 
 { 0xf8be8ba2, 0xb9e, 0x4f1f, { 0x9d, 0xb8, 0xe6, 0x3, 0xbd, 0x3e, 0xf7, 0x11 } };
 
+static HINSTANCE g_hinstDLL;
+
 #define FILTER_NAME         "TvtAudioStretchFilter"
 #define L_FILTER_NAME       L"TvtAudioStretchFilter"
 
@@ -59,6 +61,7 @@ public:
     HRESULT StartStreaming();
     HRESULT StopStreaming();
 private:
+    static IPin* GetFilterPin(IBaseFilter *pFilter, PIN_DIRECTION dir);
     void OnStreamChanged(const WAVEFORMATEX *pwfx);
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
     ATOM m_atom;
@@ -67,6 +70,7 @@ private:
     float m_rate;
     bool m_fAcceptConv, m_fStereo;
     soundtouch::SoundTouch m_stouch;
+    bool m_fFilterAdded;
     //DWORD m_dwTick;
 };
 
@@ -82,6 +86,7 @@ CTvtAudioStretchFilter::CTvtAudioStretchFilter(LPUNKNOWN punk, HRESULT *phr)
     , m_rate(1.0f)
     , m_fAcceptConv(false)
     , m_fStereo(false)
+    , m_fFilterAdded(false)
 {
 }
 
@@ -161,18 +166,128 @@ HRESULT CTvtAudioStretchFilter::GetMediaType(int iPosition, CMediaType *pMediaTy
     if (!m_pInput->IsConnected()) return E_UNEXPECTED;
     if (iPosition < 0) return E_INVALIDARG;
     if (iPosition > 0) return VFW_S_NO_MORE_ITEMS;
-    
+
     // 接続された入力と同じ形式のみ出力できる
     *pMediaType = m_pInput->CurrentMediaType();
     return S_OK;
 }
 
 
+#if 0
+// 参照カウントを表示する
+static void ShowRefCount(IUnknown *pUnk, LPCTSTR pszFormat = NULL)
+{
+    int ref = 0;
+    if (pUnk) {
+        pUnk->AddRef();
+        ref = (int)pUnk->Release();
+    }
+    TCHAR szStr[256];
+    ::wsprintf(szStr, pszFormat?pszFormat:TEXT("ref:%d"), ref);
+    ::MessageBox(NULL, szStr, NULL, MB_OK);
+}
+#endif
+
+
+// フィルタから指定方向のピンを検索する
+// 参考: TVTest_0.7.22r2/DirectShowUtil.cpp
+IPin* CTvtAudioStretchFilter::GetFilterPin(IBaseFilter *pFilter, PIN_DIRECTION dir)
+{
+    IEnumPins *pEnumPins = NULL;
+    IPin *pPin;
+    IPin *pRetPin = NULL;
+
+    if (pFilter->EnumPins(&pEnumPins) == S_OK) {
+        ULONG cFetched;
+        while (!pRetPin && pEnumPins->Next(1, &pPin, &cFetched) == S_OK) {
+            PIN_INFO stPin;
+            if (pPin->QueryPinInfo(&stPin) == S_OK) {
+                if (stPin.dir == dir) {
+                    pRetPin = pPin;
+                    pRetPin->AddRef();
+                }
+                if (stPin.pFilter) stPin.pFilter->Release();
+            }
+            pPin->Release();
+        }
+        pEnumPins->Release();
+    }
+    return pRetPin;
+}
+
+
 HRESULT CTvtAudioStretchFilter::CompleteConnect(PIN_DIRECTION dir, IPin *pReceivePin)
 {
+    if (dir == PINDIR_OUTPUT && !m_fFilterAdded) {
+        IFilterGraph *pGraph = GetFilterGraph();
+        IBaseFilter *pFilter = NULL;
+        HRESULT hr;
+
+        // 設定ファイルに指定されていれば、追加のフィルタを生成する
+        WCHAR szIniPath[MAX_PATH + 4];
+        if (::GetModuleFileName(g_hinstDLL, szIniPath, MAX_PATH)) {
+            // 拡張子リネーム
+            WCHAR *p = szIniPath + ::lstrlenW(szIniPath) - 1;
+            while (p >= szIniPath && *p != L'\\' && *p != L'.') --p;
+            if (p >= szIniPath && *p == L'.') ::lstrcpyW(p, L".ini");
+            else ::lstrcatW(szIniPath, L".ini");
+
+            WCHAR szFilterID[64];
+            ::GetPrivateProfileStringW(L_FILTER_NAME, L"AddFilter", L"",
+                                       szFilterID, _countof(szFilterID), szIniPath);
+            if (szFilterID[0]) {
+                CLSID clsid;
+                if (SUCCEEDED(::CLSIDFromString(szFilterID, &clsid))) {
+                    hr = ::CoCreateInstance(clsid, NULL, CLSCTX_INPROC, IID_IBaseFilter,
+                                            reinterpret_cast<LPVOID*>(&pFilter));
+                    if (FAILED(hr)) pFilter = NULL;
+                }
+                if (!pFilter) {
+                    ::MessageBox(NULL, TEXT("追加のフィルタを生成できません。"),
+                                 TEXT(FILTER_NAME), MB_ICONWARNING);
+                }
+            }
+        }
+
+        // 追加のフィルタをこのフィルタの出力端に挿入する
+        bool fSucceeded = false;
+        if (pGraph && pFilter &&
+            SUCCEEDED(pGraph->AddFilter(pFilter, NULL)) &&
+            SUCCEEDED(pGraph->Disconnect(pReceivePin)) &&
+            SUCCEEDED(pGraph->Disconnect(m_pOutput)))
+        {
+            m_fFilterAdded = true;
+            IPin *pInput = GetFilterPin(pFilter, PINDIR_INPUT);
+            if (pInput) {
+                hr = pGraph->ConnectDirect(m_pOutput, pInput, NULL);
+                if (SUCCEEDED(hr)) {
+                    IPin *pOutput = GetFilterPin(pFilter, PINDIR_OUTPUT);
+                    if (pOutput) {
+                        hr = pGraph->ConnectDirect(pOutput, pReceivePin, NULL);
+                        if (SUCCEEDED(hr)) fSucceeded = true;
+                        pOutput->Release();
+                    }
+                }
+                pInput->Release();
+            }
+            if (!fSucceeded) {
+                pGraph->RemoveFilter(pFilter);
+                // つなぎ直す
+                hr = pGraph->ConnectDirect(m_pOutput, pReceivePin, NULL);
+                ASSERT(SUCCEEDED(hr));
+            }
+        }
+
+        if (pFilter) pFilter->Release();
+        if (pFilter && !fSucceeded) {
+            ::MessageBox(NULL, TEXT("追加のフィルタを接続できません。"),
+                         TEXT(FILTER_NAME), MB_ICONWARNING);
+        }
+    }
+
     if (dir != PINDIR_INPUT) return S_OK;
     ASSERT(!m_hwnd);
-    
+
     if (!m_atom) {
         // ウィンドウクラスを登録
         // ついでにこのフィルタがプロセス内で1つであることを保証する
@@ -190,11 +305,11 @@ HRESULT CTvtAudioStretchFilter::CompleteConnect(PIN_DIRECTION dir, IPin *pReceiv
         m_atom = ::RegisterClass(&wc);
         if (!m_atom) return S_FALSE;
     }
-    
+
     m_fRate = m_fPitch = m_fTempo = m_fMute = false;
     m_rate = 1.0f;
     m_fChanged = true;
-    
+
     if (!m_hwnd) {
         // ウインドウ名をシステム全体で一意にする
         TCHAR szName[128];
@@ -205,7 +320,7 @@ HRESULT CTvtAudioStretchFilter::CompleteConnect(PIN_DIRECTION dir, IPin *pReceiv
                                 HWND_MESSAGE, NULL, ::GetModuleHandle(NULL), this);
         if (!m_hwnd) return S_FALSE;
     }
-    
+
     return S_OK;
 }
 
@@ -300,7 +415,7 @@ HRESULT CTvtAudioStretchFilter::Transform(IMediaSample *pIn, IMediaSample *pOut)
     // データサイズは伸縮する
     ASSERT(destLen <= pOut->GetSize());
     pOut->SetActualDataLength(destLen);
-    
+
     return S_OK;
 }
 
@@ -428,7 +543,10 @@ STDAPI DllUnregisterServer()
 
 extern "C" BOOL WINAPI DllEntryPoint(HINSTANCE, ULONG, LPVOID);
 
-BOOL APIENTRY DllMain(HANDLE hModule, DWORD dwReason, LPVOID lpReserved)
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
-    return DllEntryPoint((HINSTANCE)(hModule), dwReason, lpReserved);
+    if (fdwReason == DLL_PROCESS_ATTACH) {
+        g_hinstDLL = hinstDLL;
+    }
+    return DllEntryPoint(hinstDLL, fdwReason, lpvReserved);
 }

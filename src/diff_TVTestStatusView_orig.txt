@@ -1,4 +1,4 @@
-﻿diff TVTestStatusView_orig/Aero.cpp ./Aero.cpp
+﻿diff diff_TVTestStatusView_orig/Aero.cpp ./Aero.cpp
 1c1
 < #include "stdafx.h"
 ---
@@ -114,7 +114,7 @@
 < 		}
 < 	}
 < 	::EndPaint(hwnd,&ps);
-diff TVTestStatusView_orig/Aero.h ./Aero.h
+diff diff_TVTestStatusView_orig/Aero.h ./Aero.h
 4,18d3
 < 
 < class CAeroGlass
@@ -140,7 +140,7 @@ diff TVTestStatusView_orig/Aero.h ./Aero.h
 < 	void OnPaint(HWND hwnd);
 < };
 < 
-diff TVTestStatusView_orig/BasicWindow.cpp ./BasicWindow.cpp
+diff diff_TVTestStatusView_orig/BasicWindow.cpp ./BasicWindow.cpp
 1,2c1,3
 < #include "stdafx.h"
 < #include "TVTest.h"
@@ -148,27 +148,24 @@ diff TVTestStatusView_orig/BasicWindow.cpp ./BasicWindow.cpp
 > #include <Windows.h>
 > #include <WindowsX.h>
 > #include "Util.h"
-diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
+diff diff_TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 1,4c1,2
 < #include "stdafx.h"
+< #include <algorithm>
 < #include "TVTest.h"
 < #include "AppMain.h"
-< #include "ColorScheme.h"
 ---
 > #include <Windows.h>
 > #include "Util.h"
-6,8c4
+7,9d4
 < #include "DialogUtil.h"
 < #include "DrawUtil.h"
 < #include "resource.h"
----
-> #include "ColorScheme.h"
-15a12,13
+16a12
 > #define lengthof _countof
-> 
-42d39
+45d40
 < 	{HEXRGB(0xCCCCCC),	TEXT("Splitter"),							TEXT("分割線")},
-44,187d40
+47,190d41
 < 	{HEXRGB(0x666666),	TEXT("PanelBack"),							TEXT("パネル背景")},
 < 	{HEXRGB(0xCCCCCC),	TEXT("PanelText"),							TEXT("パネル文字")},
 < 	{HEXRGB(0xCCCCCC),	TEXT("PanelTabBack"),						TEXT("パネルタブ背景1")},
@@ -264,7 +261,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 	{HEXRGB(0x777777),	TEXT("SideBarCheckBack"),					TEXT("サイドバーチェック背景1")},
 < 	{HEXRGB(0x222222),	TEXT("SideBarCheckBack2"),					TEXT("サイドバーチェック背景2")},
 < 	{HEXRGB(0xBBBBBB),	TEXT("SideBarCheckIcon"),					TEXT("サイドバーチェックアイコン")},
-< 	{HEXRGB(0x222222),	TEXT("SideBarCheckBorder"),					TEXT("サイドバーチェック外枠")},
+< 	{HEXRGB(0x444444),	TEXT("SideBarCheckBorder"),					TEXT("サイドバーチェック外枠")},
 < 	{HEXRGB(0x777777),	TEXT("SideBarBorder"),						TEXT("サイドバー外枠")},
 < 	{HEXRGB(0x222222),	TEXT("NotificationBarBack"),				TEXT("通知バー背景1")},
 < 	{HEXRGB(0x333333),	TEXT("NotificationBarBack2"),				TEXT("通知バー背景2")},
@@ -313,7 +310,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 	{RGB(224,240,255),	TEXT("EPGContentEducation"),				TEXT("EPG番組表趣味/教育番組")},
 < 	{RGB(224,240,255),	TEXT("EPGContentWelfare"),					TEXT("EPG番組表福祉番組")},
 < 	{RGB(240,240,240),	TEXT("EPGContentOther"),					TEXT("EPG番組表その他の番組")},
-197,264d49
+200,267d50
 < 	{TEXT("PanelTabBackGradient"),						Theme::DIRECTION_VERT,	true,
 < 		COLOR_PANELTABBACK1,					COLOR_PANELTABBACK2},
 < 	{TEXT("PanelCurTabBackGradient"),					Theme::DIRECTION_VERT,	true,
@@ -382,7 +379,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 		COLOR_PROGRAMGUIDETIMEBACK_18TO20_1,	COLOR_PROGRAMGUIDETIMEBACK_18TO20_2},
 < 	{TEXT("ProgramGuideTime21To23BackGradient"),		Theme::DIRECTION_HORZ,	true,
 < 		COLOR_PROGRAMGUIDETIMEBACK_21TO23_1,	COLOR_PROGRAMGUIDETIMEBACK_21TO23_2},
-278,327d62
+281,330d63
 < 	{TEXT("TitleBarBorder"),					Theme::BORDER_RAISED,
 < 		COLOR_TITLEBARBORDER,						true},
 < 	{TEXT("TitleBarCaptionBorder"),				Theme::BORDER_NONE,
@@ -433,7 +430,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 		COLOR_CONTROLPANELITEMBORDER,				false},
 < 	{TEXT("ControlPanelHighlightBorder"),		Theme::BORDER_NONE,
 < 		COLOR_CONTROLPANELHIGHLIGHTBORDER,			false},
-337,380d71
+340,383d72
 < 	{GRADIENT_TITLEBARBACK,						BORDER_TITLEBARCAPTION,
 < 		COLOR_TITLEBARTEXT},
 < 	{GRADIENT_TITLEBARICON,						BORDER_TITLEBARICON,
@@ -478,11 +475,21 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 		COLOR_CONTROLPANELTEXT},
 < 	{GRADIENT_CONTROLPANELHIGHLIGHTBACK,		BORDER_CONTROLPANELHIGHLIGHTITEM,
 < 		COLOR_CONTROLPANELHIGHLIGHTTEXT},
-571,573d261
+546c235
+< bool CColorScheme::Load(CSettings &Settings)
+---
+> bool CColorScheme::Load(LPCTSTR pszFileName)
+547a237
+> 	CSettings Settings;
+551c241
+< 	if (!Settings.SetSection(TEXT("ColorScheme")))
+---
+> 	if (!Settings.Open(pszFileName,TEXT("ColorScheme"),CSettings::OPEN_READ))
+574,576d263
 < 		} else if (i==COLOR_SPLITTER) {
 < 			m_ColorList[i]=::GetSysColor(COLOR_3DFACE);
 < 			SetLoadedFlag(i);
-583,636d270
+586,639d272
 < 				{COLOR_PROGRAMLISTPANEL_CUREVENTBACK1,		COLOR_PROGRAMLISTPANEL_EVENTBACK1},
 < 				{COLOR_PROGRAMLISTPANEL_CUREVENTBACK2,		COLOR_PROGRAMLISTPANEL_EVENTBACK2},
 < 				{COLOR_PROGRAMLISTPANEL_CUREVENTTEXT,		COLOR_PROGRAMLISTPANEL_EVENTTEXT},
@@ -490,7 +497,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 				{COLOR_PROGRAMLISTPANEL_CURTITLEBACK2,		COLOR_PROGRAMLISTPANEL_TITLEBACK2},
 < 				{COLOR_PROGRAMLISTPANEL_CURTITLETEXT,		COLOR_PROGRAMLISTPANEL_TITLETEXT},
 < 				{COLOR_PANELTABLINE,						COLOR_PANELTABBORDER},
-< 				{COLOR_PANELTITLEBORDER,					COLOR_PANELTITLEBACK1},
+< 			//	{COLOR_PANELTITLEBORDER,					COLOR_PANELTITLEBACK1},
 < 				{COLOR_CHANNELPANEL_CURCHANNELNAMEBACK1,	COLOR_CHANNELPANEL_CHANNELNAMEBACK1},
 < 				{COLOR_CHANNELPANEL_CURCHANNELNAMEBACK2,	COLOR_CHANNELPANEL_CHANNELNAMEBACK2},
 < 				{COLOR_CHANNELPANEL_CURCHANNELNAMETEXT,		COLOR_CHANNELPANEL_CHANNELNAMETEXT},
@@ -521,7 +528,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 				{COLOR_TITLEBARHIGHLIGHTBACK1,				COLOR_STATUSHIGHLIGHTBACK1},
 < 				{COLOR_TITLEBARHIGHLIGHTBACK2,				COLOR_STATUSHIGHLIGHTBACK2},
 < 				{COLOR_TITLEBARHIGHLIGHTICON,				COLOR_STATUSHIGHLIGHTTEXT},
-< 				{COLOR_TITLEBARBORDER,						COLOR_TITLEBARBACK1},
+< 			//	{COLOR_TITLEBARBORDER,						COLOR_TITLEBARBACK1},
 < 				{COLOR_SIDEBARBACK1,						COLOR_STATUSBACK1},
 < 				{COLOR_SIDEBARBACK2,						COLOR_STATUSBACK2},
 < 				{COLOR_SIDEBARICON,							COLOR_STATUSTEXT},
@@ -531,13 +538,18 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 				{COLOR_SIDEBARCHECKBACK1,					COLOR_SIDEBARBACK1},
 < 				{COLOR_SIDEBARCHECKBACK2,					COLOR_SIDEBARBACK2},
 < 				{COLOR_SIDEBARCHECKICON,					COLOR_SIDEBARICON},
-< 				{COLOR_SIDEBARCHECKBORDER,					COLOR_SIDEBARCHECKBACK2},
-< 				{COLOR_SIDEBARBORDER,						COLOR_SIDEBARBACK1},
+< 			//	{COLOR_SIDEBARCHECKBORDER,					COLOR_SIDEBARCHECKBACK2},
+< 			//	{COLOR_SIDEBARBORDER,						COLOR_SIDEBARBACK1},
 < 				{COLOR_PROGRAMGUIDECURCHANNELBACK1,			COLOR_PROGRAMGUIDECHANNELBACK1},
 < 				{COLOR_PROGRAMGUIDECURCHANNELBACK2,			COLOR_PROGRAMGUIDECHANNELBACK2},
 < 				{COLOR_PROGRAMGUIDECURCHANNELTEXT,			COLOR_PROGRAMGUIDECHANNELTEXT},
 < 				{COLOR_PROGRAMGUIDETIMELINE,				COLOR_PROGRAMGUIDETIMETEXT},
-657,665d290
+646,649d278
+< 				{COLOR_PANELTITLEBORDER,	COLOR_PANELTITLEBACK1,		COLOR_PANELTITLEBACK2},
+< 				{COLOR_TITLEBARBORDER,		COLOR_TITLEBARBACK1,		COLOR_TITLEBARBACK2},
+< 				{COLOR_SIDEBARCHECKBORDER,	COLOR_SIDEBARCHECKBACK1,	COLOR_SIDEBARCHECKBACK2},
+< 				{COLOR_SIDEBARBORDER,		COLOR_SIDEBARBACK1,			COLOR_SIDEBARBACK2},
+683,691d311
 < 		} else {
 < 			switch (i) {
 < 			case GRADIENT_TITLEBARICON:
@@ -547,7 +559,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 				m_GradientList[i].Type=m_GradientList[GRADIENT_SIDEBARBACK].Type;
 < 				break;
 < 			}
-678,686d302
+704,712d323
 < 		} else {
 < 			switch (i) {
 < 			case GRADIENT_TITLEBARICON:
@@ -557,7 +569,20 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 				m_GradientList[i].Direction=m_GradientList[GRADIENT_SIDEBARBACK].Direction;
 < 				break;
 < 			}
-712,744d327
+715a327,328
+> 	Settings.Close();
+> 
+718c331
+< 	if (Settings.SetSection(TEXT("Style"))) {
+---
+> 	if (Settings.Open(pszFileName,TEXT("Style"),CSettings::OPEN_READ)) {
+731a345
+> 		Settings.Close();
+734,780d347
+< 	return true;
+< }
+< 
+< 
 < bool CColorScheme::Save(CSettings &Settings) const
 < {
 < 	int i;
@@ -591,7 +616,26 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < }
 < 
 < 
-761,771d343
+< bool CColorScheme::Load(LPCTSTR pszFileName)
+< {
+< 	CSettings Settings;
+< 
+< 	if (!Settings.Open(pszFileName,CSettings::OPEN_READ))
+< 		return false;
+< 
+< 	if (!Load(Settings))
+< 		return false;
+< 
+782,789d348
+< 
+< 	if (m_Name.IsEmpty()) {
+< 		TCHAR szName[MAX_COLORSCHEME_NAME];
+< 		::lstrcpyn(szName,::PathFindFileName(pszFileName),lengthof(szName));
+< 		::PathRemoveExtension(szName);
+< 		SetName(szName);
+< 	}
+< 
+794,804d352
 < bool CColorScheme::Save(LPCTSTR pszFileName) const
 < {
 < 	CSettings Settings;
@@ -603,15 +647,13 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < }
 < 
 < 
-887,1675d458
+920,1841d467
 < }
 < 
 < 
 < 
 < 
 < CColorSchemeList::CColorSchemeList()
-< 	: m_NumColorSchemes(0)
-< 	, m_ppList(NULL)
 < {
 < }
 < 
@@ -624,8 +666,22 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 
 < bool CColorSchemeList::Add(CColorScheme *pColorScheme)
 < {
-< 	m_ppList=(CColorScheme**)realloc(m_ppList,(m_NumColorSchemes+1)*sizeof(CColorScheme*));
-< 	m_ppList[m_NumColorSchemes++]=pColorScheme;
+< 	if (pColorScheme==NULL)
+< 		return false;
+< 	m_List.push_back(pColorScheme);
+< 	return true;
+< }
+< 
+< 
+< bool CColorSchemeList::Insert(int Index,CColorScheme *pColorScheme)
+< {
+< 	if (Index<0)
+< 		return false;
+< 	if ((size_t)Index>=m_List.size())
+< 		return Add(pColorScheme);
+< 	auto i=m_List.begin();
+< 	std::advance(i,Index);
+< 	m_List.insert(i,pColorScheme);
 < 	return true;
 < }
 < 
@@ -636,20 +692,20 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 	WIN32_FIND_DATA wfd;
 < 	TCHAR szFileName[MAX_PATH];
 < 
-< 	PathCombine(szFileName,pszDirectory,TEXT("*.httheme"));
-< 	hFind=FindFirstFile(szFileName,&wfd);
+< 	::PathCombine(szFileName,pszDirectory,TEXT("*.httheme"));
+< 	hFind=::FindFirstFile(szFileName,&wfd);
 < 	if (hFind!=INVALID_HANDLE_VALUE) {
 < 		do {
 < 			CColorScheme *pColorScheme;
 < 
-< 			PathCombine(szFileName,pszDirectory,wfd.cFileName);
+< 			::PathCombine(szFileName,pszDirectory,wfd.cFileName);
 < 			pColorScheme=new CColorScheme;
 < 			if (pColorScheme->Load(szFileName))
 < 				Add(pColorScheme);
 < 			else
 < 				delete pColorScheme;
-< 		} while (FindNextFile(hFind,&wfd));
-< 		FindClose(hFind);
+< 		} while (::FindNextFile(hFind,&wfd));
+< 		::FindClose(hFind);
 < 	}
 < 	return true;
 < }
@@ -657,32 +713,66 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 
 < void CColorSchemeList::Clear()
 < {
-< 	if (m_ppList!=NULL) {
-< 		int i;
-< 
-< 		for (i=0;i<m_NumColorSchemes;i++)
-< 			delete m_ppList[i];
-< 		free(m_ppList);
-< 		m_ppList=NULL;
-< 		m_NumColorSchemes=0;
-< 	}
+< 	for (auto i=m_List.begin();i!=m_List.end();i++)
+< 		delete *i;
+< 	m_List.clear();
 < }
 < 
 < 
 < CColorScheme *CColorSchemeList::GetColorScheme(int Index)
 < {
-< 	if (Index<0 || Index>=m_NumColorSchemes)
+< 	if (Index<0 || (size_t)Index>=m_List.size())
 < 		return NULL;
-< 	return m_ppList[Index];
+< 	return m_List[Index];
 < }
 < 
 < 
 < bool CColorSchemeList::SetColorScheme(int Index,const CColorScheme *pColorScheme)
 < {
-< 	if (Index<0 || Index>=m_NumColorSchemes)
-< 		return true;
-< 	*m_ppList[Index]=*pColorScheme;
+< 	if (Index<0 || (size_t)Index>=m_List.size() || pColorScheme==NULL)
+< 		return false;
+< 	*m_List[Index]=*pColorScheme;
 < 	return true;
+< }
+< 
+< 
+< int CColorSchemeList::FindByName(LPCTSTR pszName,int FirstIndex) const
+< {
+< 	if (pszName==NULL)
+< 		return -1;
+< 
+< 	for (int i=max(FirstIndex,0);i<(int)m_List.size();i++) {
+< 		if (m_List[i]->GetName()!=NULL
+< 				&& ::lstrcmpi(m_List[i]->GetName(),pszName)==0)
+< 			return i;
+< 	}
+< 	return -1;
+< }
+< 
+< 
+< void CColorSchemeList::SortByName()
+< {
+< 	if (m_List.size()>1) {
+< 		class CPredicator
+< 		{
+< 		public:
+< 			bool operator()(const CColorScheme *pColorScheme1,
+< 							const CColorScheme *pColorScheme2) const
+< 			{
+< 				LPCTSTR pszName1=pColorScheme1->GetName();
+< 				if (pszName1==NULL)
+< 					pszName1=TEXT("");
+< 
+< 				LPCTSTR pszName2=pColorScheme2->GetName();
+< 				if (pszName2==NULL)
+< 					pszName2=TEXT("");
+< 
+< 				return ::lstrcmpi(pszName1,pszName2)<0;
+< 			}
+< 		};
+< 
+< 		std::sort(m_List.begin(),m_List.end(),CPredicator());
+< 	}
 < }
 < 
 < 
@@ -797,18 +887,26 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 
 < 			GetThemesDirectory(szDirectory,lengthof(szDirectory));
 < 			m_PresetList.Load(szDirectory);
+< 			//m_PresetList.SortByName();
+< 			CColorScheme *pColorScheme=new CColorScheme(*m_pColorScheme);
+< 			pColorScheme->SetName(TEXT("現在のテーマ"));
+< 			pColorScheme->SetLoaded();
+< 			m_PresetList.Insert(0,pColorScheme);
+< 			pColorScheme=new CColorScheme;
+< 			pColorScheme->SetName(TEXT("デフォルトのテーマ"));
+< 			pColorScheme->SetLoaded();
+< 			m_PresetList.Insert(1,pColorScheme);
 < 			for (i=0;i<m_PresetList.NumColorSchemes();i++) {
-< 				LPCTSTR pszName=m_PresetList.GetColorScheme(i)->GetName();
-< 				LRESULT Index=DlgComboBox_AddString(hDlg,IDC_COLORSCHEME_PRESET,
-< 													NullToEmptyString(pszName));
-< 				DlgComboBox_SetItemData(hDlg,IDC_COLORSCHEME_PRESET,Index,i);
+< 				DlgComboBox_AddItem(hDlg,IDC_COLORSCHEME_PRESET,i);
 < 			}
-< 			DlgComboBox_SetCueBanner(hDlg,IDC_COLORSCHEME_PRESET,L"<配色を選択してください>");
-< 			DlgComboBox_SetItemHeight(hDlg,IDC_COLORSCHEME_PRESET,0,
-< 									  7*HIWORD(::GetDialogBaseUnits())/8+4);
+< 			int Height=7*HIWORD(::GetDialogBaseUnits())/8+6;
+< 			DlgComboBox_SetItemHeight(hDlg,IDC_COLORSCHEME_PRESET,0,Height);
+< 			DlgComboBox_SetItemHeight(hDlg,IDC_COLORSCHEME_PRESET,-1,Height);
+< 			DlgComboBox_SetCurSel(hDlg,IDC_COLORSCHEME_PRESET,0);
+< 			EnableDlgItem(hDlg,IDC_COLORSCHEME_DELETE,false);
 < 
 < 			for (i=0;i<CColorScheme::NUM_COLORS;i++) {
-< 				DlgListBox_AddString(hDlg,IDC_COLORSCHEME_LIST,m_pColorScheme->GetColor(i));
+< 				DlgListBox_AddItem(hDlg,IDC_COLORSCHEME_LIST,m_pColorScheme->GetColor(i));
 < 			}
 < 			HDC hdc=GetDC(GetDlgItem(hDlg,IDC_COLORSCHEME_LIST));
 < 			HFONT hfontOld=
@@ -816,10 +914,10 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 			long MaxWidth=0;
 < 			for (i=0;i<CColorScheme::NUM_COLORS;i++) {
 < 				LPCTSTR pszName=CColorScheme::GetColorName(i);
-< 				SIZE sz;
-< 				GetTextExtentPoint32(hdc,pszName,lstrlen(pszName),&sz);
-< 				if (sz.cx>MaxWidth)
-< 					MaxWidth=sz.cx;
+< 				RECT rc={0,0,0,0};
+< 				::DrawText(hdc,pszName,-1,&rc,DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
+< 				if (rc.right>MaxWidth)
+< 					MaxWidth=rc.right;
 < 			}
 < 			SelectFont(hdc,hfontOld);
 < 			ReleaseDC(GetDlgItem(hDlg,IDC_COLORSCHEME_LIST),hdc);
@@ -911,7 +1009,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 
 < 			pmis->itemHeight=7*HIWORD(GetDialogBaseUnits())/8;
 < 			if (pmis->CtlID==IDC_COLORSCHEME_PRESET)
-< 				pmis->itemHeight+=4;
+< 				pmis->itemHeight+=6;
 < 		}
 < 		return TRUE;
 < 	*/
@@ -926,24 +1024,27 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 				case ODA_SELECT:
 < 					if ((int)pdis->itemID<0) {
 < 						::FillRect(pdis->hDC,&pdis->rcItem,
-< 									reinterpret_cast<HBRUSH>(COLOR_WINDOW+1));
+< 								   reinterpret_cast<HBRUSH>(COLOR_WINDOW+1));
 < 					} else {
-< 						CColorScheme *pColorScheme=m_PresetList.GetColorScheme((int)pdis->itemData);
+< 						const CColorScheme *pColorScheme=m_PresetList.GetColorScheme((int)pdis->itemData);
+< 						if (pColorScheme==NULL)
+< 							break;
+< 						bool fSelected=(pdis->itemState & ODS_SELECTED)!=0
+< 									&& (pdis->itemState & ODS_COMBOBOXEDIT)==0;
 < 						Theme::Style Style;
 < 
-< 						pColorScheme->GetStyle(
-< 							(pdis->itemState&ODS_SELECTED)==0?
-< 								CColorScheme::STYLE_STATUSITEM:
-< 								CColorScheme::STYLE_STATUSHIGHLIGHTITEM,
-< 							&Style);
+< 						pColorScheme->GetStyle(fSelected?
+< 											   CColorScheme::STYLE_STATUSHIGHLIGHTITEM:
+< 											   CColorScheme::STYLE_STATUSITEM,
+< 											   &Style);
 < 						Theme::DrawStyleBackground(pdis->hDC,&pdis->rcItem,&Style);
-< 						if (pColorScheme->GetName()!=NULL) {
+< 						if (!IsStringEmpty(pColorScheme->GetName())) {
 < 							int OldBkMode;
 < 							COLORREF crOldTextColor;
 < 							RECT rc;
 < 							HFONT hfont,hfontOld;
 < 
-< 							if ((pdis->itemState&ODS_SELECTED)!=0) {
+< 							if (fSelected) {
 < 								LOGFONT lf;
 < 
 < 								hfontOld=static_cast<HFONT>(::GetCurrentObject(pdis->hDC,OBJ_FONT));
@@ -951,8 +1052,9 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 								lf.lfWeight=FW_BOLD;
 < 								hfont=::CreateFontIndirect(&lf);
 < 								SelectFont(pdis->hDC,hfont);
-< 							} else
+< 							} else {
 < 								hfont=NULL;
+< 							}
 < 							OldBkMode=::SetBkMode(pdis->hDC,TRANSPARENT);
 < 							crOldTextColor=::SetTextColor(pdis->hDC,Style.TextColor);
 < 							rc=pdis->rcItem;
@@ -967,10 +1069,12 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 							}
 < 						}
 < 					}
-< 					if ((pdis->itemState&ODS_FOCUS)==0)
+< 					if ((pdis->itemState & ODS_FOCUS)==0)
 < 						break;
 < 				case ODA_FOCUS:
-< 					::DrawFocusRect(pdis->hDC,&pdis->rcItem);
+< 					if ((pdis->itemState & ODS_NOFOCUSRECT)==0
+< 							&& (pdis->itemState & ODS_COMBOBOXEDIT)!=0)
+< 						::DrawFocusRect(pdis->hDC,&pdis->rcItem);
 < 					break;
 < 				}
 < 			} else if (pdis->CtlID==IDC_COLORSCHEME_LIST) {
@@ -985,7 +1089,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 						RECT rc;
 < 						int OldBkMode;
 < 
-< 						if ((pdis->itemState&ODS_SELECTED)==0) {
+< 						if ((pdis->itemState & ODS_SELECTED)==0) {
 < 							BackSysColor=COLOR_WINDOW;
 < 							TextColor=::GetSysColor(COLOR_WINDOWTEXT);
 < 						} else {
@@ -1019,24 +1123,54 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 						::SetTextColor(pdis->hDC,OldTextColor);
 < 						::SetBkMode(pdis->hDC,OldBkMode);
 < 					}
-< 					if ((pdis->itemState&ODS_FOCUS)==0)
+< 					if ((pdis->itemState & ODS_FOCUS)==0)
 < 						break;
 < 				case ODA_FOCUS:
-< 					::DrawFocusRect(pdis->hDC,&pdis->rcItem);
+< 					if ((pdis->itemState & ODS_NOFOCUSRECT)==0)
+< 						::DrawFocusRect(pdis->hDC,&pdis->rcItem);
 < 					break;
 < 				}
 < 			}
 < 		}
 < 		return TRUE;
 < 
+< 	case WM_COMPAREITEM:
+< 		{
+< 			COMPAREITEMSTRUCT *pcis=reinterpret_cast<COMPAREITEMSTRUCT*>(lParam);
+< 
+< 			if (pcis->CtlID==IDC_COLORSCHEME_PRESET) {
+< 				if (pcis->itemData1<2 || pcis->itemData2<2)
+< 					return (int)pcis->itemData1-(int)pcis->itemData2;
+< 
+< 				const CColorScheme *pColorScheme1=m_PresetList.GetColorScheme((int)pcis->itemData1);
+< 				const CColorScheme *pColorScheme2=m_PresetList.GetColorScheme((int)pcis->itemData2);
+< 				if (pColorScheme1==NULL || pColorScheme2==NULL)
+< 					return 0;
+< 
+< 				LPCTSTR pszName1=pColorScheme1->GetName();
+< 				if (pszName1==NULL)
+< 					pszName1=TEXT("");
+< 
+< 				LPCTSTR pszName2=pColorScheme2->GetName();
+< 				if (pszName2==NULL)
+< 					pszName2=TEXT("");
+< 
+< 				int Cmp=::CompareString(pcis->dwLocaleId,NORM_IGNORECASE,pszName1,-1,pszName2,-1);
+< 				if (Cmp!=0)
+< 					Cmp-=CSTR_EQUAL;
+< 				return Cmp;
+< 			}
+< 		}
+< 		return 0;
+< 
 < 	case WM_COMMAND:
 < 		switch (LOWORD(wParam)) {
 < 		case IDC_COLORSCHEME_PRESET:
 < 			if (HIWORD(wParam)==CBN_SELCHANGE) {
-< 				int Sel=(int)SendDlgItemMessage(hDlg,IDC_COLORSCHEME_PRESET,CB_GETCURSEL,0,0);
+< 				int Sel=(int)DlgComboBox_GetCurSel(hDlg,IDC_COLORSCHEME_PRESET);
 < 
 < 				if (Sel>=0) {
-< 					int Index=(int)SendDlgItemMessage(hDlg,IDC_COLORSCHEME_PRESET,CB_GETITEMDATA,Sel,0);
+< 					int Index=(int)DlgComboBox_GetItemData(hDlg,IDC_COLORSCHEME_PRESET,Sel);
 < 					const CColorScheme *pColorScheme=m_PresetList.GetColorScheme(Index);
 < 
 < 					if (pColorScheme!=NULL) {
@@ -1059,90 +1193,97 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 						::SendMessage(hDlg,WM_COMMAND,IDC_COLORSCHEME_PREVIEW,0);
 < 					}
 < 				}
+< 
+< 				EnableDlgItem(hDlg,IDC_COLORSCHEME_DELETE,Sel>=2);
 < 			}
 < 			return TRUE;
 < 
 < 		case IDC_COLORSCHEME_SAVE:
 < 			{
-< 				TCHAR szName[MAX_PATH],szFileName[MAX_PATH];
-< 				int Index;
-< 				CColorScheme *pColorScheme=NULL;
-< 				LPCTSTR pszFileName;
-< 
-< 				GetDlgItemText(hDlg,IDC_COLORSCHEME_PRESET,szName,lengthof(szName));
-< 				if (szName[0]=='\0') {
-< 					MessageBox(hDlg,TEXT("名前を入力してください。"),NULL,MB_OK | MB_ICONEXCLAMATION);
-< 					break;
-< 				}
-< 				pszFileName=szName;
-< 				Index=(int)DlgComboBox_FindStringExact(hDlg,IDC_COLORSCHEME_PRESET,-1,szName);
-< 				if (Index>=0) {
+< 				CColorScheme *pColorScheme;
+< 				TCHAR szName[MAX_COLORSCHEME_NAME];
+< 				szName[0]=_T('\0');
+< 				LRESULT Sel=DlgComboBox_GetCurSel(hDlg,IDC_COLORSCHEME_PRESET);
+< 				if (Sel>=2) {
 < 					pColorScheme=m_PresetList.GetColorScheme(
-< 						(int)DlgComboBox_GetItemData(hDlg,IDC_COLORSCHEME_PRESET,Index));
-< 					if (pColorScheme==NULL)
+< 						(int)DlgComboBox_GetItemData(hDlg,IDC_COLORSCHEME_PRESET,Sel));
+< 					if (pColorScheme!=NULL && pColorScheme->GetName()!=NULL)
+< 						::lstrcpyn(szName,pColorScheme->GetName(),lengthof(szName));
+< 				}
+< 				if (::DialogBoxParam(GetAppClass().GetResourceInstance(),
+< 									 MAKEINTRESOURCE(IDD_SAVECOLORSCHEME),
+< 									 hDlg,SaveDlgProc,reinterpret_cast<LPARAM>(szName))!=IDOK)
+< 					return TRUE;
+< 
+< 				pColorScheme=NULL;
+< 				int Index=m_PresetList.FindByName(szName,2);
+< 				if (Index>=2) {
+< 					pColorScheme=m_PresetList.GetColorScheme(Index);
+< 				}
+< 				bool fNewColorScheme;
+< 				TCHAR szFileName[MAX_PATH];
+< 				if (pColorScheme!=NULL && !IsStringEmpty(pColorScheme->GetFileName())) {
+< 					::lstrcpy(szFileName,pColorScheme->GetFileName());
+< 					fNewColorScheme=false;
+< 				} else {
+< 					GetThemesDirectory(szFileName,lengthof(szFileName),true);
+< 					if (::lstrlen(szFileName)+1+::lstrlen(szName)+::lstrlen(m_pszExtension)>=MAX_PATH) {
+< 						MessageBox(hDlg,TEXT("名前が長すぎます。"),NULL,MB_OK | MB_ICONEXCLAMATION);
 < 						break;
-< 					pszFileName=PathFindFileName(pColorScheme->GetFileName());
-< 				}
-< 				GetThemesDirectory(szFileName,lengthof(szFileName),true);
-< 				if (lstrlen(szFileName)+1+lstrlen(pszFileName)+lstrlen(m_pszExtension)>=MAX_PATH) {
-< 					MessageBox(hDlg,TEXT("名前が長すぎます。"),NULL,MB_OK | MB_ICONEXCLAMATION);
-< 					break;
-< 				}
-< 				PathAppend(szFileName,pszFileName);
-< 				if (pszFileName==szName)
-< 					lstrcat(szFileName,m_pszExtension);
-< 				if (pColorScheme==NULL) {
+< 					}
+< 					::PathAppend(szFileName,szName);
+< 					::lstrcat(szFileName,m_pszExtension);
 < 					pColorScheme=new CColorScheme;
-< 					pColorScheme->SetName(szName);
+< 					pColorScheme->SetFileName(szFileName);
+< 					fNewColorScheme=true;
 < 				}
+< 				pColorScheme->SetName(szName);
+< 				pColorScheme->SetLoaded();
+< 
 < 				GetCurrentSettings(pColorScheme);
 < 				if (!pColorScheme->Save(szFileName)) {
-< 					if (Index<0)
+< 					if (fNewColorScheme)
 < 						delete pColorScheme;
-< 					MessageBox(hDlg,TEXT("保存ができません。"),NULL,MB_OK | MB_ICONEXCLAMATION);
+< 					::MessageBox(hDlg,TEXT("保存ができません。"),NULL,MB_OK | MB_ICONEXCLAMATION);
 < 					break;
 < 				}
-< 				if (Index<0) {
-< 					pColorScheme->SetFileName(szFileName);
-< 					pColorScheme->SetLoaded();
+< 
+< 				if (fNewColorScheme) {
 < 					m_PresetList.Add(pColorScheme);
-< 					Index=(int)DlgComboBox_AddString(hDlg,IDC_COLORSCHEME_PRESET,szName);
-< 					DlgComboBox_SetItemData(hDlg,IDC_COLORSCHEME_PRESET,Index,m_PresetList.NumColorSchemes()-1);
+< 					Index=(int)DlgComboBox_AddItem(hDlg,IDC_COLORSCHEME_PRESET,m_PresetList.NumColorSchemes()-1);
+< 				} else {
+< 					InvalidateDlgItem(hDlg,IDC_COLORSCHEME_PRESET);
+< 					int ItemCount=DlgComboBox_GetCount(hDlg,IDC_COLORSCHEME_PRESET);
+< 					for (int i=2;i<ItemCount;i++) {
+< 						if (DlgComboBox_GetItemData(hDlg,IDC_COLORSCHEME_PRESET,i)==Index) {
+< 							Index=i;
+< 							break;
+< 						}
+< 					}
 < 				}
-< 				MessageBox(hDlg,TEXT("配色を保存しました。"),TEXT("保存"),MB_OK | MB_ICONINFORMATION);
+< 				DlgComboBox_SetCurSel(hDlg,IDC_COLORSCHEME_PRESET,Index);
+< 
+< 				::MessageBox(hDlg,TEXT("テーマを保存しました。"),TEXT("保存"),MB_OK | MB_ICONINFORMATION);
 < 			}
 < 			return TRUE;
 < 
 < 		case IDC_COLORSCHEME_DELETE:
 < 			{
-< 				TCHAR szName[MAX_PATH],szFileName[MAX_PATH];
-< 				int Index;
-< 				CColorScheme *pColorScheme;
-< 				LPCTSTR pszFileName;
-< 
-< 				GetDlgItemText(hDlg,IDC_COLORSCHEME_PRESET,szName,lengthof(szName));
-< 				if (szName[0]=='\0')
+< 				LRESULT Sel=DlgComboBox_GetCurSel(hDlg,IDC_COLORSCHEME_PRESET);
+< 				if (Sel<2)
 < 					break;
-< 				Index=(int)SendDlgItemMessage(hDlg,IDC_COLORSCHEME_PRESET,CB_FINDSTRINGEXACT,-1,(LPARAM)szName);
-< 				if (Index<0
-< 						|| (pColorScheme=m_PresetList.GetColorScheme(
-< 							(int)SendDlgItemMessage(hDlg,IDC_COLORSCHEME_PRESET,CB_GETITEMDATA,Index,0)))==NULL)
+< 				CColorScheme *pColorScheme=m_PresetList.GetColorScheme(
+< 					(int)DlgComboBox_GetItemData(hDlg,IDC_COLORSCHEME_PRESET,Sel));
+< 				if (pColorScheme==NULL || IsStringEmpty(pColorScheme->GetFileName()))
 < 					break;
-< 				GetThemesDirectory(szFileName,lengthof(szFileName));
-< 				pszFileName=PathFindFileName(pColorScheme->GetFileName());
-< 				if (lstrlen(szFileName)+1+lstrlen(pszFileName)+lstrlen(m_pszExtension)>=MAX_PATH)
+< 				if (::MessageBox(hDlg,TEXT("選択されたテーマを削除しますか?"),TEXT("削除の確認"),
+< 								 MB_OKCANCEL | MB_ICONQUESTION)!=IDOK)
 < 					break;
-< 				PathAppend(szFileName,pszFileName);
-< 				if (pszFileName==szName)
-< 					lstrcat(szFileName,m_pszExtension);
-< 				if (MessageBox(hDlg,TEXT("選択された配色を削除しますか?"),TEXT("削除の確認"),
-< 							   MB_OKCANCEL | MB_ICONQUESTION)!=IDOK)
-< 					break;
-< 				if (!DeleteFile(szFileName)) {
-< 					MessageBox(hDlg,TEXT("ファイルを削除できません。"),NULL,MB_OK | MB_ICONEXCLAMATION);
+< 				if (!::DeleteFile(pColorScheme->GetFileName())) {
+< 					::MessageBox(hDlg,TEXT("ファイルを削除できません。"),NULL,MB_OK | MB_ICONEXCLAMATION);
 < 					break;
 < 				}
-< 				SendDlgItemMessage(hDlg,IDC_COLORSCHEME_PRESET,CB_DELETESTRING,Index,0);
+< 				DlgComboBox_DeleteItem(hDlg,IDC_COLORSCHEME_PRESET,Sel);
 < 			}
 < 			return TRUE;
 < 
@@ -1181,8 +1322,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 						}
 < 					}
 < 					if (SelColor!=CLR_INVALID)
-< 						m_ColorPalette.SetSel(
-< 									m_ColorPalette.FindColor(SelColor));
+< 						m_ColorPalette.SetSel(m_ColorPalette.FindColor(SelColor));
 < 				}
 < 				break;
 < 
@@ -1275,6 +1415,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 			}
 < 			return TRUE;
 < 
+< #if 0
 < 		case IDC_COLORSCHEME_DEFAULT:
 < 			{
 < 				int i;
@@ -1290,6 +1431,7 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 				::SendMessage(hDlg,WM_COMMAND,IDC_COLORSCHEME_PREVIEW,0);
 < 			}
 < 			return TRUE;
+< #endif
 < 
 < 		case IDC_COLORSCHEME_PREVIEW:
 < 			if (m_pPreviewColorScheme==NULL)
@@ -1393,13 +1535,49 @@ diff TVTestStatusView_orig/ColorScheme.cpp ./ColorScheme.cpp
 < 	}
 < 
 < 	return FALSE;
-diff TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
-5,6d4
+< }
+< 
+< 
+< INT_PTR CALLBACK CColorSchemeOptions::SaveDlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
+< {
+< 	static LPTSTR pszName;
+< 
+< 	switch (uMsg) {
+< 	case WM_INITDIALOG:
+< 		pszName=reinterpret_cast<LPTSTR>(lParam);
+< 		DlgEdit_SetText(hDlg,IDC_SAVECOLORSCHEME_NAME,pszName);
+< 		DlgEdit_LimitText(hDlg,IDC_SAVECOLORSCHEME_NAME,MAX_COLORSCHEME_NAME);
+< 		EnableDlgItem(hDlg,IDOK,pszName[0]!=_T('\0'));
+< 		return TRUE;
+< 
+< 	case WM_COMMAND:
+< 		switch (LOWORD(wParam)) {
+< 		case IDC_SAVECOLORSCHEME_NAME:
+< 			if (HIWORD(wParam)==EN_CHANGE) {
+< 				EnableDlgItem(hDlg,IDOK,GetDlgItemTextLength(hDlg,IDC_SAVECOLORSCHEME_NAME)>0);
+< 			}
+< 			return TRUE;
+< 
+< 		case IDOK:
+< 			::GetDlgItemText(hDlg,IDC_SAVECOLORSCHEME_NAME,pszName,MAX_COLORSCHEME_NAME);
+< 			if (pszName[0]==_T('\0'))
+< 				return TRUE;
+< 		case IDCANCEL:
+< 			::EndDialog(hDlg,LOWORD(wParam));
+< 			return TRUE;
+< 		}
+< 		return TRUE;
+< 	}
+< 
+< 	return FALSE;
+diff diff_TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
+5,7d4
+< #include <vector>
 < #include "Options.h"
 < #include "ColorPalette.h"
-28d25
+29d25
 < 		COLOR_SPLITTER,
-30,176c27
+31,177c27
 < 		COLOR_PANELBACK,
 < 		COLOR_PANELTEXT,
 < 		COLOR_PANELTABBACK1,
@@ -1549,7 +1727,7 @@ diff TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
 < 		COLOR_LAST=COLOR_PROGRAMGUIDE_CONTENT_LAST,
 ---
 > 		COLOR_LAST=COLOR_SCREENBORDER,
-183,216d33
+184,217d33
 < 		GRADIENT_PANELTABBACK,
 < 		GRADIENT_PANELCURTABBACK,
 < 		GRADIENT_PANELTABMARGIN,
@@ -1584,7 +1762,7 @@ diff TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
 < 		GRADIENT_PROGRAMGUIDETIME15TO17BACK,
 < 		GRADIENT_PROGRAMGUIDETIME18TO20BACK,
 < 		GRADIENT_PROGRAMGUIDETIME21TO23BACK,
-225,249d41
+226,250d41
 < 		BORDER_TITLEBAR,
 < 		BORDER_TITLEBARCAPTION,
 < 		BORDER_TITLEBARICON,
@@ -1610,7 +1788,7 @@ diff TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
 < 		BORDER_CHANNELPANEL_CUREVENTNAME2,
 < 		BORDER_CONTROLPANELITEM,
 < 		BORDER_CONTROLPANELHIGHLIGHTITEM,
-256,277d47
+257,278d47
 < 		STYLE_TITLEBARCAPTION,
 < 		STYLE_TITLEBARICON,
 < 		STYLE_TITLEBARHIGHLIGHTITEM,
@@ -1633,27 +1811,30 @@ diff TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
 < 		STYLE_CHANNELPANEL_CURCHANNELEVENTNAME2,
 < 		STYLE_CONTROLPANELITEM,
 < 		STYLE_CONTROLPANELHIGHLIGHTITEM,
-305d74
+305,306d73
+< 	bool Load(CSettings &Settings);
 < 	bool Save(CSettings &Settings) const;
-307d75
+308d74
 < 	bool Save(LPCTSTR pszFileName) const;
-359,412d126
-< };
+361,420d126
 < 
 < class CColorSchemeList
 < {
-< 	int m_NumColorSchemes;
-< 	CColorScheme **m_ppList;
-< 
 < public:
 < 	CColorSchemeList();
 < 	~CColorSchemeList();
-< 	int NumColorSchemes() const { return m_NumColorSchemes; }
+< 	int NumColorSchemes() const { return (int)m_List.size(); }
 < 	bool Add(CColorScheme *pColorScheme);
+< 	bool Insert(int Index,CColorScheme *pColorScheme);
 < 	bool Load(LPCTSTR pszDirectory);
 < 	void Clear();
 < 	CColorScheme *GetColorScheme(int Index);
 < 	bool SetColorScheme(int Index,const CColorScheme *pColorScheme);
+< 	int FindByName(LPCTSTR pszName,int FirstIndex=0) const;
+< 	void SortByName();
+< 
+< private:
+< 	std::vector<CColorScheme*> m_List;
 < };
 < 
 < class CColorSchemeOptions : public COptions
@@ -1692,7 +1873,11 @@ diff TVTestStatusView_orig/ColorScheme.h ./ColorScheme.h
 < 	bool Apply(const CColorScheme *pColorScheme) const;
 < 	void GetCurrentSettings(CColorScheme *pColorScheme);
 < 	static const LPCTSTR m_pszExtension;
-diff TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
+< 
+< 	static INT_PTR CALLBACK SaveDlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam);
+< };
+< 
+diff diff_TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
 1c1,2
 < #include "stdafx.h"
 ---
@@ -1879,7 +2064,7 @@ diff TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
 < }
 < 
 < 
-502,643d322
+507,648d327
 < HBITMAP ResizeBitmap(HBITMAP hbmSrc,int Width,int Height,int BitCount,int StretchMode)
 < {
 < 	if (hbmSrc==NULL || Width<1 || Height==0)
@@ -2022,7 +2207,7 @@ diff TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
 < }
 < 
 < 
-671,741d349
+676,746d354
 < // UIに使用するデフォルトのフォントを取得する
 < bool GetDefaultUIFont(LOGFONT *pFont)
 < {
@@ -2094,7 +2279,7 @@ diff TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
 < }
 < 
 < 
-871,926d478
+876,931d483
 < CBrush::CBrush()
 < 	: m_hbr(NULL)
 < {
@@ -2151,7 +2336,350 @@ diff TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
 < }
 < 
 < 
-1109,1641d660
+1021,1022c573,578
+< CMonoColorBitmap::CMonoColorBitmap()
+< 	: m_hbm(NULL)
+---
+> COffscreen::COffscreen()
+> 	: m_hdc(NULL)
+> 	, m_hbm(NULL)
+> 	, m_hbmOld(NULL)
+> 	, m_Width(0)
+> 	, m_Height(0)
+1026c582
+< CMonoColorBitmap::~CMonoColorBitmap()
+---
+> COffscreen::~COffscreen()
+1031c587
+< bool CMonoColorBitmap::Load(HINSTANCE hinst,LPCTSTR pszName)
+---
+> bool COffscreen::Create(int Width,int Height,HDC hdc)
+1033,1034c589
+< 	HBITMAP hbmSrc=static_cast<HBITMAP>(::LoadImage(hinst,pszName,IMAGE_BITMAP,0,0,LR_CREATEDIBSECTION));
+< 	if (hbmSrc==NULL)
+---
+> 	if (Width<=0 || Height<=0)
+1036,1045d590
+< 
+< 	bool fResult=Create(hbmSrc);
+< 
+< 	::DeleteObject(hbmSrc);
+< 
+< 	return fResult;
+< }
+< 
+< bool CMonoColorBitmap::Create(HBITMAP hbmSrc)
+< {
+1047,1054c592,604
+< 
+< 	if (hbmSrc==NULL)
+< 		return false;
+< 
+< 	BITMAP bm;
+< 	::GetObject(hbmSrc,sizeof(bm),&bm);
+< 	if ((bm.bmBitsPixel!=8 && bm.bmBitsPixel!=24 && bm.bmBitsPixel!=32)
+< 			|| bm.bmBits==NULL)
+---
+> 	HDC hdcScreen;
+> 	if (hdc==NULL) {
+> 		hdcScreen=::GetDC(NULL);
+> 		if (hdcScreen==NULL)
+> 			return false;
+> 		hdc=hdcScreen;
+> 	} else {
+> 		hdcScreen=NULL;
+> 	}
+> 	m_hdc=::CreateCompatibleDC(hdc);
+> 	if (m_hdc==NULL) {
+> 		if (hdcScreen!=NULL)
+> 			::ReleaseDC(NULL,hdcScreen);
+1056,1059c606,611
+< 
+< 	void *pBits;
+< 	m_hbm=CreateDIB(bm.bmWidth,bm.bmHeight,32,&pBits);
+< 	if (m_hbm==NULL)
+---
+> 	}
+> 	m_hbm=::CreateCompatibleBitmap(hdc,Width,Height);
+> 	if (hdcScreen!=NULL)
+> 		::ReleaseDC(NULL,hdcScreen);
+> 	if (m_hbm==NULL) {
+> 		Destroy();
+1061,1082d612
+< 
+< 	if (bm.bmBitsPixel==32) {
+< 		::CopyMemory(pBits,bm.bmBits,bm.bmWidth*4*bm.bmHeight);
+< 		m_fColorImage=true;
+< 	} else {
+< 		BYTE *p=static_cast<BYTE*>(bm.bmBits);
+< 		BYTE *q=static_cast<BYTE*>(pBits);
+< 		for (int y=0;y<bm.bmHeight;y++) {
+< 			if (bm.bmBitsPixel==8) {
+< 				for (int x=0;x<bm.bmWidth;x++) {
+< 					q[3]=p[x];
+< 					q+=4;
+< 				}
+< 			} else {
+< 				for (int x=0;x<bm.bmWidth;x++) {
+< 					q[3]=p[x*3];
+< 					q+=4;
+< 				}
+< 			}
+< 			p+=(bm.bmWidth*bm.bmBitsPixel+31)/32*4;
+< 		}
+< 		m_fColorImage=false;
+1084,1086c614,616
+< 
+< 	m_Color=CLR_INVALID;
+< 
+---
+> 	m_hbmOld=static_cast<HBITMAP>(::SelectObject(m_hdc,m_hbm));
+> 	m_Width=Width;
+> 	m_Height=Height;
+1090c620
+< void CMonoColorBitmap::Destroy()
+---
+> void COffscreen::Destroy()
+1091a622,629
+> 	if (m_hbmOld!=NULL) {
+> 		::SelectObject(m_hdc,m_hbmOld);
+> 		m_hbmOld=NULL;
+> 	}
+> 	if (m_hdc!=NULL) {
+> 		::DeleteDC(m_hdc);
+> 		m_hdc=NULL;
+> 	}
+1094a633,634
+> 		m_Width=0;
+> 		m_Height=0;
+1098c638
+< bool CMonoColorBitmap::Draw(HDC hdc,int DstX,int DstY,COLORREF Color,int SrcX,int SrcY,int Width,int Height)
+---
+> bool COffscreen::CopyTo(HDC hdc,const RECT *pDstRect)
+1100,1115c640
+< 	if (m_hbm==NULL)
+< 		return false;
+< 
+< 	BITMAP bm;
+< 	if (::GetObject(m_hbm,sizeof(bm),&bm)!=sizeof(bm))
+< 		return false;
+< 
+< 	if (Width<=0)
+< 		Width=bm.bmWidth;
+< 	if (Height<=0)
+< 		Height=bm.bmHeight;
+< 	if (SrcX<0 || SrcY<0 || SrcX+Width>bm.bmWidth || SrcY+Height>bm.bmHeight)
+< 		return false;
+< 
+< 	if (!m_fColorImage)
+< 		SetColor(Color);
+---
+> 	int DstX,DstY,Width,Height;
+1117,1317c642
+< 	HDC hdcMemory=::CreateCompatibleDC(hdc);
+< 	if (hdcMemory==NULL)
+< 		return false;
+< 	HBITMAP hbmOld=static_cast<HBITMAP>(::SelectObject(hdcMemory,m_hbm));
+< 	BLENDFUNCTION bf={AC_SRC_OVER,0,255,AC_SRC_ALPHA};
+< 	::GdiAlphaBlend(hdc,DstX,DstY,Width,Height,
+< 					hdcMemory,SrcX,SrcY,Width,Height,bf);
+< 	::SelectObject(hdcMemory,hbmOld);
+< 	::DeleteDC(hdcMemory);
+< 
+< 	return true;
+< }
+< 
+< HIMAGELIST CMonoColorBitmap::CreateImageList(int IconWidth,COLORREF Color)
+< {
+< 	if (m_hbm==NULL || IconWidth<1)
+< 		return NULL;
+< 
+< 	BITMAP bm;
+< 	if (::GetObject(m_hbm,sizeof(bm),&bm)!=sizeof(bm)
+< 			|| bm.bmWidth<IconWidth)
+< 		return NULL;
+< 
+< 	HIMAGELIST himl=::ImageList_Create(IconWidth,bm.bmHeight,ILC_COLOR32,0,1);
+< 	if (himl==NULL)
+< 		return NULL;
+< 
+< 	if (!m_fColorImage)
+< 		SetColor(Color);
+< 
+< 	::ImageList_Add(himl,m_hbm,NULL);
+< 
+< 	return himl;
+< }
+< 
+< void CMonoColorBitmap::SetColor(COLORREF Color)
+< {
+< 	if (m_Color!=Color) {
+< 		BITMAP bm;
+< 		if (::GetObject(m_hbm,sizeof(bm),&bm)!=sizeof(bm))
+< 			return;
+< 
+< 		const UINT Red=GetRValue(Color),Green=GetGValue(Color),Blue=GetBValue(Color);
+< 		BYTE *p=static_cast<BYTE*>(bm.bmBits);
+< 		for (int y=0;y<bm.bmHeight;y++) {
+< 			for (int x=0;x<bm.bmWidth;x++) {
+< #define DIVIDE_BY_255(v) ((((v)+1)*257)>>16)
+< 				UINT Alpha=p[3];
+< 				p[0]=(BYTE)DIVIDE_BY_255(Blue*Alpha);
+< 				p[1]=(BYTE)DIVIDE_BY_255(Green*Alpha);
+< 				p[2]=(BYTE)DIVIDE_BY_255(Red*Alpha);
+< 				p+=4;
+< 			}
+< 		}
+< 		m_Color=Color;
+< 	}
+< }
+< 
+< 
+< CMemoryDC::CMemoryDC()
+< 	: m_hdc(NULL)
+< {
+< }
+< 
+< CMemoryDC::CMemoryDC(HDC hdc)
+< 	: m_hdc(NULL)
+< {
+< 	Create(hdc);
+< }
+< 
+< CMemoryDC::~CMemoryDC()
+< {
+< 	Delete();
+< }
+< 
+< bool CMemoryDC::Create(HDC hdc)
+< {
+< 	Delete();
+< 
+< 	m_hdc=::CreateCompatibleDC(hdc);
+< 	if (m_hdc==NULL)
+< 		return false;
+< 	m_hbmOld=static_cast<HBITMAP>(::GetCurrentObject(m_hdc,OBJ_BITMAP));
+< 	return true;
+< }
+< 
+< void CMemoryDC::Delete()
+< {
+< 	if (m_hdc!=NULL) {
+< 		::SelectObject(m_hdc,m_hbmOld);
+< 		::DeleteDC(m_hdc);
+< 		m_hdc=NULL;
+< 	}
+< }
+< 
+< bool CMemoryDC::SetBitmap(HBITMAP hbm)
+< {
+< 	if (m_hdc==NULL || hbm==NULL)
+< 		return false;
+< 	::SelectObject(m_hdc,hbm);
+< 	return true;
+< }
+< 
+< bool CMemoryDC::Draw(HDC hdc,int DstX,int DstY,int SrcX,int SrcY,int Width,int Height)
+< {
+< 	if (m_hdc==NULL || hdc==NULL || Width<1 || Height<1)
+< 		return false;
+< 	return ::BitBlt(hdc,DstX,DstY,Width,Height,m_hdc,SrcX,SrcY,SRCCOPY)!=FALSE;
+< }
+< 
+< bool CMemoryDC::DrawStretch(HDC hdc,int DstX,int DstY,int DstWidth,int DstHeight,
+< 							int SrcX,int SrcY,int SrcWidth,int SrcHeight,int Mode)
+< {
+< 	if (m_hdc==NULL || hdc==NULL)
+< 		return false;
+< 	int OldStretchMode=::SetStretchBltMode(hdc,Mode);
+< 	::StretchBlt(hdc,DstX,DstY,DstWidth,DstHeight,m_hdc,SrcX,SrcY,SrcWidth,SrcHeight,SRCCOPY);
+< 	::SetStretchBltMode(hdc,OldStretchMode);
+< 	return true;
+< }
+< 
+< bool CMemoryDC::DrawAlpha(HDC hdc,int DstX,int DstY,int SrcX,int SrcY,int Width,int Height)
+< {
+< 	if (m_hdc==NULL || hdc==NULL)
+< 		return false;
+< 	BLENDFUNCTION bf={AC_SRC_OVER,0,255,AC_SRC_ALPHA};
+< 	::GdiAlphaBlend(hdc,DstX,DstY,Width,Height,m_hdc,SrcX,SrcY,Width,Height,bf);
+< 	return true;
+< }
+< 
+< 
+< COffscreen::COffscreen()
+< 	: m_hdc(NULL)
+< 	, m_hbm(NULL)
+< 	, m_hbmOld(NULL)
+< 	, m_Width(0)
+< 	, m_Height(0)
+< {
+< }
+< 
+< COffscreen::~COffscreen()
+< {
+< 	Destroy();
+< }
+< 
+< bool COffscreen::Create(int Width,int Height,HDC hdc)
+< {
+< 	if (Width<=0 || Height<=0)
+< 		return false;
+< 	Destroy();
+< 	HDC hdcScreen;
+< 	if (hdc==NULL) {
+< 		hdcScreen=::GetDC(NULL);
+< 		if (hdcScreen==NULL)
+< 			return false;
+< 		hdc=hdcScreen;
+< 	} else {
+< 		hdcScreen=NULL;
+< 	}
+< 	m_hdc=::CreateCompatibleDC(hdc);
+< 	if (m_hdc==NULL) {
+< 		if (hdcScreen!=NULL)
+< 			::ReleaseDC(NULL,hdcScreen);
+< 		return false;
+< 	}
+< 	m_hbm=::CreateCompatibleBitmap(hdc,Width,Height);
+< 	if (hdcScreen!=NULL)
+< 		::ReleaseDC(NULL,hdcScreen);
+< 	if (m_hbm==NULL) {
+< 		Destroy();
+< 		return false;
+< 	}
+< 	m_hbmOld=static_cast<HBITMAP>(::SelectObject(m_hdc,m_hbm));
+< 	m_Width=Width;
+< 	m_Height=Height;
+< 	return true;
+< }
+< 
+< void COffscreen::Destroy()
+< {
+< 	if (m_hbmOld!=NULL) {
+< 		::SelectObject(m_hdc,m_hbmOld);
+< 		m_hbmOld=NULL;
+< 	}
+< 	if (m_hdc!=NULL) {
+< 		::DeleteDC(m_hdc);
+< 		m_hdc=NULL;
+< 	}
+< 	if (m_hbm!=NULL) {
+< 		::DeleteObject(m_hbm);
+< 		m_hbm=NULL;
+< 		m_Width=0;
+< 		m_Height=0;
+< 	}
+< }
+< 
+< bool COffscreen::CopyTo(HDC hdc,const RECT *pDstRect)
+< {
+< 	int DstX,DstY,Width,Height;
+< 
+< 	if (m_hdc==NULL || hdc==NULL)
+---
+> 	if (m_hdc==NULL || hdc==NULL)
+1341,1873d665
 < 
 < 
 < 
@@ -2685,7 +3213,7 @@ diff TVTestStatusView_orig/DrawUtil.cpp ./DrawUtil.cpp
 < 		return false;
 < 	return ::GetThemePartSize(m_hTheme,hdc,PartID,StateID,NULL,TS_TRUE,pSize)==S_OK;
 < }
-diff TVTestStatusView_orig/DrawUtil.h ./DrawUtil.h
+diff diff_TVTestStatusView_orig/DrawUtil.h ./DrawUtil.h
 40,47d39
 < bool GlossOverlay(HDC hdc,const RECT *pRect,
 < 				  int Highlight1=192,int Highlight2=32,
@@ -2723,14 +3251,58 @@ diff TVTestStatusView_orig/DrawUtil.h ./DrawUtil.h
 < 	HBRUSH GetHandle() const { return m_hbr; }
 < };
 < 
-135,140d101
+135,184d101
 < inline HBRUSH SelectObject(HDC hdc,const CBrush &Brush) {
 < 	return static_cast<HBRUSH>(::SelectObject(hdc,Brush.GetHandle()));
 < }
 < inline HBITMAP SelectObject(HDC hdc,const CBitmap &Bitmap) {
 < 	return static_cast<HBITMAP>(::SelectObject(hdc,Bitmap.GetHandle()));
 < }
-162,270d122
+< 
+< class CMonoColorBitmap
+< {
+< public:
+< 	CMonoColorBitmap();
+< 	~CMonoColorBitmap();
+< 	bool Load(HINSTANCE hinst,LPCTSTR pszName);
+< 	bool Load(HINSTANCE hinst,int ID) { return Load(hinst,MAKEINTRESOURCE(ID)); }
+< 	bool Create(HBITMAP hbm);
+< 	void Destroy();
+< 	HBITMAP GetHandle() const { return m_hbm; }
+< 	bool IsCreated() const { return m_hbm!=NULL; }
+< 	bool Draw(HDC hdc,int DstX,int DstY,COLORREF Color,int SrcX=0,int SrcY=0,int Width=0,int Height=0);
+< 	HIMAGELIST CreateImageList(int IconWidth,COLORREF Color);
+< 
+< private:
+< 	void SetColor(COLORREF Color);
+< 
+< 	HBITMAP m_hbm;
+< 	COLORREF m_Color;
+< 	bool m_fColorImage;
+< };
+< 
+< class CMemoryDC
+< {
+< public:
+< 	CMemoryDC();
+< 	CMemoryDC(HDC hdc);
+< 	~CMemoryDC();
+< 	bool Create(HDC hdc=NULL);
+< 	void Delete();
+< 	bool IsCreated() const { return m_hdc!=NULL; }
+< 	bool SetBitmap(HBITMAP hbmSrc);
+< 	bool SetBitmap(CBitmap &Bitmap) { return SetBitmap(Bitmap.GetHandle()); }
+< 	bool Draw(HDC hdc,int DstX,int DstY,int SrcX,int SrcY,int Width,int Height);
+< 	bool DrawStretch(HDC hdc,int DstX,int DstY,int DstWidth,int DstHeight,
+< 					 int SrcX,int SrcY,int SrcWidth,int SrcHeight,
+< 					 int Mode=STRETCH_HALFTONE);
+< 	bool DrawAlpha(HDC hdc,int DstX,int DstY,int SrcX,int SrcY,int Width,int Height);
+< 
+< private:
+< 	HDC m_hdc;
+< 	HBITMAP m_hbmOld;
+< };
+206,315d122
 < 
 < 
 < namespace Gdiplus {
@@ -2840,114 +3412,25 @@ diff TVTestStatusView_orig/DrawUtil.h ./DrawUtil.h
 < 	bool GetInt(int PartID,int StateID,int PropID,int *pValue);
 < 	bool GetPartSize(HDC hdc,int PartID,int StateID,SIZE *pSize);
 < };
-diff TVTestStatusView_orig/IniFile.cpp ./IniFile.cpp
-1,2c1,2
-< #include "stdafx.h"
-< #include "TVTest.h"
----
-> #include <Windows.h>
-> #include "Util.h"
-4a5
-> #if 0
-9a11,15
-> #endif
-> 
-> #if _MSC_VER < 1600
->     #define nullptr NULL
-> #endif
-10a17
-> #define INI_MUTEX_NAME_W	L"TVTest"
-36c43
-< 		MutexName=APP_NAME_W L"_Ini_Mutex_";
----
-> 		MutexName=INI_MUTEX_NAME_W L"_Ini_Mutex_";
-125c132
-< 			for (auto itrSection=m_SectionList.begin();itrSection!=m_SectionList.end();itrSection++) {
----
-> 			for (std::list<CSectionData>::const_iterator itrSection=m_SectionList.begin();itrSection!=m_SectionList.end();itrSection++) {
-132c139
-< 				for (auto itrValue=itrSection->Entries.begin();itrValue!=itrSection->Entries.end();itrValue++) {
----
-> 				for (std::list<CEntry>::const_iterator itrValue=itrSection->Entries.begin();itrValue!=itrSection->Entries.end();itrValue++) {
-185c192
-< 		auto i=FindSection(pszSection);
----
-> 		std::list<CSectionData>::iterator i=FindSection(pszSection);
-215c222
-< 		auto i=FindSection(pszSection);
----
-> 		std::list<CSectionData>::iterator i=FindSection(pszSection);
-231c238
-< 		auto i=FindSection(pszSection);
----
-> 		std::list<CSectionData>::iterator i=FindSection(pszSection);
-264c271
-< 		auto itrValue=FindValue(pSection->Entries,pszName);
----
-> 		std::list<CEntry>::iterator itrValue=FindValue(pSection->Entries,pszName);
-292c299
-< 		auto itrValue=FindValue(pSection->Entries,pszName);
----
-> 		std::list<CEntry>::iterator itrValue=FindValue(pSection->Entries,pszName);
-296c303
-< 			for (auto i=pSection->Entries.rbegin();i!=pSection->Entries.rend();i++) {
----
-> 			for (std::list<CEntry>::reverse_iterator i=pSection->Entries.rbegin();i!=pSection->Entries.rend();i++) {
-325c332
-< 		auto itrValue=FindValue(pSection->Entries,pszName);
----
-> 		std::list<CEntry>::const_iterator itrValue=FindValue(pSection->Entries,pszName);
-340c347
-< 		auto itrValue=FindValue(pSection->Entries,pszName);
----
-> 		std::list<CEntry>::iterator itrValue=FindValue(pSection->Entries,pszName);
-360c367
-< 		auto itrSection=FindSection(pszSection);
----
-> 		std::list<CSectionData>::iterator itrSection=FindSection(pszSection);
-364c371
-< 		for (auto i=itrSection->Entries.begin();i!=itrSection->Entries.end();i++) {
----
-> 		for (std::list<CEntry>::iterator i=itrSection->Entries.begin();i!=itrSection->Entries.end();i++) {
-420c427
-< 		for (auto i=m_SectionList.begin();i!=m_SectionList.end();i++) {
----
-> 		for (std::list<CSectionData>::iterator i=m_SectionList.begin();i!=m_SectionList.end();i++) {
-433c440
-< 		for (auto i=m_SectionList.begin();i!=m_SectionList.end();i++) {
----
-> 		for (std::list<CSectionData>::const_iterator i=m_SectionList.begin();i!=m_SectionList.end();i++) {
-443c450
-< 		for (auto i=Entries.begin();i!=Entries.end();i++) {
----
-> 		for (std::list<CEntry>::iterator i=Entries.begin();i!=Entries.end();i++) {
-453c460
-< 		for (auto i=Entries.begin();i!=Entries.end();i++) {
----
-> 		for (std::list<CEntry>::const_iterator i=Entries.begin();i!=Entries.end();i++) {
-476c483
-< 			auto itrSection=FindSection(m_Section.c_str());
----
-> 			std::list<CSectionData>::iterator itrSection=FindSection(m_Section.c_str());
-diff TVTestStatusView_orig/Settings.cpp ./Settings.cpp
-1,2c1,3
+< 
+diff diff_TVTestStatusView_orig/Settings.cpp ./Settings.cpp
+1,2c1,4
 < #include "stdafx.h"
 < #include "TVTest.h"
 ---
 > #include <Windows.h>
 > #include <Shlwapi.h>
+> #include <tchar.h>
 > #include "Util.h"
-4a6
+4a7
 > #if 0
-9a12,18
+9a13
 > #endif
-> 
-> #ifndef _T
-> #define _T(x) TEXT(x)
-> #endif
-> 
+11c15
+< 
+---
 > #define lengthof _countof
-diff TVTestStatusView_orig/StatusView.cpp ./StatusView.cpp
+diff diff_TVTestStatusView_orig/StatusView.cpp ./StatusView.cpp
 1,2c1,3
 < #include "stdafx.h"
 < #include "TVTest.h"
@@ -2955,12 +3438,29 @@ diff TVTestStatusView_orig/StatusView.cpp ./StatusView.cpp
 > #include <Windows.h>
 > #include <WindowsX.h>
 > #include "Util.h"
-356a358,361
+144,159d144
+< void CStatusItem::DrawIcon(HDC hdc,const RECT *pRect,DrawUtil::CMonoColorBitmap &Bitmap,
+< 						   int SrcX,int SrcY,int IconWidth,int IconHeight,bool fEnabled) const
+< {
+< 	if (hdc==NULL)
+< 		return;
+< 
+< 	COLORREF cr=::GetTextColor(hdc);
+< 	if (!fEnabled)
+< 		cr=MixColor(cr,::GetBkColor(hdc));
+< 	Bitmap.Draw(hdc,
+< 				pRect->left+((pRect->right-pRect->left)-IconWidth)/2,
+< 				pRect->top+((pRect->bottom-pRect->top)-IconHeight)/2,
+< 				cr,SrcX,SrcY,IconWidth,IconHeight);
+< }
+< 
+< 
+374a360,363
 > 			if (GetItemRectByIndex(m_HotItem,&rc)) {
 > 				m_ItemList[m_HotItem]->OnMouseMove(x-rc.left,y);
 > 			}
 > 
-358,360c363,365
+376,378c365,367
 < 				GetItemRectByIndex(m_HotItem,&rc);
 < 				x-=rc.left;
 < 				m_ItemList[m_HotItem]->OnMouseMove(x,y);
@@ -2968,15 +3468,18 @@ diff TVTestStatusView_orig/StatusView.cpp ./StatusView.cpp
 > 				//GetItemRectByIndex(m_HotItem,&rc);
 > 				//x-=rc.left;
 > 				//m_ItemList[m_HotItem]->OnMouseMove(x,y);
-diff TVTestStatusView_orig/StatusView.h ./StatusView.h
+diff diff_TVTestStatusView_orig/StatusView.h ./StatusView.h
 7d6
 < #include "TsUtilClass.h"
-diff TVTestStatusView_orig/Theme.cpp ./Theme.cpp
+34,35d32
+< 	void DrawIcon(HDC hdc,const RECT *pRect,DrawUtil::CMonoColorBitmap &Bitmap,
+< 				  int SrcX=0,int SrcY=0,int IconWidth=16,int IconHeight=16,bool fEnabled=true) const;
+diff diff_TVTestStatusView_orig/Theme.cpp ./Theme.cpp
 1c1
 < #include "stdafx.h"
 ---
 > #include <Windows.h>
-diff TVTestStatusView_orig/WindowUtil.cpp ./WindowUtil.cpp
+diff diff_TVTestStatusView_orig/WindowUtil.cpp ./WindowUtil.cpp
 1c1,2
 < #include "stdafx.h"
 ---
