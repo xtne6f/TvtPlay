@@ -11,6 +11,42 @@ BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPC
 }
 
 
+// MD5ハッシュ値を計算して先頭56bitを返す
+// 失敗時は負を返す
+LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt)
+{
+    HCRYPTPROV hProv = NULL;
+    HCRYPTHASH hHash = NULL;
+    LONGLONG llRet = -1;
+
+    if (!::CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
+        hProv = NULL;
+        goto EXIT;
+    }
+
+    if (!::CryptCreateHash(hProv, CALG_MD5, 0, 0, &hHash)) {
+        hHash = NULL;
+        goto EXIT;
+    }
+
+    // リトルエンディアンを仮定
+    if (!::CryptHashData(hHash, (LPBYTE)&dwSalt, sizeof(dwSalt), 0)) goto EXIT;
+    if (!::CryptHashData(hHash, pbData, dwDataLen, 0)) goto EXIT;
+
+    BYTE pbHash[16];
+    DWORD dwHashLen = 16;
+    if (!::CryptGetHashParam(hHash, HP_HASHVAL, pbHash, &dwHashLen, 0)) goto EXIT;
+    
+    llRet = ((LONGLONG)pbHash[0]<<48) | ((LONGLONG)pbHash[1]<<40) | ((LONGLONG)pbHash[2]<<32) |
+            ((LONGLONG)pbHash[3]<<24) | (pbHash[4]<<16) | (pbHash[5]<<8) | pbHash[6];
+
+EXIT:
+    if (hHash) ::CryptDestroyHash(hHash);
+    if (hProv) ::CryptReleaseContext(hProv, 0);
+    return llRet;
+}
+
+
 #if 1 // From: tsselect-0.1.8/tsselect.c (一部改変)
 int select_unit_size(unsigned char *head, unsigned char *tail)
 {

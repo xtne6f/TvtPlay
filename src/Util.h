@@ -4,6 +4,7 @@
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
 BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPCTSTR lpFileName);
+LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt);
 
 typedef struct {
 	int           sync;

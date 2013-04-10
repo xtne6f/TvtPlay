@@ -15,7 +15,6 @@ CTsSender::CTsSender()
     , m_sock(NULL)
     , m_udpPort(0)
     , m_hPipe(NULL)
-    , m_tick(0)
     , m_baseTick(0)
     , m_renewSizeTick(0)
     , m_pcrCount(0)
@@ -31,6 +30,7 @@ CTsSender::CTsSender()
     , m_duration(0)
     , m_totBase(0)
     , m_totBasePcr(0)
+    , m_hash(0)
 {
     m_udpAddr[0] = 0;
     m_pipeName[0] = 0;
@@ -43,7 +43,7 @@ CTsSender::~CTsSender()
 }
 
 
-bool CTsSender::Open(LPCTSTR name)
+bool CTsSender::Open(LPCTSTR name, DWORD salt)
 {
     Close();
     
@@ -61,6 +61,10 @@ bool CTsSender::Open(LPCTSTR name)
     m_unitSize = select_unit_size(buf, buf + readBytes);
     if (m_unitSize < 188) goto ERROR_EXIT;
     
+    // 識別情報としてファイル先頭のハッシュ値をとる
+    m_hash = CalcHash(buf, min(readBytes, 2048), salt);
+    if (m_hash < 0) goto ERROR_EXIT;
+
     // バッファ確保
     m_pBuf = new BYTE[m_unitSize * BUFFER_LEN];
 
@@ -176,7 +180,7 @@ bool CTsSender::Send()
         }
         // 転送レート制御
         if (m_fPcr) {
-            DWORD tickDiff = m_tick - m_baseTick;
+            DWORD tickDiff = ::GetTickCount() - m_baseTick;
             if (MSB(tickDiff)) tickDiff = 0;
 
             DWORD pcrDiff = m_pcr - m_basePcr;
@@ -185,7 +189,11 @@ bool CTsSender::Send()
             int msec = (int)pcrDiff / PCR_PER_MSEC - (int)tickDiff;
 
             // 制御しきれない場合は一度リセット
-            if (msec < -2000 || 2000 < msec) m_pcrCount = 0;
+            if (msec < -2000 || 2000 < msec) {
+                // 基準PCRを設定(TVTest側のストアを増やすため少し引く)
+                m_baseTick = ::GetTickCount() - BASE_DIFF_MSEC;
+                m_basePcr = m_pcr;
+            }
             else if (msec > 0) ::Sleep(msec);
         }
     }
@@ -272,7 +280,11 @@ bool CTsSender::Seek(int msec)
 
 void CTsSender::Pause(bool fPause)
 {
-    if (m_fPause && !fPause) m_pcrCount = 0;
+    if (m_fPause && !fPause) {
+        // 基準PCRを設定(TVTest側のストアを増やすため少し引く)
+        m_baseTick = ::GetTickCount() - BASE_DIFF_MSEC;
+        m_basePcr = m_pcr;
+    }
     m_fPause = fPause;
 }
 
@@ -355,13 +367,20 @@ int CTsSender::GetRate() const
 }
 
 
+// ファイル先頭の56bitハッシュ値を取得する
+long long CTsSender::GetFileHash() const
+{
+    return m_hash;
+}
+
+
 // TSパケットを1つ読む
 bool CTsSender::ReadPacket()
 {
     if (!m_hFile || !m_pBuf) return false;
 
     if (m_curr + m_unitSize >= m_tail) {
-        int n = m_pBuf + m_unitSize * BUFFER_LEN - m_tail;
+        int n = static_cast<int>(m_pBuf + m_unitSize * BUFFER_LEN - m_tail);
         if (n > 0) {
             DWORD readBytes;
             if (!::ReadFile(m_hFile, m_tail, n, &readBytes, NULL)) return false;
@@ -416,13 +435,11 @@ bool CTsSender::ReadPacket()
             // 参照PIDのときはPCRを取得する
             if (header.pid == m_pcrPid) {
                 m_pcrPidsLen = 0;
-                m_tick = ::GetTickCount();
                 m_pcr = (DWORD)adapt.pcr_45khz;
             
                 if (m_pcrCount++ == 0) {
-                    // 最初にTVTest側のストアを増やすため、少し引く
-                    // ただし引きすぎるとPauseの挙動がもたつく
-                    m_baseTick = m_tick - 300;
+                    // 基準PCRを設定(TVTest側のストアを増やすため少し引く)
+                    m_baseTick = ::GetTickCount() - BASE_DIFF_MSEC;
                     m_basePcr = m_pcr;
                 }
                 m_fPcr = true;
@@ -466,7 +483,7 @@ void CTsSender::ConsumeBuffer(bool fSend)
                 addr.sin_family = AF_INET;
                 addr.sin_port = htons(m_udpPort);
                 addr.sin_addr.S_un.S_addr = inet_addr(m_udpAddr);
-                if (::sendto(m_sock, (const char*)m_pBuf, m_curr - m_pBuf,
+                if (::sendto(m_sock, (const char*)m_pBuf, (int)(m_curr - m_pBuf),
                              0, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
                 {
                     CloseSocket();
@@ -478,13 +495,13 @@ void CTsSender::ConsumeBuffer(bool fSend)
             if (m_hPipe) {
                 // パイプ転送
                 DWORD written;
-                if (!::WriteFile(m_hPipe, m_pBuf, m_curr - m_pBuf, &written, NULL)) {
+                if (!::WriteFile(m_hPipe, m_pBuf, (DWORD)(m_curr - m_pBuf), &written, NULL)) {
                     ClosePipe();
                 }
             }
         }
     }
-    int n = m_tail - m_curr;
+    int n = static_cast<int>(m_tail - m_curr);
     if (n > 0) memcpy(m_pBuf, m_curr, n);
 
     m_curr = m_pBuf;

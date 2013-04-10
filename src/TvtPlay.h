@@ -23,9 +23,11 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     static const int TIMER_ID_FULL_SCREEN = 1;
     static const int TIMER_ID_RESET_DROP = 2;
     static const int TIMER_FULL_SCREEN_INTERVAL = 100;
+    static const int HASH_LIST_MAX_MAX = 10000;
     bool m_fInitialized;
     bool m_fSettingsLoaded;
-    bool m_fForceEnable;
+    bool m_fForceEnable, m_fIgnoreExt;
+    bool m_fAutoEnUdp, m_fAutoEnPipe;
     TCHAR m_szIniFileName[MAX_PATH];
     TCHAR m_szSpecFileName[MAX_PATH];
 
@@ -50,6 +52,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     // TS送信
     HANDLE m_hThread, m_hThreadEvent;
     DWORD m_threadID;
+    int m_threadPriority;
     CTsSender m_tsSender;
     TCHAR m_szPrevFileName[MAX_PATH];
     int m_position;
@@ -58,6 +61,14 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     bool m_fFixed, m_fPaused;
     bool m_fHalt, m_fAutoClose, m_fAutoLoop;
     bool m_fResetAllOnSeek;
+
+    // ファイルごとの固有情報
+    int m_salt, m_hashListMax;
+    struct HASH_INFO {
+        LONGLONG hash; // 56bitハッシュ値
+        int resumePos; // レジューム位置(msec)
+    };
+    std::list<HASH_INFO> m_hashList;
 
     void AnalyzeCommandLine(LPCWSTR cmdLine);
     void LoadSettings();
@@ -71,6 +82,7 @@ class CTvtPlay : public TVTest::CTVTestPlugin
     void SetUpDestination();
     void ResetAndPostToSender(UINT Msg, WPARAM wParam, LPARAM lParam, bool fResetAll);
     void Resize();
+    void EnablePluginByDriverName();
     static LRESULT CALLBACK EventCallback(UINT Event, LPARAM lParam1, LPARAM lParam2, void *pClientData);
     static BOOL CALLBACK WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pResult, void *pUserData);
     static LRESULT CALLBACK FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);

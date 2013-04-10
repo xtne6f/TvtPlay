@@ -1,9 +1,10 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2011-08-29
+// 最終更新: 2011-09-02
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
 #include <Shlwapi.h>
+#include <list>
 #include "Util.h"
 #include "ColorScheme.h"
 #include "TvtPlay.h"
@@ -83,6 +84,9 @@ CTvtPlay::CTvtPlay()
     : m_fInitialized(false)
     , m_fSettingsLoaded(false)
     , m_fForceEnable(false)
+    , m_fIgnoreExt(false)
+    , m_fAutoEnUdp(false)
+    , m_fAutoEnPipe(false)
     , m_hwndFrame(NULL)
     , m_fFullScreen(false)
     , m_fHide(false)
@@ -109,6 +113,8 @@ CTvtPlay::CTvtPlay()
     , m_fAutoClose(false)
     , m_fAutoLoop(false)
     , m_fResetAllOnSeek(false)
+    , m_salt(0)
+    , m_hashListMax(0)
 {
     m_szIniFileName[0] = 0;
     m_szSpecFileName[0] = 0;
@@ -132,32 +138,33 @@ bool CTvtPlay::GetPluginInfo(TVTest::PluginInfo *pInfo)
 
 void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine)
 {
-    m_fForceEnable = false;
     m_szSpecFileName[0] = 0;
 
     int argc;
     LPTSTR *argv = ::CommandLineToArgvW(cmdLine, &argc);
     if (argv) {
         for (int i = 0; i < argc; i++) {
-            if (!::lstrcmpi(argv[i], TEXT("/tvtplay")) ||
-                !::lstrcmpi(argv[i], TEXT("-tvtplay")))
-            {
-                m_fForceEnable = true;
-                break;
+            // オプションは複数起動禁止時に無効->有効にすることができる
+            if (argv[i][0] == TEXT('/') || argv[i][0] == TEXT('-')) {
+                if (!::lstrcmpi(argv[i]+1, TEXT("tvtplay"))) m_fForceEnable = m_fIgnoreExt = true;
+                else if (!::lstrcmpi(argv[i]+1, TEXT("tvtpudp"))) m_fAutoEnUdp = true;
+                else if (!::lstrcmpi(argv[i]+1, TEXT("tvtpipe"))) m_fAutoEnPipe = true;
             }
         }
 
         if (argc >= 1 && argv[argc-1][0] != TEXT('/') && argv[argc-1][0] != TEXT('-')) {
-            if (!m_fForceEnable) {
+            bool fSpec = m_fIgnoreExt;
+            if (!m_fIgnoreExt) {
                 LPCTSTR ext = ::PathFindExtension(argv[argc-1]);
                 if (ext && (!::lstrcmpi(ext, TEXT(".ts")) ||
                             !::lstrcmpi(ext, TEXT(".m2t")) ||
                             !::lstrcmpi(ext, TEXT(".m2ts"))))
                 {
                     m_fForceEnable = true;
+                    fSpec = true;
                 }
             }
-            if (m_fForceEnable) ::lstrcpyn(m_szSpecFileName, argv[argc-1], ARRAY_SIZE(m_szSpecFileName));
+            if (fSpec) ::lstrcpyn(m_szSpecFileName, argv[argc-1], ARRAY_SIZE(m_szSpecFileName));
         }
 
         ::LocalFree(argv);
@@ -199,11 +206,13 @@ void CTvtPlay::LoadSettings()
         !::PathRenameExtension(m_szIniFileName, TEXT(".ini"))) m_szIniFileName[0] = 0;
     
     int defMargin = m_pApp->GetVersion() >= TVTest::MakeVersion(0,7,21) ? 1 : 2; // 0.7.21以降は細くなった
+    int defSalt = (::GetTickCount()>>16)^(::GetTickCount()&0xffff);
 
     m_fAutoClose = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsAutoClose"), 0, m_szIniFileName) != 0;
     m_fAutoLoop = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsAutoLoop"), 0, m_szIniFileName) != 0;
     m_fResetAllOnSeek = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsResetAllOnSeek"), 0, m_szIniFileName) != 0;
     m_resetDropInterval = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsResetDropInterval"), 1000, m_szIniFileName);
+    m_threadPriority = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TsThreadPriority"), THREAD_PRIORITY_NORMAL, m_szIniFileName);
     m_fToBottom = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("ToBottom"), 1, m_szIniFileName) != 0;
     m_statusMargin = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("Margin"), defMargin, m_szIniFileName);
     m_fSeekDrawTot = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("DispTot"), 0, m_szIniFileName) != 0;
@@ -211,6 +220,9 @@ void CTvtPlay::LoadSettings()
     m_posItemWidth = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("StatusItemWidth"), 112, m_szIniFileName);
     m_timeoutOnCmd = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnCommand"), 2000, m_szIniFileName);
     m_timeoutOnMove = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnMouseMove"), 0, m_szIniFileName);
+    m_salt = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("Salt"), defSalt, m_szIniFileName);
+    m_hashListMax = ::GetPrivateProfileInt(TEXT("Settings"), TEXT("FileInfoMax"), 0, m_szIniFileName);
+    m_hashListMax = min(m_hashListMax, HASH_LIST_MAX_MAX);
 
     ::GetPrivateProfileString(TEXT("Settings"), TEXT("IconImage"), TEXT(""),
                               m_szIconFileName, ARRAY_SIZE(m_szIconFileName), m_szIniFileName);
@@ -230,6 +242,22 @@ void CTvtPlay::LoadSettings()
                                   m_buttonList[i], ARRAY_SIZE(m_buttonList[0]), m_szIniFileName);
     }
 
+    // ファイル固有のレジューム情報などを取得
+    // キー番号が小さいものほど新しい
+    m_hashList.clear();
+    for (int i = 0; i < m_hashListMax; i++) {
+        TCHAR key[32], val[32];
+        HASH_INFO hashInfo;
+
+        ::wsprintf(key, TEXT("Hash%d"), i);
+        ::GetPrivateProfileString(TEXT("FileInfo"), key, TEXT("-1"), val, ARRAY_SIZE(val), m_szIniFileName);
+        if (!::StrToInt64Ex(val, STIF_SUPPORT_HEX, &hashInfo.hash) || hashInfo.hash < 0) break;
+
+        ::wsprintf(key, TEXT("Resume%d"), i);
+        hashInfo.resumePos = ::GetPrivateProfileInt(TEXT("FileInfo"), key, 0, m_szIniFileName);
+        m_hashList.push_back(hashInfo);
+    }
+
     CColorScheme scheme;
     WCHAR szAppIniPath[MAX_PATH];
     if (m_pApp->GetSetting(L"IniFilePath", szAppIniPath, MAX_PATH) > 0)
@@ -246,7 +274,7 @@ void CTvtPlay::LoadSettings()
     m_fSettingsLoaded = true;
 
     // デフォルトの設定キーを出力するため
-    if (::GetPrivateProfileInt(TEXT("Settings"), TEXT("Margin"), -10, m_szIniFileName) == -10)
+    if (::GetPrivateProfileInt(TEXT("Settings"), TEXT("FileInfoMax"), -1, m_szIniFileName) == -1)
         SaveSettings();
 }
 
@@ -260,6 +288,7 @@ void CTvtPlay::SaveSettings() const
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TsAutoLoop"), m_fAutoLoop, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TsResetAllOnSeek"), m_fResetAllOnSeek, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TsResetDropInterval"), m_resetDropInterval, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("TsThreadPriority"), m_threadPriority, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("ToBottom"), m_fToBottom, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("Margin"), m_statusMargin, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("DispTot"), m_fSeekDrawTot, m_szIniFileName);
@@ -267,6 +296,8 @@ void CTvtPlay::SaveSettings() const
     WritePrivateProfileInt(TEXT("Settings"), TEXT("StatusItemWidth"), m_posItemWidth, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnCommand"), m_timeoutOnCmd, m_szIniFileName);
     WritePrivateProfileInt(TEXT("Settings"), TEXT("TimeoutOnMouseMove"), m_timeoutOnMove, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("Salt"), m_salt, m_szIniFileName);
+    WritePrivateProfileInt(TEXT("Settings"), TEXT("FileInfoMax"), m_hashListMax, m_szIniFileName);
     ::WritePrivateProfileString(TEXT("Settings"), TEXT("IconImage"), m_szIconFileName, m_szIniFileName);
     
     for (int i = 0; i < COMMAND_SEEK_MAX; i++) {
@@ -280,6 +311,19 @@ void CTvtPlay::SaveSettings() const
         ::wsprintf(key, TEXT("Button%02d"), i);
         ::WritePrivateProfileString(TEXT("Settings"), key, m_buttonList[i], m_szIniFileName);
     }
+    
+    // FileInfoセクションは一気に書き込む
+    LPTSTR str = new TCHAR[2 + m_hashList.size() * 96];
+    LPTSTR tail = str;
+    tail[0] = tail[1] = 0;
+    std::list<HASH_INFO>::const_iterator it = m_hashList.begin();
+    for (int i = 0; it != m_hashList.end(); i++, it++) {
+        tail += ::wsprintf(tail, TEXT("Hash%d=0x%06x%08x"), i, (DWORD)((*it).hash>>32), (DWORD)((*it).hash)) + 1;
+        tail += ::wsprintf(tail, TEXT("Resume%d=%d"), i, (*it).resumePos) + 1;
+    }
+    tail[0] = 0;
+    ::WritePrivateProfileSection(TEXT("FileInfo"), str, m_szIniFileName);
+    delete [] str;
 }
 
 
@@ -407,7 +451,20 @@ bool CTvtPlay::Open(LPCTSTR fileName)
 {
     Close();
     
-    if (!m_tsSender.Open(fileName)) return false;
+    if (!m_tsSender.Open(fileName, m_salt)) return false;
+
+    // レジューム情報があればその地点までシーク
+    LONGLONG hash = m_tsSender.GetFileHash();
+    std::list<HASH_INFO>::const_iterator it = m_hashList.begin();
+    for (; it != m_hashList.end(); it++) {
+        if ((*it).hash == hash) {
+            // 先頭or終端から5秒の範囲はレジュームしない
+            if (5000 < (*it).resumePos && (*it).resumePos < m_tsSender.GetDuration() - 5000) {
+                m_tsSender.Seek((*it).resumePos - 3000);
+            }
+            break;
+        }
+    }
 
     if (m_pApp->GetVersion() < TVTest::MakeVersion(0,7,21))
         m_pApp->Reset(TVTest::RESET_VIEWER);
@@ -424,6 +481,11 @@ bool CTvtPlay::Open(LPCTSTR fileName)
         m_hThreadEvent = NULL;
         m_tsSender.Close();
         return false;
+    }
+
+    if (m_threadPriority >= THREAD_PRIORITY_LOWEST &&
+        m_threadPriority <= THREAD_PRIORITY_HIGHEST) {
+        ::SetThreadPriority(m_hThread, m_threadPriority);
     }
 
     // メセージキューができるまで待つ
@@ -446,6 +508,30 @@ void CTvtPlay::Close()
         m_hThread = NULL;
         ::CloseHandle(m_hThreadEvent);
         m_hThreadEvent = NULL;
+
+        // 固有情報リストを検索
+        HASH_INFO hashInfo = {0};
+        hashInfo.hash = m_tsSender.GetFileHash();
+        std::list<HASH_INFO>::iterator it = m_hashList.begin();
+        for (; it != m_hashList.end(); it++) {
+            if ((*it).hash == hashInfo.hash) {
+                hashInfo = *it;
+                m_hashList.erase(it);
+                break;
+            }
+        }
+        hashInfo.resumePos = m_tsSender.GetPosition();
+
+        // 固有情報リストの最も新しい位置に追加する
+        if (!m_hashList.empty() && (int)m_hashList.size() >= m_hashListMax) {
+            m_hashList.pop_back();
+        }
+        if (m_hashListMax > 0) {
+            m_hashList.push_front(hashInfo);
+            SaveSettings();
+        }
+
+        m_tsSender.Close();
     }
 }
 
@@ -528,7 +614,7 @@ void CTvtPlay::Resize()
         if (::GetMonitorInfo(hMon, &mi)) {
             ::SetWindowPos(m_hwndFrame, NULL,
                            mi.rcMonitor.left, mi.rcMonitor.bottom - (m_fToBottom ? STATUS_HEIGHT : STATUS_HEIGHT*2),
-                           mi.rcMonitor.right - mi.rcMonitor.left, STATUS_HEIGHT, SWP_NOZORDER);
+                           mi.rcMonitor.right - mi.rcMonitor.left, STATUS_HEIGHT, SWP_NOZORDER | SWP_NOACTIVATE);
         }
         if (!m_fFullScreen) {
             m_fHide = false;
@@ -541,15 +627,34 @@ void CTvtPlay::Resize()
     else {
         RECT rect;
         if (::GetWindowRect(m_pApp->GetAppWindow(), &rect)) {
-            ::SetWindowPos(m_hwndFrame, NULL, rect.left, rect.bottom,
-                           rect.right - rect.left, STATUS_HEIGHT + m_statusMargin, SWP_NOZORDER);
+            bool fMaximize = (::GetWindowLong(m_pApp->GetAppWindow(), GWL_STYLE) & WS_MAXIMIZE) != 0;
+            ::SetWindowPos(m_hwndFrame, NULL, rect.left,
+                           fMaximize ? rect.bottom - (STATUS_HEIGHT + m_statusMargin) : rect.bottom,
+                           rect.right - rect.left, STATUS_HEIGHT + m_statusMargin, SWP_NOZORDER | SWP_NOACTIVATE);
         }
         if (m_fFullScreen) {
             ::KillTimer(m_hwndFrame, TIMER_ID_FULL_SCREEN);
             ::SetWindowPos(m_hwndFrame, m_pApp->GetAlwaysOnTop() ? HWND_TOPMOST : HWND_NOTOPMOST,
-                           0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                           0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE);
             m_fFullScreen = false;
         }
+    }
+}
+
+
+void CTvtPlay::EnablePluginByDriverName()
+{
+    if (m_fAutoEnUdp || m_fAutoEnPipe) {
+        TCHAR path[MAX_PATH];
+        m_pApp->GetDriverName(path, ARRAY_SIZE(path));
+        LPCTSTR name = ::PathFindFileName(path);
+            
+        // ドライバ名に応じて有効無効を切り替える
+        bool fEnable = false;
+        if (m_fAutoEnUdp && !::lstrcmpi(name, TEXT("BonDriver_UDP.dll"))) fEnable = true;
+        if (m_fAutoEnPipe && !::lstrcmpi(name, TEXT("BonDriver_Pipe.dll"))) fEnable = true;
+
+        if (m_pApp->IsPluginEnabled() != fEnable) m_pApp->EnablePlugin(fEnable);
     }
 }
 
@@ -609,8 +714,11 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
             pThis->Resize();
         break;
     case TVTest::EVENT_DRIVERCHANGE:
+        // ドライバが変更された
+        pThis->EnablePluginByDriverName();
+        // FALL THROUGH!
     case TVTest::EVENT_CHANNELCHANGE:
-        // ドライバorチャンネルが変更された
+        // チャンネルが変更された
         if (pThis->m_pApp->IsPluginEnabled())
             pThis->SetUpDestination();
         break;
@@ -625,6 +733,7 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         // FALL THROUGH!
     case TVTest::EVENT_STARTUPDONE:
         // 起動時の処理が終わった
+        pThis->EnablePluginByDriverName();
         // コマンドラインにパスが指定されていれば開く
         if (pThis->m_pApp->IsPluginEnabled() && pThis->m_szSpecFileName[0]) {
             pThis->Open(pThis->m_szSpecFileName);
@@ -651,7 +760,7 @@ BOOL CALLBACK CTvtPlay::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, L
         if (!pThis->m_pApp->GetFullscreen()) {
             RECT rect;
             if (::GetWindowRect(hwnd, &rect)) {
-                ::SetWindowPos(pThis->m_hwndFrame, NULL, rect.left, rect.bottom, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+                ::SetWindowPos(pThis->m_hwndFrame, NULL, rect.left, rect.bottom, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
             }
         }
         break;
@@ -776,8 +885,12 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             ::SetTimer(hwnd, TIMER_ID_RESET_DROP, pThis->m_resetDropInterval, NULL);
         }
         break;
+    case WM_APPCOMMAND:
+        // メディアキー対策(親に渡されないようなので自分で送る)
+        ::SendMessage(::GetParent(hwnd), uMsg, wParam, lParam);
+        return 0;
     }
-    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+    return ::DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
 
@@ -831,7 +944,7 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
                 resetCount = 5;
                 break;
             case WM_TS_SEEK:
-                pThis->m_tsSender.Seek(msg.lParam);
+                pThis->m_tsSender.Seek(static_cast<int>(msg.lParam));
                 resetCount = 5;
                 break;
             }
@@ -846,7 +959,10 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
             if (!fRead) {
                 if (pThis->m_tsSender.IsFixed()) {
                     // ループ再生時に閉じてはいけない
-                    if (pThis->m_fAutoLoop) ::PostMessage(pThis->m_hwndFrame, WM_QUERY_SEEK_BGN, 0, 0);
+                    if (pThis->m_fAutoLoop) {
+                        ::Sleep(800);
+                        ::PostMessage(pThis->m_hwndFrame, WM_QUERY_SEEK_BGN, 0, 0);
+                    }
                     else if (pThis->m_fAutoClose) ::PostMessage(pThis->m_hwndFrame, WM_QUERY_CLOSE, 0, 0);
                 }
             }
@@ -879,9 +995,8 @@ DWORD WINAPI CTvtPlay::TsSenderThread(LPVOID pParam)
         }
     }
     
-    // ファイルを閉じてコントロールの表示をリセット
+    // コントロールの表示をリセット
     pThis->m_tsSender.Pause(false);
-    pThis->m_tsSender.Close();
     ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_F_PAUSED, 0, 0);
     ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_POSITION, 0, 0);
     ::PostMessage(pThis->m_hwndFrame, WM_UPDATE_TOT_TIME, 0, -1);
@@ -953,12 +1068,12 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
         if (m_fDrawTot) {
             int tot = m_pPlugin->GetTotTime();
             int totSec = tot / 1000 + posSec;
-            if (tot < 0) ::lstrcpy(szTotText, TEXT("#不明"));
-            else ::wsprintf(szTotText, TEXT("#%02d:%02d:%02d"), totSec/60/60%24, totSec/60%60, totSec%60);
+            if (tot < 0) ::lstrcpy(szTotText, TEXT(" (不明)"));
+            else ::wsprintf(szTotText, TEXT(" (%d:%02d:%02d)"), totSec/60/60%24, totSec/60%60, totSec%60);
         }
 
         if (dur < 3600000) ::wsprintf(szText, TEXT("%02d:%02d%s"), posSec/60%60, posSec%60, szTotText);
-        else ::wsprintf(szText, TEXT("%02d:%02d:%02d%s"), posSec/60/60, posSec/60%60, posSec%60, szTotText);
+        else ::wsprintf(szText, TEXT("%d:%02d:%02d%s"), posSec/60/60, posSec/60%60, posSec%60, szTotText);
 
         // シーク位置の描画に必要な幅を取得する
         rc.left = rc.top = rc.right = rc.bottom = 0;
@@ -1079,21 +1194,21 @@ void CPositionStatusItem::Draw(HDC hdc, const RECT *pRect)
     if (m_fDrawTot) {
         int tot = m_pPlugin->GetTotTime();
         int totSec = tot / 1000 + posSec;
-        if (tot < 0) ::lstrcpy(szTotText, TEXT("#不明"));
-        else ::wsprintf(szTotText, TEXT("#%02d:%02d:%02d"), totSec/60/60%24, totSec/60%60, totSec%60);
+        if (tot < 0) ::lstrcpy(szTotText, TEXT(" (不明)"));
+        else ::wsprintf(szTotText, TEXT(" (%d:%02d:%02d)"), totSec/60/60%24, totSec/60%60, totSec%60);
     }
 
     if (durSec < 60 * 60 && posSec < 60 * 60) {
-        ::wsprintf(szText, TEXT("%02d:%02d%s/%02d:%02d%c"),
-                   posSec / 60 % 60, posSec % 60, szTotText,
+        ::wsprintf(szText, TEXT("%02d:%02d/%02d:%02d%s%s"),
+                   posSec / 60 % 60, posSec % 60,
                    durSec / 60 % 60, durSec % 60,
-                   m_pPlugin->IsFixed() ? TEXT(' ') : TEXT('+'));
+                   m_pPlugin->IsFixed() ? TEXT("") : TEXT("+"), szTotText);
     }
     else {
-        ::wsprintf(szText, TEXT("%02d:%02d:%02d%s/%02d:%02d:%02d%c"),
-                   posSec / 60 / 60, posSec / 60 % 60, posSec % 60, szTotText,
+        ::wsprintf(szText, TEXT("%d:%02d:%02d/%d:%02d:%02d%s%s"),
+                   posSec / 60 / 60, posSec / 60 % 60, posSec % 60,
                    durSec / 60 / 60, durSec / 60 % 60, durSec % 60,
-                   m_pPlugin->IsFixed() ? TEXT(' ') : TEXT('+'));
+                   m_pPlugin->IsFixed() ? TEXT("") : TEXT("+"), szTotText);
     }
     DrawText(hdc, pRect, szText);
 }
