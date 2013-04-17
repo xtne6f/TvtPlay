@@ -126,6 +126,7 @@ bool CPlaylist::Sort(SORT_MODE mode)
             std::sort(begin(), end(), CompareDesc);
         }
         else if (mode == SORT_SHUFFLE) {
+            std::srand(::GetTickCount());
             std::random_shuffle(begin(), end());
         }
         for (size_t i = 0; i < sz; ++i) {
