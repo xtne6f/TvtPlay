@@ -9,12 +9,14 @@ struct PLAY_INFO {
 class CPlaylist : public std::vector<PLAY_INFO>
 {
 public:
+    enum SORT_MODE {
+        SORT_NONE, SORT_ASC, SORT_DESC, SORT_SHUFFLE,
+    };
     CPlaylist();
     int PushBackListOrFile(LPCTSTR path, bool fMovePos);
     bool MoveCurrentToPrev();
     bool MoveCurrentToNext();
-    bool Sort(bool fDesc);
-    bool Shuffle();
+    bool Sort(SORT_MODE mode);
     bool EraseCurrent();
     bool ClearWithoutCurrent();
     bool Prev(bool fLoop);

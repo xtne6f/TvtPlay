@@ -1235,11 +1235,14 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
         else if (selID == cmdID + 3) {
             m_playlist.ClearWithoutCurrent();
         }
-        else if (selID == cmdID + 4 || selID == cmdID + 5) {
-            m_playlist.Sort(selID==cmdID+5);
+        else if (selID == cmdID + 4) {
+            m_playlist.Sort(CPlaylist::SORT_ASC);
+        }
+        else if (selID == cmdID + 5) {
+            m_playlist.Sort(CPlaylist::SORT_DESC);
         }
         else if (selID == cmdID + 8) {
-            m_playlist.Shuffle();
+            m_playlist.Sort(CPlaylist::SORT_SHUFFLE);
         }
         else if (selID == cmdID + 6 || selID == cmdID + 7) {
             // 出力文字数を算出

@@ -111,34 +111,23 @@ static inline bool CompareAsc(const PLAY_INFO& l, const PLAY_INFO& r) { return :
 
 static inline bool CompareDesc(const PLAY_INFO& l, const PLAY_INFO& r) { return ::lstrcmpi(l.path, r.path) > 0; }
 
-// ソートする
-bool CPlaylist::Sort(bool fDesc)
+// ソートまたはシャッフルする
+bool CPlaylist::Sort(SORT_MODE mode)
 {
     size_t sz = size();
     if (m_pos < sz) {
         for (size_t i = 0; i < sz; ++i) {
             (*this)[i].fWork = m_pos == i;
         }
-        std::sort(begin(), end(), fDesc ? CompareDesc : CompareAsc);
-        for (size_t i = 0; i < sz; ++i) {
-            if ((*this)[i].fWork) {
-                m_pos = i;
-                break;
-            }
+        if (mode == SORT_ASC) {
+            std::sort(begin(), end(), CompareAsc);
         }
-        return true;
-    }
-    return false;
-}
-
-// シャッフルする
-bool CPlaylist::Shuffle(){
-    size_t sz = size();
-    if (m_pos < sz) {
-        for (size_t i = 0; i < sz; ++i) {
-            (*this)[i].fWork = m_pos == i;
+        else if (mode == SORT_DESC) {
+            std::sort(begin(), end(), CompareDesc);
         }
-        std::random_shuffle(begin(), end());
+        else if (mode == SORT_SHUFFLE) {
+            std::random_shuffle(begin(), end());
+        }
         for (size_t i = 0; i < sz; ++i) {
             if ((*this)[i].fWork) {
                 m_pos = i;
