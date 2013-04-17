@@ -131,6 +131,25 @@ bool CPlaylist::Sort(bool fDesc)
     return false;
 }
 
+// シャッフルする
+bool CPlaylist::Shuffle(){
+    size_t sz = size();
+    if (m_pos < sz) {
+        for (size_t i = 0; i < sz; ++i) {
+            (*this)[i].fWork = m_pos == i;
+        }
+        std::random_shuffle(begin(), end());
+        for (size_t i = 0; i < sz; ++i) {
+            if ((*this)[i].fWork) {
+                m_pos = i;
+                break;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
 // 現在位置のPLAY_INFOを削除する
 bool CPlaylist::EraseCurrent()
 {
