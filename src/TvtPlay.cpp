@@ -1208,6 +1208,7 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
                 ::AppendMenu(hSubMenu, MF_STRING, cmdID + 3, TEXT("リストをクリア"));
                 ::AppendMenu(hSubMenu, MF_STRING, cmdID + 4, TEXT("昇順にソート"));
                 ::AppendMenu(hSubMenu, MF_STRING, cmdID + 5, TEXT("降順にソート"));
+                ::AppendMenu(hSubMenu, MF_STRING, cmdID + 8, TEXT("シャッフル"));
                 ::AppendMenu(hSubMenu, MF_SEPARATOR, 0, NULL);
                 ::AppendMenu(hSubMenu, MF_STRING, cmdID + 6, TEXT("コピー"));
                 ::AppendMenu(hSubMenu, MF_STRING, cmdID + 7, TEXT("コピー(ファイル名のみ)"));
@@ -1236,6 +1237,9 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
         }
         else if (selID == cmdID + 4 || selID == cmdID + 5) {
             m_playlist.Sort(selID==cmdID+5);
+        }
+        else if (selID == cmdID + 8) {
+            m_playlist.Shuffle();
         }
         else if (selID == cmdID + 6 || selID == cmdID + 7) {
             // 出力文字数を算出

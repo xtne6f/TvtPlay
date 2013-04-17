@@ -14,6 +14,7 @@ public:
     bool MoveCurrentToPrev();
     bool MoveCurrentToNext();
     bool Sort(bool fDesc);
+    bool Shuffle();
     bool EraseCurrent();
     bool ClearWithoutCurrent();
     bool Prev(bool fLoop);
