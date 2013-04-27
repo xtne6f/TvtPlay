@@ -179,6 +179,7 @@ private:
     PAT m_pat;
     int m_captionPid;
 #endif
+    UINT m_Message;
 };
 
 #endif // INCLUDE_TVT_PLAY_H
