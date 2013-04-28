@@ -41,6 +41,21 @@ static const int INFO_VERSION = 22;
 #define WM_QUERY_RESET      (WM_APP + 4)
 #define WM_SATISFIED_POS_GT (WM_APP + 5)
 
+// TvtPlayから他プラグインに情報提供するメッセージ
+#define TVTP_CURRENT_MSGVER 1
+#define WM_TVTP_GET_MSGVER      (WM_APP + 50)
+#define WM_TVTP_IS_OPEN         (WM_APP + 51)
+#define WM_TVTP_GET_POSITION    (WM_APP + 52)
+#define WM_TVTP_GET_DURATION    (WM_APP + 53)
+#define WM_TVTP_GET_TOT_TIME    (WM_APP + 54)
+#define WM_TVTP_IS_EXTENDING    (WM_APP + 55)
+#define WM_TVTP_IS_PAUSED       (WM_APP + 56)
+#define WM_TVTP_GET_PLAY_FLAGS  (WM_APP + 57)
+#define WM_TVTP_GET_STRETCH     (WM_APP + 58)
+#define WM_TVTP_GET_PATH        (WM_APP + 59)
+#define WM_TVTP_SEEK            (WM_APP + 60)
+#define WM_TVTP_SEEK_ABSOLUTE   (WM_APP + 61)
+
 #define WM_TS_SET_UDP       (WM_APP + 1)
 #define WM_TS_SET_PIPE      (WM_APP + 2)
 #define WM_TS_PAUSE         (WM_APP + 3)
@@ -2482,6 +2497,49 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             pThis->BeginWatchingNextChapter(true);
         }
         return 0;
+    case WM_TVTP_GET_MSGVER:
+        return TVTP_CURRENT_MSGVER;
+    case WM_TVTP_IS_OPEN:
+        return pThis->IsOpen();
+    case WM_TVTP_GET_POSITION:
+        return pThis->GetPosition();
+    case WM_TVTP_GET_DURATION:
+        return pThis->GetDuration();
+    case WM_TVTP_GET_TOT_TIME:
+        return pThis->GetTotTime();
+    case WM_TVTP_IS_EXTENDING:
+        return pThis->IsExtending();
+    case WM_TVTP_IS_PAUSED:
+        return pThis->IsPaused();
+    case WM_TVTP_GET_PLAY_FLAGS:
+        return (int)pThis->IsAllRepeat() | (int)pThis->IsSingleRepeat()<<1 |
+               (int)pThis->IsRepeatChapterEnabled()<<2 | (int)pThis->IsSkipXChapterEnabled()<<3;
+    case WM_TVTP_GET_STRETCH:
+        {
+            int stid = pThis->GetStretchID();
+            return stid < 0 ? MAKELRESULT(0xFFFF, 100) : MAKELRESULT(stid, pThis->m_stretchList[stid]);
+        }
+    case WM_TVTP_GET_PATH:
+        if (pThis->IsOpen()) {
+            size_t pos = pThis->m_playlist.GetPosition();
+            if (pos < pThis->m_playlist.size()) {
+                int len = ::lstrlen(pThis->m_playlist[pos].path);
+                if (!lParam) {
+                    return len;
+                }
+                if (len < static_cast<int>(wParam)) {
+                    ::lstrcpy(reinterpret_cast<LPWSTR>(lParam), pThis->m_playlist[pos].path);
+                    return len;
+                }
+            }
+        }
+        return 0;
+    case WM_TVTP_SEEK:
+        pThis->Seek(static_cast<int>(lParam));
+        return TRUE;
+    case WM_TVTP_SEEK_ABSOLUTE:
+        pThis->SeekAbsolute(static_cast<int>(lParam));
+        return TRUE;
     case WM_APPCOMMAND:
         // メディアキー対策(オーナーウィンドウには自分で送る必要がある)
         ::SendMessage(::GetParent(hwnd), uMsg, wParam, lParam);
