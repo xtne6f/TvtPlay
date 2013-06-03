@@ -842,12 +842,6 @@ void CStatusView::EnableSizeAdjustment(bool fEnable)
 }
 
 
-void CStatusView::OnTrace(LPCTSTR pszOutput)
-{
-	SetSingleText(pszOutput);
-}
-
-
 void CStatusView::SetHotItem(int Item)
 {
 	if (Item<0 || (size_t)Item>=m_ItemList.size())

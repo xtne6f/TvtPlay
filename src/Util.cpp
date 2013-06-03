@@ -1,6 +1,5 @@
 ﻿#include <Windows.h>
 #include <Shlwapi.h>
-#include <tchar.h>
 #include "Util.h"
 
 
@@ -642,28 +641,6 @@ void extract_adaptation_field(ADAPTATION_FIELD *dst, const unsigned char *data)
 		dst->pcr_45khz = ((unsigned int)p[0]<<24)|(p[1]<<16)|(p[2]<<8)|p[3];
 		p += 6;
 	}
-}
-#endif
-
-
-#if 1 // From: TVTest_0.7.23_Src/TsUtilClass.cpp
-/////////////////////////////////////////////////////////////////////////////
-// トレースクラス
-/////////////////////////////////////////////////////////////////////////////
-
-void CTracer::Trace(LPCTSTR pszOutput, ...)
-{
-	va_list Args;
-
-	va_start(Args,pszOutput);
-	TraceV(pszOutput,Args);
-	va_end(Args);
-}
-
-void CTracer::TraceV(LPCTSTR pszOutput,va_list Args)
-{
-	_vsntprintf_s(m_szBuffer,sizeof(m_szBuffer)/sizeof(TCHAR),_TRUNCATE,pszOutput,Args);
-	OnTrace(m_szBuffer);
 }
 #endif
 

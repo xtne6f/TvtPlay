@@ -141,21 +141,6 @@ private:
     CCriticalLock *m_pLock;
 };
 
-/////////////////////////////////////////////////////////////////////////////
-// トレースクラス
-/////////////////////////////////////////////////////////////////////////////
-
-class CTracer
-{
-	TCHAR m_szBuffer[256];
-public:
-	virtual ~CTracer() {}
-	void Trace(LPCTSTR pszOutput, ...);
-	void TraceV(LPCTSTR pszOutput,va_list Args);
-protected:
-	virtual void OnTrace(LPCTSTR pszOutput)=0;
-};
-
 inline bool IsStringEmpty(LPCWSTR pszString) {
 	return pszString==NULL || pszString[0]==L'\0';
 }

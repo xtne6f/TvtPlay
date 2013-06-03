@@ -62,7 +62,7 @@ public:
 	friend CStatusView;
 };
 
-class CStatusView : public CCustomWindow, public CTracer
+class CStatusView : public CCustomWindow
 {
 public:
 	class ABSTRACT_CLASS(CEventHandler)
@@ -124,8 +124,6 @@ public:
 						 bool fHighlight=false,HFONT hfont=NULL) const;
 	bool EnableBufferedPaint(bool fEnable);
 	void EnableSizeAdjustment(bool fEnable);
-// CTracer
-	void OnTrace(LPCTSTR pszOutput) override;
 
 private:
 	static HINSTANCE m_hinst;
