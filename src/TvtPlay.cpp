@@ -463,18 +463,6 @@ void CTvtPlay::LoadSettings()
 
     m_fSettingsLoaded = true;
 
-    if (iniVer < 10) {
-        // Button02が変更されていない場合はデフォルトに置換する
-        if (!::lstrcmpi(m_buttonList[2], TEXT(";4,Loop")) ||
-            !::lstrcmpi(m_buttonList[2], TEXT("4,Loop")))
-        {
-            ::lstrcpy(m_buttonList[2], DEFAULT_BUTTON_LIST[2]);
-        }
-    }
-    if (iniVer < 12) {
-        // StatusItemWidthが変更されていない場合はデフォルトに置換する
-        if (m_posItemWidth == 112) m_posItemWidth = -1;
-    }
     if (iniVer < INFO_VERSION) {
         // デフォルトの設定キーを出力するため
         SaveSettings(true);
