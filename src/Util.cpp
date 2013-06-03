@@ -29,6 +29,22 @@ BOOL ASFilterSendNotifyMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
 #endif
 
 
+// 必要なバッファを確保してGetPrivateProfileSection()を呼ぶ
+TCHAR *NewGetPrivateProfileSection(LPCTSTR lpAppName, LPCTSTR lpFileName)
+{
+    TCHAR *pBuf = NULL;
+    for (int bufSize = 4096; bufSize < 1024 * 1024; bufSize *= 2) {
+        delete [] pBuf;
+        pBuf = new TCHAR[bufSize];
+        if ((int)::GetPrivateProfileSection(lpAppName, pBuf, bufSize, lpFileName) < bufSize - 2) {
+            break;
+        }
+        pBuf[0] = 0;
+    }
+    return pBuf;
+}
+
+
 // GetPrivateProfileSection()で取得したバッファから、キーに対応する文字列を取得する
 void GetBufferedProfileString(LPCTSTR lpBuff, LPCTSTR lpKeyName, LPCTSTR lpDefault, LPTSTR lpReturnedString, DWORD nSize)
 {

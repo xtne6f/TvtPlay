@@ -17,6 +17,7 @@ BOOL ASFilterSendNotifyMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 #define READ_FILE_MAX_SIZE (256 * 1024)
 #define ICON_SIZE 16
 
+TCHAR *NewGetPrivateProfileSection(LPCTSTR lpAppName, LPCTSTR lpFileName);
 void GetBufferedProfileString(LPCTSTR lpBuff, LPCTSTR lpKeyName, LPCTSTR lpDefault, LPTSTR lpReturnedString, DWORD nSize);
 int GetBufferedProfileInt(LPCTSTR lpBuff, LPCTSTR lpKeyName, int nDefault);
 int GetPrivateProfileSignedInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int nDefault, LPCTSTR lpFileName);

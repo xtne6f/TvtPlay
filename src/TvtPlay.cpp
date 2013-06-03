@@ -307,48 +307,39 @@ bool CTvtPlay::Initialize()
     if (!::GetModuleFileName(g_hinstDLL, m_szIniFileName, _countof(m_szIniFileName)) ||
         !::PathRenameExtension(m_szIniFileName, TEXT(".ini"))) return false;
 
-    TVTest::CommandInfo cmdList[_countof(COMMAND_LIST) + COMMAND_S_MAX * 2];
-    memcpy(cmdList, COMMAND_LIST, sizeof(COMMAND_LIST));
-    int count = _countof(COMMAND_LIST);
+    // コマンドを登録
+    m_pApp->RegisterCommand(COMMAND_LIST, _countof(COMMAND_LIST));
 
     // 設定に応じてコマンド数をふやす
-    TCHAR seekKey[COMMAND_S_MAX][16];
-    TCHAR seekName[COMMAND_S_MAX][16];
+    TCHAR *pBuf = NewGetPrivateProfileSection(SETTINGS, m_szIniFileName);
     for (int i = 0; i < COMMAND_S_MAX; ++i) {
-        ::wsprintf(seekKey[i], TEXT("Seek%c"), TEXT('A') + i);
-        ::wsprintf(seekName[i], TEXT("シーク:%c"), TEXT('A') + i);
+        TCHAR key[16], name[16];
+        ::wsprintf(key, TEXT("Seek%c"), TEXT('A') + i);
+        ::wsprintf(name, TEXT("シーク:%c"), TEXT('A') + i);
         if (!DEFAULT_SEEK_LIST[i]) {
-            if (!GetPrivateProfileSignedInt(SETTINGS, seekKey[i], 0, m_szIniFileName)) break;
+            if (!GetBufferedProfileInt(pBuf, key, 0)) break;
         }
-        cmdList[count].ID = ID_COMMAND_SEEK_A + i;
-        cmdList[count].pszText = seekKey[i];
-        cmdList[count++].pszName = seekName[i];
+        m_pApp->RegisterCommand(ID_COMMAND_SEEK_A + i, key, name);
     }
-
-    TCHAR stretchKey[COMMAND_S_MAX][16];
-    TCHAR stretchName[COMMAND_S_MAX][16];
     for (int i = 0; i < COMMAND_S_MAX; ++i) {
-        ::wsprintf(stretchKey[i], TEXT("Stretch%c"), TEXT('A') + i);
-        ::wsprintf(stretchName[i], TEXT("倍速:%c"), TEXT('A') + i);
+        TCHAR key[16], name[16];
+        ::wsprintf(key, TEXT("Stretch%c"), TEXT('A') + i);
+        ::wsprintf(name, TEXT("倍速:%c"), TEXT('A') + i);
         if (!DEFAULT_STRETCH_LIST[i]) {
-            if (!GetPrivateProfileSignedInt(SETTINGS, stretchKey[i], 0, m_szIniFileName)) break;
+            if (!GetBufferedProfileInt(pBuf, key, 0)) break;
         }
-        cmdList[count].ID = ID_COMMAND_STRETCH_A + i;
-        cmdList[count].pszText = stretchKey[i];
-        cmdList[count++].pszName = stretchName[i];
+        m_pApp->RegisterCommand(ID_COMMAND_STRETCH_A + i, key, name);
     }
-
-    // コマンドを登録
-    m_pApp->RegisterCommand(cmdList, count);
 
     // イベントコールバック関数を登録
     m_pApp->SetEventCallback(EventCallback, this);
 
     TCHAR cmdOption[128];
-    ::GetPrivateProfileString(SETTINGS, TEXT("TvtpCmdOption"), TEXT(""), cmdOption, _countof(cmdOption), m_szIniFileName);
-    AnalyzeCommandLine(cmdOption, false);
+    GetBufferedProfileString(pBuf, TEXT("TvtpCmdOption"), TEXT(""), cmdOption, _countof(cmdOption));
+    delete [] pBuf;
 
     // コマンドラインで指定されていなければ設定ファイルの値を適用する
+    AnalyzeCommandLine(cmdOption, false);
     int preSpecOffset = m_specOffset;
     int preSpecStretchID = m_specStretchID;
     AnalyzeCommandLine(::GetCommandLine(), true);
@@ -373,13 +364,7 @@ void CTvtPlay::LoadSettings()
 
     int iniVer = 0;
     {
-        TCHAR *pBuf = NULL;
-        for (int bufSize = 4096; bufSize < 1024*1024; bufSize *= 2) {
-            delete [] pBuf;
-            pBuf = new TCHAR[bufSize];
-            if ((int)::GetPrivateProfileSection(SETTINGS, pBuf, bufSize, m_szIniFileName) < bufSize - 2) break;
-            pBuf[0] = 0;
-        }
+        TCHAR *pBuf = NewGetPrivateProfileSection(SETTINGS, m_szIniFileName);
         iniVer              = GetBufferedProfileInt(pBuf, TEXT("Version"), 0);
         m_fAllRepeat        = GetBufferedProfileInt(pBuf, TEXT("TsRepeatAll"), 0) != 0;
         m_fSingleRepeat     = GetBufferedProfileInt(pBuf, TEXT("TsRepeatSingle"), 0) != 0;
@@ -667,13 +652,7 @@ bool CTvtPlay::LoadFileInfoSetting(std::list<HASH_INFO> &hashList) const
     hashList.clear();
     if (!m_fSettingsLoaded || m_hashListMax <= 0) return false;
 
-    TCHAR *pBuf = NULL;
-    for (int bufSize = 4096; bufSize < 1024*1024; bufSize *= 2) {
-        delete [] pBuf;
-        pBuf = new TCHAR[bufSize];
-        if ((int)::GetPrivateProfileSection(TEXT("FileInfo"), pBuf, bufSize, m_szIniFileName) < bufSize - 2) break;
-        pBuf[0] = 0;
-    }
+    TCHAR *pBuf = NewGetPrivateProfileSection(TEXT("FileInfo"), m_szIniFileName);
     if (!GetBufferedProfileInt(pBuf, TEXT("Enabled"), 0)) {
         delete [] pBuf;
         return false;
