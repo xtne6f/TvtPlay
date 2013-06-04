@@ -925,15 +925,18 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
 {
     // メニュー生成
     int selID = 0;
-    HMENU hmenu = ::CreatePopupMenu();
-    if (hmenu) {
-        if ((m_statusRow != 0 || IsAppMaximized()) && !m_pApp->GetFullscreen()) {
-            ::AppendMenu(hmenu, MF_STRING|(m_fAutoHide?MF_UNCHECKED:MF_CHECKED), 1, TEXT("常に表示する"));
+    HMENU hTopMenu = ::LoadMenu(g_hinstDLL, MAKEINTRESOURCE(IDR_MENU_SETUP));
+    if (hTopMenu) {
+        HMENU hmenu = ::GetSubMenu(hTopMenu, 0);
+        ::CheckMenuItem(hmenu, IDM_SHOW_ALWAYS, !m_fAutoHide ? MF_CHECKED : MF_UNCHECKED);
+        ::CheckMenuItem(hmenu, IDM_POS_DRAW_TOT, m_fPosDrawTot ? MF_CHECKED : MF_UNCHECKED);
+        ::CheckMenuItem(hmenu, IDM_MOD_TIMESTAMP, m_modTimestampMode==1 ? MF_CHECKED : MF_UNCHECKED);
+        ::CheckMenuItem(hmenu, IDM_MOD_TIMESTAMP2, m_modTimestampMode==2 ? MF_CHECKED : MF_UNCHECKED);
+        if (m_statusRow == 0 && !IsAppMaximized() || m_pApp->GetFullscreen()) {
+            ::DeleteMenu(hmenu, IDM_SHOW_ALWAYS, 0);
         }
-        ::AppendMenu(hmenu, MF_STRING|(m_fPosDrawTot?MF_CHECKED:MF_UNCHECKED), 2, TEXT("放送時刻を表示する"));
-        ::AppendMenu(hmenu, MF_STRING|(m_modTimestampMode==1?MF_CHECKED:MF_UNCHECKED), 3, TEXT("ラップアラウンドを回避する"));
-        if (m_pApp->GetVersion() >= TVTest::MakeVersion(0,8,0)) {
-            ::AppendMenu(hmenu, MF_STRING|(m_modTimestampMode==2?MF_CHECKED:MF_UNCHECKED), 4, TEXT("ラップアラウンドを回避する(視聴側)"));
+        if (m_pApp->GetVersion() < TVTest::MakeVersion(0,8,0)) {
+            ::DeleteMenu(hmenu, IDM_MOD_TIMESTAMP2, 0);
         }
 #ifdef EN_SWC
         HMENU hSubMenu = ::CreatePopupMenu();
@@ -960,14 +963,17 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
         }
 #endif
         selID = TrackPopup(hmenu, pt, flags);
-        ::DestroyMenu(hmenu);
+        ::DestroyMenu(hTopMenu);
     }
-    if (selID == 1) {
+
+    switch (selID) {
+    case IDM_SHOW_ALWAYS:
         m_fAutoHide = !m_fAutoHide;
         OnDispModeChange(m_pApp->GetStandby());
         SaveSettings();
-    }
-    else if (selID == 2) {
+        break;
+    case IDM_POS_DRAW_TOT:
+        {
         m_fPosDrawTot = !m_fPosDrawTot;
         CStatusItem *pItem = m_statusView.GetItemByID(STATUS_ITEM_POSITION);
         if (pItem && m_posItemWidth < 0) {
@@ -977,32 +983,32 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
             m_statusView.Invalidate();
         }
         SaveSettings();
-    }
-    else if (selID == 3) {
+        }
+        break;
+    case IDM_MOD_TIMESTAMP:
         m_modTimestampMode = m_modTimestampMode != 1 ? 1 : 0;
         SetModTimestamp(m_modTimestampMode == 1);
         SaveSettings();
-    }
-    else if (selID == 4) {
+        break;
+    case IDM_MOD_TIMESTAMP2:
         m_modTimestampMode = m_modTimestampMode != 2 ? 2 : 0;
         SetModTimestamp(false);
         SaveSettings();
-    }
+        break;
+    default:
 #ifdef EN_SWC
-    else if (101 <= selID && selID-105 < m_stretchListNum) {
-        switch (selID) {
-        case 101: m_slowerWithCaption = m_slowerWithCaption==-100?0:-100; break;
-        case 102: m_slowerWithCaption = m_slowerWithCaption==75?0:75; break;
-        case 103: m_slowerWithCaption = m_slowerWithCaption==50?0:50; break;
-        case 104: m_slowerWithCaption = m_slowerWithCaption==25?0:25; break;
-        default:
-            m_slowerWithCaption = m_slowerWithCaption==-m_stretchList[selID-105] ? 0 : -m_stretchList[selID-105];
-            break;
+        if (101 <= selID && selID-105 < m_stretchListNum) {
+            if (selID == 101) m_slowerWithCaption = m_slowerWithCaption==-100 ? 0 : -100;
+            else if (selID == 102) m_slowerWithCaption = m_slowerWithCaption==75 ? 0 : 75;
+            else if (selID == 103) m_slowerWithCaption = m_slowerWithCaption==50 ? 0 : 50;
+            else if (selID == 104) m_slowerWithCaption = m_slowerWithCaption==25 ? 0 : 25;
+            else m_slowerWithCaption = m_slowerWithCaption==-m_stretchList[selID-105] ? 0 : -m_stretchList[selID-105];
+            Stretch(GetStretchID());
+            SaveSettings();
         }
-        Stretch(GetStretchID());
-        SaveSettings();
-    }
 #endif
+        break;
+    }
 }
 
 
@@ -1156,15 +1162,17 @@ bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
 bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
 {
     // メニュー生成
-    int selID = 0, cmdID = 1;
-    HMENU hmenu = ::CreatePopupMenu();
-    if (hmenu) {
+    int selID = 0;
+    HMENU hTopMenu = ::LoadMenu(g_hinstDLL, MAKEINTRESOURCE(IDR_MENU_PLAYLIST));
+    if (hTopMenu) {
+        HMENU hmenu;
         if (m_playlist.empty()) {
-            ::AppendMenu(hmenu, MF_STRING | MF_GRAYED, 0, TEXT("(なし)"));
+            hmenu = ::GetSubMenu(hTopMenu, 1);
         }
         else {
+            hmenu = ::GetSubMenu(hTopMenu, 0);
             CPlaylist::const_iterator it = m_playlist.begin();
-            for (; it != m_playlist.end(); ++cmdID, ++it) {
+            for (int cmdID = 1; it != m_playlist.end() && cmdID <= 10000; ++cmdID, ++it) {
                 TCHAR str[64];
                 ::lstrcpyn(str, PathFindFileName((*it).path), 64);
                 if (::lstrlen(str) == 63) ::lstrcpy(&str[60], TEXT("..."));
@@ -1181,54 +1189,40 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
                 mi.dwTypeData = str;
                 ::InsertMenuItem(hmenu, cmdID - 1, TRUE, &mi);
             }
-            ::AppendMenu(hmenu, MF_SEPARATOR, 0, NULL);
-            ::AppendMenu(hmenu, MF_STRING, cmdID + 0, TEXT("現在のファイルを前へ移動(&B)"));
-            ::AppendMenu(hmenu, MF_STRING, cmdID + 1, TEXT("現在のファイルを次へ移動(&N)"));
-            ::AppendMenu(hmenu, MF_STRING, cmdID + 2, TEXT("現在のファイルをリストから削除(&X)"));
-            HMENU hSubMenu = ::CreatePopupMenu();
-            if (hSubMenu) {
-                ::AppendMenu(hSubMenu, MF_STRING, cmdID + 3, TEXT("リストをクリア"));
-                ::AppendMenu(hSubMenu, MF_STRING, cmdID + 4, TEXT("昇順にソート"));
-                ::AppendMenu(hSubMenu, MF_STRING, cmdID + 5, TEXT("降順にソート"));
-                ::AppendMenu(hSubMenu, MF_STRING, cmdID + 8, TEXT("シャッフル"));
-                ::AppendMenu(hSubMenu, MF_SEPARATOR, 0, NULL);
-                ::AppendMenu(hSubMenu, MF_STRING, cmdID + 6, TEXT("コピー"));
-                ::AppendMenu(hSubMenu, MF_STRING, cmdID + 7, TEXT("コピー(ファイル名のみ)"));
-                ::AppendMenu(hmenu, MF_SEPARATOR, 0, NULL);
-                ::AppendMenu(hmenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSubMenu), TEXT("その他の操作(&O)"));
-            }
         }
         selID = TrackPopup(hmenu, pt, flags);
-        ::DestroyMenu(hmenu);
+        ::DestroyMenu(hTopMenu);
     }
 
-    if (selID >= cmdID || selID - 1 < 0 || (int)m_playlist.size() <= selID - 1) {
-        if (selID == cmdID + 0) {
-            m_playlist.MoveCurrentToPrev();
-        }
-        else if (selID == cmdID + 1) {
-            m_playlist.MoveCurrentToNext();
-        }
-        else if (selID == cmdID + 2) {
-            // ファイルが開かれていれば閉じる
-            Close();
-            m_playlist.EraseCurrent();
-        }
-        else if (selID == cmdID + 3) {
-            m_playlist.ClearWithoutCurrent();
-        }
-        else if (selID == cmdID + 4) {
-            m_playlist.Sort(CPlaylist::SORT_ASC);
-        }
-        else if (selID == cmdID + 5) {
-            m_playlist.Sort(CPlaylist::SORT_DESC);
-        }
-        else if (selID == cmdID + 8) {
-            m_playlist.Sort(CPlaylist::SORT_SHUFFLE);
-        }
-        else if (selID == cmdID + 6 || selID == cmdID + 7) {
+    switch (selID) {
+    case IDM_PLAYLIST_PREV:
+        m_playlist.MoveCurrentToPrev();
+        break;
+    case IDM_PLAYLIST_NEXT:
+        m_playlist.MoveCurrentToNext();
+        break;
+    case IDM_PLAYLIST_ERASE:
+        // ファイルが開かれていれば閉じる
+        Close();
+        m_playlist.EraseCurrent();
+        break;
+    case IDM_PLAYLIST_CLEAR:
+        m_playlist.ClearWithoutCurrent();
+        break;
+    case IDM_PLAYLIST_SORT_ASC:
+        m_playlist.Sort(CPlaylist::SORT_ASC);
+        break;
+    case IDM_PLAYLIST_SORT_DESC:
+        m_playlist.Sort(CPlaylist::SORT_DESC);
+        break;
+    case IDM_PLAYLIST_SHUFFLE:
+        m_playlist.Sort(CPlaylist::SORT_SHUFFLE);
+        break;
+    case IDM_PLAYLIST_CLIP_PATH:
+    case IDM_PLAYLIST_CLIP_NAME:
+        {
             // 出力文字数を算出
-            int size = m_playlist.ToString(NULL, 0, selID==cmdID+7);
+            int size = m_playlist.ToString(NULL, 0, selID==IDM_PLAYLIST_CLIP_NAME);
             // クリップボードにコピー
             if (size > 1 && ::OpenClipboard(m_hwndFrame)) {
                 if (::EmptyClipboard()) {
@@ -1236,7 +1230,7 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
                     if (hg) {
                         LPTSTR clip = reinterpret_cast<LPTSTR>(::GlobalLock(hg));
                         if (clip) {
-                            m_playlist.ToString(clip, size, selID==cmdID+7);
+                            m_playlist.ToString(clip, size, selID==IDM_PLAYLIST_CLIP_NAME);
                             ::GlobalUnlock(hg);
                             if (!::SetClipboardData(CF_UNICODETEXT, hg)) ::GlobalFree(hg);
                         }
@@ -1246,11 +1240,15 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
                 ::CloseClipboard();
             }
         }
-        return false;
+        break;
+    default:
+        if (1 <= selID && selID - 1 < (int)m_playlist.size()) {
+            m_playlist.SetPosition(selID - 1);
+            return OpenCurrent();
+        }
+        break;
     }
-
-    m_playlist.SetPosition(selID - 1);
-    return OpenCurrent();
+    return false;
 }
 
 
@@ -1370,26 +1368,22 @@ void CTvtPlay::EditChapterWithPopup(int pos, const POINT &pt, UINT flags)
 
     // メニュー生成
     int selID = 0;
-    HMENU hmenu = ::CreatePopupMenu();
-    if (hmenu) {
+    HMENU hTopMenu = ::LoadMenu(g_hinstDLL, MAKEINTRESOURCE(IDR_MENU_CHAPTER));
+    if (hTopMenu) {
+        HMENU hmenu = ::GetSubMenu(hTopMenu, 0);
         TCHAR str[128];
         ::wsprintf(str, TEXT("%d:%02d:%02d.%03d %s"),
                    ch.first/3600000, ch.first/60000%60, ch.first/1000%60, ch.first%1000,
                    ch.second.val);
-        ::AppendMenu(hmenu, MF_STRING, 8, str);
-        ::AppendMenu(hmenu, MF_SEPARATOR, 0, NULL);
-        ::AppendMenu(hmenu, MF_STRING, 1, TEXT("0.2秒前へ"));
-        ::AppendMenu(hmenu, MF_STRING, 2, TEXT("0.2秒後ろへ"));
-        ::AppendMenu(hmenu, MF_STRING, 3, TEXT("チャプターを削除"));
-        ::AppendMenu(hmenu, MF_SEPARATOR, 0, NULL);
-        ::AppendMenu(hmenu, MF_STRING | (ch.second.IsIn() ? MFS_CHECKED : 0), 4, TEXT("開始チャプター"));
-        ::AppendMenu(hmenu, MF_STRING | (ch.second.IsOut() ? MFS_CHECKED : 0), 5, TEXT("終了チャプター"));
-        ::AppendMenu(hmenu, MF_STRING | (ch.second.IsIn() && ch.second.IsX() ? MFS_CHECKED : 0), 6, TEXT("スキップ開始"));
-        ::AppendMenu(hmenu, MF_STRING | (ch.second.IsOut() && ch.second.IsX() ? MFS_CHECKED : 0), 7, TEXT("スキップ終了"));
+        ::ModifyMenu(hmenu, IDM_CHAPTER_EDIT, MF_STRING, IDM_CHAPTER_EDIT, str);
+        ::CheckMenuItem(hmenu, IDM_CHAPTER_IN, ch.second.IsIn() ? MF_CHECKED : MF_UNCHECKED);
+        ::CheckMenuItem(hmenu, IDM_CHAPTER_OUT, ch.second.IsOut() ? MF_CHECKED : MF_UNCHECKED);
+        ::CheckMenuItem(hmenu, IDM_CHAPTER_X_IN, ch.second.IsIn() && ch.second.IsX() ? MF_CHECKED : MF_UNCHECKED);
+        ::CheckMenuItem(hmenu, IDM_CHAPTER_X_OUT, ch.second.IsOut() && ch.second.IsX() ? MF_CHECKED : MF_UNCHECKED);
         selID = TrackPopup(hmenu, pt, flags);
-        ::DestroyMenu(hmenu);
+        ::DestroyMenu(hTopMenu);
     }
-    if (selID == 8) {
+    if (selID == IDM_CHAPTER_EDIT) {
         // ダイアログで編集
         selID = 0;
         if (!m_fPopuping) {
@@ -1399,7 +1393,7 @@ void CTvtPlay::EditChapterWithPopup(int pos, const POINT &pt, UINT flags)
             if (::DialogBoxParam(g_hinstDLL, MAKEINTRESOURCE(IDD_EDIT_CHAPTER), hwndOwner,
                                  EditChapterDlgProc, reinterpret_cast<LPARAM>(&ch)) == IDOK)
             {
-                selID = 8;
+                selID = IDM_CHAPTER_EDIT;
             }
             m_fPopuping = false;
         }
@@ -1409,22 +1403,22 @@ void CTvtPlay::EditChapterWithPopup(int pos, const POINT &pt, UINT flags)
     // マップのチャプターをchの値に更新する
     m_chapter.erase(pos);
     switch (selID) {
-    case 1:
+    case IDM_CHAPTER_FORWARD:
         if (ch.first < CHAPTER_POS_MAX)
             ch.first = max(ch.first-200, 0);
         break;
-    case 2:
+    case IDM_CHAPTER_BACKWARD:
         ch.first = min(ch.first+200, CHAPTER_POS_MAX);
         break;
-    case 4:
+    case IDM_CHAPTER_IN:
         if (ch.second.IsOut()) ch.second.val[0] = TEXT('i');
         else ch.second.InvertPrefix(TEXT('i'));
         break;
-    case 5:
+    case IDM_CHAPTER_OUT:
         if (ch.second.IsIn()) ch.second.val[0] = TEXT('o');
         else ch.second.InvertPrefix(TEXT('o'));
         break;
-    case 6:
+    case IDM_CHAPTER_X_IN:
         {
             CHAPTER_NAME chName;
             ::lstrcpyn(chName.val, ch.second.val + (ch.second.IsIn()||ch.second.IsOut() ? 1 : 0) +
@@ -1433,7 +1427,7 @@ void CTvtPlay::EditChapterWithPopup(int pos, const POINT &pt, UINT flags)
             ::lstrcat(ch.second.val, chName.val);
         }
         break;
-    case 7:
+    case IDM_CHAPTER_X_OUT:
         {
             CHAPTER_NAME chName;
             ::lstrcpyn(chName.val, ch.second.val + (ch.second.IsIn()||ch.second.IsOut() ? 1 : 0) +
@@ -1443,7 +1437,7 @@ void CTvtPlay::EditChapterWithPopup(int pos, const POINT &pt, UINT flags)
         }
         break;
     }
-    if (selID != 3) m_chapter.insert(ch);
+    if (selID != IDM_CHAPTER_ERASE) m_chapter.insert(ch);
     m_chapter.Save();
     BeginWatchingNextChapter(false);
 }
@@ -1454,16 +1448,15 @@ void CTvtPlay::EditAllChaptersWithPopup(const POINT &pt, UINT flags)
 {
     // メニュー生成
     int selID = 0;
-    HMENU hmenu = ::CreatePopupMenu();
-    if (hmenu) {
-        ::AppendMenu(hmenu, MF_STRING, 1, TEXT("全チャプターを0.2秒前へ"));
-        ::AppendMenu(hmenu, MF_STRING, 2, TEXT("全チャプターを0.2秒後ろへ"));
+    HMENU hTopMenu = ::LoadMenu(g_hinstDLL, MAKEINTRESOURCE(IDR_MENU_CHAPTER_ALL));
+    if (hTopMenu) {
+        HMENU hmenu = ::GetSubMenu(hTopMenu, 0);
         selID = TrackPopup(hmenu, pt, flags);
-        ::DestroyMenu(hmenu);
+        ::DestroyMenu(hTopMenu);
     }
     if (!selID || !m_chapter.IsOpen()) return;
 
-    if (selID == 1) {
+    if (selID == IDM_CHAPTER_FORWARD) {
         CChapterMap::iterator it = m_chapter.begin();
         while (it != m_chapter.end()) {
             CHAPTER ch = *it;
@@ -1473,7 +1466,7 @@ void CTvtPlay::EditAllChaptersWithPopup(const POINT &pt, UINT flags)
             ++it;
         }
     }
-    else {
+    else if (selID == IDM_CHAPTER_BACKWARD) {
         CChapterMap::iterator it = m_chapter.end();
         while (it != m_chapter.begin()) {
             CHAPTER ch = *(--it);
