@@ -204,11 +204,11 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     // まず読み込み共有で開いてみる
     m_fShareWrite = false;
     m_fFixed = true;
-    if (!m_file.Open(path, FILE_SHARE_READ)) {
+    if (!m_file.Open(path, FILE_SHARE_READ, FILE_FLAG_SEQUENTIAL_SCAN)) {
         // 録画中かもしれない。書き込み共有で開く
         m_fShareWrite = true;
         m_fFixed = false;
-        if (!m_file.Open(path, FILE_SHARE_READ | FILE_SHARE_WRITE)) {
+        if (!m_file.Open(path, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_FLAG_SEQUENTIAL_SCAN)) {
             return false;
         }
     }

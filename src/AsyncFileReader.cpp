@@ -52,11 +52,11 @@ bool CAsyncFileReader::SetupBuffer(int bufSize, int bufPrefixSize, int bufNum, i
     return true;
 }
 
-bool CAsyncFileReader::Open(LPCTSTR path, DWORD dwShareMode)
+bool CAsyncFileReader::Open(LPCTSTR path, DWORD dwShareMode, DWORD dwFlagsAndAttributes)
 {
     Close();
     m_hFile = ::CreateFile(path, GENERIC_READ, dwShareMode, NULL,
-                           OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
+                           OPEN_EXISTING, FILE_FLAG_OVERLAPPED | dwFlagsAndAttributes, NULL);
     return IsOpen();
 }
 

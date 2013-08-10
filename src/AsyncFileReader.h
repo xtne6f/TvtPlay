@@ -10,7 +10,7 @@ public:
     CAsyncFileReader();
     ~CAsyncFileReader();
     bool SetupBuffer(int bufSize, int bufPrefixSize, int bufNum, int olReqUnit = 2);
-    bool Open(LPCTSTR path, DWORD dwShareMode);
+    bool Open(LPCTSTR path, DWORD dwShareMode, DWORD dwFlagsAndAttributes);
     void Close();
     void Clear();
     int Read(BYTE **ppBuf);
