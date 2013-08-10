@@ -78,7 +78,6 @@
     <TargetExt>.ax</TargetExt>
     <IncludePath>..\..\soundtouch\include;..\..\baseclasses;$(IncludePath)</IncludePath>
     <LibraryPath>..\..\soundtouch\lib;..\..\baseclasses\$(Platform)\$(Configuration);$(LibraryPath)</LibraryPath>
-    <TargetName>$(ProjectName)(x64)</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
@@ -92,7 +91,6 @@
     <TargetExt>.ax</TargetExt>
     <IncludePath>..\..\soundtouch\include;..\..\baseclasses;$(IncludePath)</IncludePath>
     <LibraryPath>..\..\soundtouch\lib;..\..\baseclasses\$(Platform)\$(Configuration);$(LibraryPath)</LibraryPath>
-    <TargetName>$(ProjectName)(x64)</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
