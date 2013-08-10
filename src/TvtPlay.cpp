@@ -280,13 +280,7 @@ void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst)
         if (argc >= 1 + fIgnoreFirst && argv[argc-1][0] != TEXT('/') && argv[argc-1][0] != TEXT('-')) {
             bool fSpec = m_fIgnoreExt;
             if (!m_fIgnoreExt) {
-                LPCTSTR ext = ::PathFindExtension(argv[argc-1]);
-                if (ext && (!::lstrcmpi(ext, TEXT(".ts")) ||
-                            !::lstrcmpi(ext, TEXT(".m2t")) ||
-                            !::lstrcmpi(ext, TEXT(".m2ts")) ||
-                            !::lstrcmpi(ext, TEXT(".m3u")) ||
-                            !::lstrcmpi(ext, TEXT(".tslist"))))
-                {
+                if (CPlaylist::IsPlayListFile(argv[argc-1]) || CPlaylist::IsMediaFile(argv[argc-1])) {
                     m_fForceEnable = true;
                     fSpec = true;
                 }
@@ -353,6 +347,10 @@ bool CTvtPlay::Initialize()
 bool CTvtPlay::Finalize()
 {
     if (m_pApp->IsPluginEnabled()) EnablePlugin(false);
+    // 本体や他プラグインとの干渉を防ぐため、一旦有効にしたD&Dは最後まで維持する
+    if (m_fInitialized) {
+        ::DragAcceptFiles(m_pApp->GetAppWindow(), FALSE);
+    }
     return true;
 }
 
@@ -831,6 +829,8 @@ bool CTvtPlay::InitializePlugin()
     }
     ::DeleteDC(hdcMem);
 
+    ::DragAcceptFiles(m_pApp->GetAppWindow(), m_pApp->GetFullscreen() ? FALSE : TRUE);
+
     m_fInitialized = true;
     return true;
 }
@@ -895,10 +895,8 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
         if (m_fShowOpenDialog && !m_szSpecFileName[0] && !m_pApp->GetStandby()) OpenWithDialog();
 
         m_pApp->SetWindowMessageCallback(WindowMsgCallback, this);
-        ::DragAcceptFiles(m_pApp->GetAppWindow(), TRUE);
     }
     else {
-        ::DragAcceptFiles(m_pApp->GetAppWindow(), FALSE);
         m_pApp->SetWindowMessageCallback(NULL, NULL);
         Close();
 #ifdef EN_SWC
@@ -2183,6 +2181,10 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         // 全画面表示状態が変化した
         if (pThis->m_pApp->IsPluginEnabled())
             pThis->OnDispModeChange(false);
+        // フルスクリーン時はD&Dを無効にすることでファイルダイアログ等でのD&Dが本体ウィンドウに送られるのを防ぐ
+        if (pThis->m_fInitialized) {
+            ::DragAcceptFiles(pThis->m_pApp->GetAppWindow(), lParam1 ? FALSE : TRUE);
+        }
         break;
     case TVTest::EVENT_STANDBY:
         // 待機状態が変化した
@@ -2305,19 +2307,20 @@ BOOL CALLBACK CTvtPlay::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, L
         }
         break;
     case WM_DROPFILES:
-        if (!pThis->m_fDialogOpen) {
+        {
             bool fAdded = false;
             TCHAR fileName[MAX_PATH];
             int num = ::DragQueryFile((HDROP)wParam, 0xFFFFFFFF, fileName, _countof(fileName));
             for (int i = 0; i < num; ++i) {
-                if (::DragQueryFile((HDROP)wParam, i, fileName, _countof(fileName)) != 0) {
+                if (::DragQueryFile((HDROP)wParam, i, fileName, _countof(fileName)) != 0 &&
+                    (CPlaylist::IsPlayListFile(fileName) || CPlaylist::IsMediaFile(fileName)))
+                {
                     if (pThis->m_playlist.PushBackListOrFile(fileName, !fAdded) >= 0) fAdded = true;
                 }
             }
             // 少なくとも1ファイルが再生リストに追加されればそのファイルを開く
             if (fAdded) pThis->OpenCurrent();
-            ::DragFinish((HDROP)wParam);
-            return TRUE;
+            // DragFinish()せずに本体のデフォルトプロシージャに任せる
         }
         break;
     case WM_MOUSEMOVE:

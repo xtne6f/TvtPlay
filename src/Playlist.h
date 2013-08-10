@@ -24,6 +24,8 @@ public:
     int ToString(TCHAR *pStr, int max, bool fFileNameOnly) const;
     void SetPosition(size_type pos) { m_pos = pos; }
     size_type GetPosition() const { return m_pos; }
+    static bool IsPlayListFile(LPCTSTR path);
+    static bool IsMediaFile(LPCTSTR path);
 private:
     int PushBackList(LPCTSTR fullPath);
     size_t m_pos;

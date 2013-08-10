@@ -20,8 +20,7 @@ int CPlaylist::PushBackListOrFile(LPCTSTR path, bool fMovePos)
     if (rv == 0 || rv >= MAX_PATH) return -1;
 
     int pos = -1;
-    LPCTSTR ext = ::PathFindExtension(fullPath);
-    if (ext && (!::lstrcmpi(ext, TEXT(".m3u")) || !::lstrcmpi(ext, TEXT(".tslist")))) {
+    if (IsPlayListFile(path)) {
         // プレイリストファイルとして処理
         pos = PushBackList(fullPath);
     }
@@ -220,4 +219,16 @@ int CPlaylist::ToString(TCHAR *pStr, int max, bool fFileNameOnly) const
         return strPos + 1;
     }
     return 0;
+}
+
+bool CPlaylist::IsPlayListFile(LPCTSTR path)
+{
+    LPCTSTR ext = ::PathFindExtension(path);
+    return !::lstrcmpi(ext, TEXT(".m3u")) || !::lstrcmpi(ext, TEXT(".tslist"));
+}
+
+bool CPlaylist::IsMediaFile(LPCTSTR path)
+{
+    LPCTSTR ext = ::PathFindExtension(path);
+    return !::lstrcmpi(ext, TEXT(".ts")) || !::lstrcmpi(ext, TEXT(".m2t")) || !::lstrcmpi(ext, TEXT(".m2ts"));
 }
