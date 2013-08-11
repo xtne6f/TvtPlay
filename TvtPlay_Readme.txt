@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.2.0 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.2.1 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -41,7 +41,7 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
 用画像の配置転換などで、設定キーButton02～Button15のデフォルトが一部変更されてい
 ます。ボタンアイコンがおかしくなった場合は、一度これらのキーをメモ帳などを使って
 削除してみてください。
-(ver.1.8～ver.1.9r3からの移行)
+(ver.1.8～ver.2.0からの移行)
   TvtPlay.tvtpを置きかえてください。
 (ver.1.3～ver.1.7からの移行)
   TvtPlay.tvtpとBonDriver_Pipe.dllとを置きかえてください。ver.1.8は
@@ -53,7 +53,7 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
 ■使い方
 TVTestのPluginsフォルダにTvtPlay.tvtpを入れてください。BonDriver_Pipe.dllは使用
 しないならば捨ててください(後述の「BonDriver_Pipe.dllについて」を参照)。なお、
-TvtPlay(x64).tvtpはx64版のTVTest利用者向けです。
+TvtPlay.tvtp_x64はx64版のTVTest利用者向けです。
 
 TVTest起動オプションの最後に拡張子.ts .m2t .m2ts .m3u .tslist いずれかのファイル
 パスを付加するとプラグインは有効になり、起動時にそのファイルを開きます。起動オプ
@@ -316,7 +316,8 @@ Button[00-17]
     #   {アイコン番号}[,Width=(ボタン幅)][,{右クリックコマンド}],{コマンド}
     # コマンドはキー割り当て順に Open,OpenPopup,ListPopup,Close,Prev,SeekToBgn,
     # SeekToEnd,SeekToPrev,SeekToNext,AddChapter,RepeatChapter,SkipXChapter,
-    # Loop,Pause,Stretch,StretchRe,StretchPopup,Seek[A-Z],Stretch[A-Z]
+    # ChapterPopup,Loop,Pause,Stretch,StretchRe,StretchPopup,Seek[A-Z],
+    # Stretch[A-Z]
     # (ボタン幅)のデフォルトは16です。';'でコメントアウトするか何も指定しなけれ
     # ばそのボタンは消えます。並べ替えもできます。Stretch/StretchReコマンドは設
     # 定キーStretchAから[=100]となる設定キーまでを順/逆順に倍速切り替えします。
@@ -463,6 +464,10 @@ http://2sen.dip.jp/dtv/)のup0598.zip「非公式 TvtPlayシークボタンカ�
 イコン 修正2」のデザインをもとに作成しています。61～65番のアイコンはup0635.zip
 「TvtPlayBtn.bmp - 標準のボタン・文字を小さめに書き換えてシーク・倍速再生・チャ
 プター関係のボタンを追加したアイコン画像 (txt加筆修正)」を使用しています。
+チャプター選択ポップアップ機能はTvtPlayスレ>>115の人のパッチ(
+http://toro.2ch.net/test/read.cgi/avi/1348364114/115 )を使用しています。
+プレイリストのシャッフル機能はmike氏(https://github.com/mike2 )のコミットを使用
+しています。
 また、おもにTVTest ver.0.7.23からソースコードを流用しています。特に以下のファイ
 ルはほぼ改変なしに流用しています(差分は"diff_TVTestStatusView_orig.txt"を参照)
   "Aero.cpp"
@@ -485,6 +490,15 @@ http://2sen.dip.jp/dtv/)のup0598.zip「非公式 TvtPlayシークボタンカ�
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.2.1 (2013-08-11)
+・ポップアップでチャプター選択してシークするコマンドChapterPopupがついた
+・プレイリストのランダムシャッフル機能(その他の操作→シャッフル)がついた
+・他プラグインに情報提供するウィンドウメッセージを追加
+  ・同梱の"src/_getinfo_test.cpp"を参考のこと
+・ファイル読み込みに線形アクセスのヒントフラグ(FILE_FLAG_SEQUENTIAL_SCAN)を付加
+  ・とくにネットワークドライブからの読み込みが効率化する(はず)
+・Drag&Drop処理が他プラグインと干渉しないように修正
+・その他コードの整理
 ver.2.0 (2012-09-26)
 ・TVTest0.8.0以降について、スクランブルされたTS再生でもラップアラウンド回避(設定
   キーTsAvoidWraparound)を利用できるようにした
