@@ -829,7 +829,7 @@ bool CTvtPlay::InitializePlugin()
     }
     ::DeleteDC(hdcMem);
 
-    ::DragAcceptFiles(m_pApp->GetAppWindow(), m_pApp->GetFullscreen() ? FALSE : TRUE);
+    ::DragAcceptFiles(m_pApp->GetAppWindow(), TRUE);
 
     m_fInitialized = true;
     return true;
@@ -2181,10 +2181,6 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         // 全画面表示状態が変化した
         if (pThis->m_pApp->IsPluginEnabled())
             pThis->OnDispModeChange(false);
-        // フルスクリーン時はD&Dを無効にすることでファイルダイアログ等でのD&Dが本体ウィンドウに送られるのを防ぐ
-        if (pThis->m_fInitialized) {
-            ::DragAcceptFiles(pThis->m_pApp->GetAppWindow(), lParam1 ? FALSE : TRUE);
-        }
         break;
     case TVTest::EVENT_STANDBY:
         // 待機状態が変化した
@@ -2308,6 +2304,13 @@ BOOL CALLBACK CTvtPlay::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, L
         break;
     case WM_DROPFILES:
         {
+            if (pThis->m_pApp->GetFullscreen()) {
+                // ファイルダイアログ等でのD&Dを無視するため(確実ではない)
+                HWND hwndActive = ::GetActiveWindow();
+                if (hwndActive && (::GetWindowLong(::GetAncestor(hwndActive, GA_ROOT), GWL_EXSTYLE) & WS_EX_DLGMODALFRAME) != 0) {
+                    break;
+                }
+            }
             bool fAdded = false;
             TCHAR fileName[MAX_PATH];
             int num = ::DragQueryFile((HDROP)wParam, 0xFFFFFFFF, fileName, _countof(fileName));
