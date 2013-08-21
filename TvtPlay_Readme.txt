@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.2.1 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.2.1r2 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -41,7 +41,7 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
 用画像の配置転換などで、設定キーButton02～Button15のデフォルトが一部変更されてい
 ます。ボタンアイコンがおかしくなった場合は、一度これらのキーをメモ帳などを使って
 削除してみてください。
-(ver.1.8～ver.2.0からの移行)
+(ver.1.8～ver.2.1からの移行)
   TvtPlay.tvtpを置きかえてください。
 (ver.1.3～ver.1.7からの移行)
   TvtPlay.tvtpとBonDriver_Pipe.dllとを置きかえてください。ver.1.8は
@@ -490,6 +490,12 @@ http://toro.2ch.net/test/read.cgi/avi/1348364114/115 )を使用しています�
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.2.1r2 (2013-08-21)
+・ver.2.1で全画面表示でのDrag&Dropができなくなったのを修正
+  ・スレ指摘感謝です。その昔ver.1.2でも同じことをやらかしてたりする
+・ver.2.1でx86版のビルド環境にATL/MFCのセキュリティ更新が適用されていたのを修正
+  ・ATL/MFCは不使用なのでKB971090、KB2538218のアンインストールで対応
+  ・昨年11月ごろのビルド環境再インストールで紛れ込んだっぽい…
 ver.2.1 (2013-08-11)
 ・ポップアップでチャプター選択してシークするコマンドChapterPopupがついた
 ・プレイリストのランダムシャッフル機能(その他の操作→シャッフル)がついた
