@@ -535,6 +535,9 @@ LRESULT CALLBACK CTvtAudioStretchFilter::WndProc(HWND hwnd, UINT uMsg, WPARAM wP
             pThis->m_stouch.setTempo((wParam&0x3) == 3 ? rate : 1.0f);
             pThis->m_fMute = (wParam&0x4) != 0;
 
+            // テンポ変換中はアンチエイリアスフィルタを切る(意味ないので)
+            pThis->m_stouch.setSetting(SETTING_USE_AA_FILTER, (wParam&0x3) == 3 ? 0 : 1);
+
             // ノイズ防止
             if (pThis->m_rate != 1.0f && rate == 1.0f) pThis->m_stouch.clear();
             pThis->m_rate = rate;
