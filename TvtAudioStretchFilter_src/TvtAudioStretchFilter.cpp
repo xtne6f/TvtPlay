@@ -1,10 +1,8 @@
 ﻿#include <streams.h>
 #include <SoundTouch.h>
 
-// このソースのビルドにはSoundTouchライブラリ(http://www.surina.net/soundtouch/)が必要。
-// このライブラリのソースを入手し、"STTypes.h"で SOUNDTOUCH_INTEGER_SAMPLES を定義して
-// ライブラリをビルドし、このプロジェクトにリンクする。
-// 64bitビルドについては #undef SOUNDTOUCH_ALLOW_MMX も必要。_M_X64 で場合分けする。
+// このソースのビルドにはSoundTouch(http://www.surina.net/soundtouch/) v1.7.2(developing)以降が必要。
+// SoundTouchのソースを入手し、同梱の"SoundTouch.patch"を適用してこのプロジェクトにリンクする。
 // さらに、Platform SDKのDirectShow BaseClassesも必要。適当にググってビルドし、
 // strmbase.libとwinmm.libとを、このプロジェクトにリンクする。
 
@@ -54,88 +52,6 @@ static HINSTANCE g_hinstDLL;
 #define RATE_MIN 0.24f
 #define RATE_MAX 8.01f
 
-// ptrBegin()を公開するため
-class CSoundTouch : public soundtouch::SoundTouch
-{
-public:
-    soundtouch::SAMPLETYPE *ptrBegin() { return soundtouch::SoundTouch::ptrBegin(); }
-};
-
-// 簡易6ch対応SoundTouch
-// 2ch以下のパフォーマンスはオリジナルと同等
-class CSoundTouchEx
-{
-    static const int MAX_OBJ = 3;
-public:
-    CSoundTouchEx() : m_numChannels(2) { for (int i=0; i<MAX_OBJ; ++i) m_stouch[i].setChannels(2); }
-    void setRate(float newRate) { for (int i=0; i<MAX_OBJ; ++i) m_stouch[i].setRate(newRate); }
-    void setTempo(float newTempo) { for (int i=0; i<MAX_OBJ; ++i) m_stouch[i].setTempo(newTempo); }
-    void setPitch(float newPitch) { for (int i=0; i<MAX_OBJ; ++i) m_stouch[i].setPitch(newPitch); }
-    void setSampleRate(uint srate) { for (int i=0; i<MAX_OBJ; ++i) m_stouch[i].setSampleRate(srate); }
-    void clear() { for (int i=0; i<MAX_OBJ; ++i) m_stouch[i].clear(); }
-    uint getChannels() { return m_numChannels; }
-    void setChannels(uint numChannels);
-    void putSamples(const soundtouch::SAMPLETYPE *samples, uint numSamples);
-    uint receiveSamples(soundtouch::SAMPLETYPE *output, uint maxSamples);
-private:
-    CSoundTouch m_stouch[MAX_OBJ];
-    uint m_numChannels;
-};
-
-void CSoundTouchEx::setChannels(uint numChannels)
-{
-    ASSERT(numChannels <= MAX_OBJ * 2);
-    m_stouch[0].setChannels(min(numChannels, 2));
-    m_numChannels = numChannels;
-}
-
-void CSoundTouchEx::putSamples(const soundtouch::SAMPLETYPE *samples, uint numSamples)
-{
-    int ch = m_numChannels;
-    if (ch <= 2) {
-        m_stouch[0].putSamples(samples, numSamples);
-    }
-    else {
-        // 3ch以上は2chごとに分離して入力
-        soundtouch::SAMPLETYPE buf[4096];
-        for (int rest = numSamples; rest > 0; rest -= _countof(buf)/2) {
-            const soundtouch::SAMPLETYPE *in = samples + (numSamples - rest) * ch;
-            int num = min(rest, _countof(buf)/2);
-            for (int i=0; i < (ch + 1) / 2; ++i) {
-                for (int j=0; j < (i*2+1<ch ? 2 : 1); ++j) {
-                    for (int k=0; k < num; ++k) buf[j+k*2] = in[i*2+j+k*ch];
-                }
-                m_stouch[i].putSamples(buf, num);
-            }
-        }
-    }
-}
-
-uint CSoundTouchEx::receiveSamples(soundtouch::SAMPLETYPE *output, uint maxSamples)
-{
-    int ch = m_numChannels;
-    if (ch <= 2) {
-        return m_stouch[0].receiveSamples(output, maxSamples);
-    }
-    else {
-        // maxSamplesの範囲内で現在取得可能なサンプル数を算出
-        int reqSamples = m_stouch[0].numSamples();
-        for (int i=1; i < (ch + 1) / 2; ++i) {
-            reqSamples = min(reqSamples, (int)m_stouch[i].numSamples());
-        }
-        reqSamples = min(reqSamples, (int)maxSamples);
-
-        // 内部バッファから直接出力
-        for (int i=0; i < (ch + 1) / 2; ++i) {
-            const soundtouch::SAMPLETYPE *in = m_stouch[i].ptrBegin();
-            for (int j=0; j < (i*2+1<ch ? 2 : 1); ++j) {
-                 for (int k=0; k < reqSamples; ++k) output[i*2+j+k*ch] = in[j+k*2];
-            }
-            m_stouch[i].receiveSamples(reqSamples);
-        }
-        return reqSamples;
-    }
-}
 
 class CTvtAudioStretchFilter : public CTransformFilter
 {
@@ -164,7 +80,8 @@ private:
     bool m_fAcceptConv;
     bool m_fOutputFormatChanged;
     bool m_fFilterAdded;
-    CSoundTouchEx m_stouch;
+    int m_stouchNumChannels;
+    soundtouch::SoundTouch m_stouch;
 };
 
 
@@ -177,6 +94,7 @@ CTvtAudioStretchFilter::CTvtAudioStretchFilter(LPUNKNOWN punk, HRESULT *phr)
     , m_fAcceptConv(false)
     , m_fOutputFormatChanged(false)
     , m_fFilterAdded(false)
+    , m_stouchNumChannels(0)
 {
     DEBUG_OUT(TEXT("CTvtAudioStretchFilter::CTvtAudioStretchFilter()\n"));
 }
@@ -476,7 +394,8 @@ HRESULT CTvtAudioStretchFilter::SetMediaType(PIN_DIRECTION dir, const CMediaType
         // 伸縮可能な形式は16bit,6ch以下
         m_fAcceptConv = wfx.wBitsPerSample == 16 && 1 <= wfx.nChannels && wfx.nChannels <= 6;
         if (m_fAcceptConv) {
-            m_stouch.setChannels(wfx.nChannels);
+            m_stouchNumChannels = wfx.nChannels;
+            m_stouch.setChannels(m_stouchNumChannels);
             m_stouch.setSampleRate(wfx.nSamplesPerSec);
             m_stouch.clear();
         }
@@ -565,7 +484,7 @@ HRESULT CTvtAudioStretchFilter::Transform(IMediaSample *pIn, IMediaSample *pOut)
         ::CopyMemory(pbDest, pbSrc, destLen);
     }
     else {
-        int bps = m_stouch.getChannels() * 2;
+        int bps = m_stouchNumChannels * 2;
         m_stouch.putSamples((soundtouch::SAMPLETYPE*)pbSrc, srcLen / bps);
         destLen = m_stouch.receiveSamples((soundtouch::SAMPLETYPE*)pbDest, destLen / bps) * bps;
     }
