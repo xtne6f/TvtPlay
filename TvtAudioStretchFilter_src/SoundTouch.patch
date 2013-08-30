@@ -1,6 +1,7 @@
 # Patch for soundtouch-code-173-trunk on 2013-08-16 (http://www.surina.net/soundtouch/) contains:
 # 1.SSE2 optimizations for SOUNDTOUCH_INTEGER_SAMPLES written by http://toro.2ch.net/test/read.cgi/avi/1348364114/774 (2ch a Japanese textboard)
 # 2.Fix arithmetic overflows in calcCrossCorr methods
+# 3.Fix about the issue: "Error in RateTransposer.cpp", http://sourceforge.net/p/soundtouch/discussion/747307/thread/93e4be2e/
 # This modification is licensed under LGPL terms according to its rules.
 
 diff --git a/include/STTypes.h b/include/STTypes.h
@@ -83,6 +84,37 @@ index a498032..2fcb2d3 100644
  }
  
  #endif  // FIRFilter_H
+diff --git a/source/SoundTouch/RateTransposer.cpp b/source/SoundTouch/RateTransposer.cpp
+index 4944c4b..2f75c4b 100644
+--- a/source/SoundTouch/RateTransposer.cpp
++++ b/source/SoundTouch/RateTransposer.cpp
+@@ -426,6 +426,8 @@ int RateTransposerInteger::transposeMono(SAMPLETYPE *dest, const SAMPLETYPE *src
+     // now always (iSlopeCount > SCALE)
+     iSlopeCount -= SCALE;
+ 
++    if (remain == 0) goto end;
++
+     while (1)
+     {
+         while (iSlopeCount > SCALE) 
+@@ -477,6 +479,8 @@ int RateTransposerInteger::transposeStereo(SAMPLETYPE *dest, const SAMPLETYPE *s
+     // now always (iSlopeCount > SCALE)
+     iSlopeCount -= SCALE;
+ 
++    if (remain == 0) goto end;
++
+     while (1)
+     {
+         while (iSlopeCount > SCALE) 
+@@ -531,6 +535,8 @@ int RateTransposerInteger::transposeMulti(SAMPLETYPE *dest, const SAMPLETYPE *sr
+     // now always (iSlopeCount > SCALE)
+     iSlopeCount -= SCALE;
+ 
++    if (remaining == 0) goto end;
++
+     while (1)
+     {
+         while (iSlopeCount > SCALE) 
 diff --git a/source/SoundTouch/TDStretch.cpp b/source/SoundTouch/TDStretch.cpp
 index 292404a..1331326 100644
 --- a/source/SoundTouch/TDStretch.cpp
