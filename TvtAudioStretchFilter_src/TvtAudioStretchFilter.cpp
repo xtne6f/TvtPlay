@@ -439,7 +439,10 @@ HRESULT CTvtAudioStretchFilter::Receive(IMediaSample *pSample)
                 if (SUCCEEDED(hr)) {
                     hr = E_FAIL;
                     ALLOCATOR_PROPERTIES prop = {0};
-                    if (pAlloc->Decommit() == S_OK &&
+                    // まず下流で確保されているサンプルを解放させてDecideBufferSize()が失敗しないようにする
+                    if (SUCCEEDED(m_pOutput->DeliverBeginFlush()) &&
+                        SUCCEEDED(m_pOutput->DeliverEndFlush()) &&
+                        pAlloc->Decommit() == S_OK &&
                         DecideBufferSize(pAlloc, &prop) == S_OK &&
                         pAlloc->Commit() == S_OK)
                     {
