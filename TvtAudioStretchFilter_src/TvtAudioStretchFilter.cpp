@@ -1,7 +1,7 @@
 ﻿#include <streams.h>
 #include <SoundTouch.h>
 
-// このソースのビルドにはSoundTouch(http://www.surina.net/soundtouch/) v1.7.2(developing)以降が必要。
+// このソースのビルドにはSoundTouch(http://www.surina.net/soundtouch/) v1.8.0以降が必要。
 // SoundTouchのソースを入手し、同梱の"SoundTouch.patch"を適用してこのプロジェクトにリンクする。
 // さらに、Platform SDKのDirectShow BaseClassesも必要。適当にググってビルドし、
 // strmbase.libとwinmm.libとを、このプロジェクトにリンクする。

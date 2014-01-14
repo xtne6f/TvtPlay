@@ -1,14 +1,12 @@
-# Patch for soundtouch-code-173-trunk on 2013-08-16 (http://www.surina.net/soundtouch/) contains:
+# Patch for SoundTouch v1.8.0 (http://www.surina.net/soundtouch/) contains:
 # 1.SSE2 optimizations for SOUNDTOUCH_INTEGER_SAMPLES written by http://toro.2ch.net/test/read.cgi/avi/1348364114/774 (2ch a Japanese textboard)
-# 2.Fix arithmetic overflows in calcCrossCorr methods
-# 3.Fix about the issue: "Error in RateTransposer.cpp", http://sourceforge.net/p/soundtouch/discussion/747307/thread/93e4be2e/
-# This modification is licensed under LGPL terms according to its rules.
+# This modification should be licensed under LGPL terms according to its rules.
 
 diff --git a/include/STTypes.h b/include/STTypes.h
-index 4405aa0..489e7da 100644
+index cbe7190..e48c677 100644
 --- a/include/STTypes.h
 +++ b/include/STTypes.h
-@@ -108,8 +108,8 @@ namespace soundtouch
+@@ -112,8 +112,8 @@ namespace soundtouch
          ///   However, if you still prefer to select the sample format here 
          ///   also in GNU environment, then please #undef the INTEGER_SAMPLE
          ///   and FLOAT_SAMPLE defines first as in comments above.
@@ -19,7 +17,7 @@ index 4405aa0..489e7da 100644
       
      #endif
  
-@@ -153,8 +153,12 @@ namespace soundtouch
+@@ -157,8 +157,12 @@ namespace soundtouch
          #endif // SOUNDTOUCH_FLOAT_SAMPLES
  
          #ifdef SOUNDTOUCH_ALLOW_X86_OPTIMIZATIONS
@@ -35,7 +33,7 @@ index 4405aa0..489e7da 100644
  
      #else
 diff --git a/source/SoundTouch/FIRFilter.cpp b/source/SoundTouch/FIRFilter.cpp
-index d573891..d02378e 100644
+index 11ba652..b8e6902 100644
 --- a/source/SoundTouch/FIRFilter.cpp
 +++ b/source/SoundTouch/FIRFilter.cpp
 @@ -297,6 +297,15 @@ FIRFilter * FIRFilter::newInstance()
@@ -55,7 +53,7 @@ index d573891..d02378e 100644
      // MMX routines available only with integer sample types
      if (uExtensions & SUPPORT_MMX)
 diff --git a/source/SoundTouch/FIRFilter.h b/source/SoundTouch/FIRFilter.h
-index a498032..2fcb2d3 100644
+index b86c519..984dc8e 100644
 --- a/source/SoundTouch/FIRFilter.h
 +++ b/source/SoundTouch/FIRFilter.h
 @@ -141,6 +141,25 @@ public:
@@ -84,42 +82,11 @@ index a498032..2fcb2d3 100644
  }
  
  #endif  // FIRFilter_H
-diff --git a/source/SoundTouch/RateTransposer.cpp b/source/SoundTouch/RateTransposer.cpp
-index 4944c4b..2f75c4b 100644
---- a/source/SoundTouch/RateTransposer.cpp
-+++ b/source/SoundTouch/RateTransposer.cpp
-@@ -426,6 +426,8 @@ int RateTransposerInteger::transposeMono(SAMPLETYPE *dest, const SAMPLETYPE *src
-     // now always (iSlopeCount > SCALE)
-     iSlopeCount -= SCALE;
- 
-+    if (remain == 0) goto end;
-+
-     while (1)
-     {
-         while (iSlopeCount > SCALE) 
-@@ -477,6 +479,8 @@ int RateTransposerInteger::transposeStereo(SAMPLETYPE *dest, const SAMPLETYPE *s
-     // now always (iSlopeCount > SCALE)
-     iSlopeCount -= SCALE;
- 
-+    if (remain == 0) goto end;
-+
-     while (1)
-     {
-         while (iSlopeCount > SCALE) 
-@@ -531,6 +535,8 @@ int RateTransposerInteger::transposeMulti(SAMPLETYPE *dest, const SAMPLETYPE *sr
-     // now always (iSlopeCount > SCALE)
-     iSlopeCount -= SCALE;
- 
-+    if (remaining == 0) goto end;
-+
-     while (1)
-     {
-         while (iSlopeCount > SCALE) 
 diff --git a/source/SoundTouch/TDStretch.cpp b/source/SoundTouch/TDStretch.cpp
-index 292404a..1331326 100644
+index fb67fc9..45a2e46 100644
 --- a/source/SoundTouch/TDStretch.cpp
 +++ b/source/SoundTouch/TDStretch.cpp
-@@ -624,6 +624,15 @@ TDStretch * TDStretch::newInstance()
+@@ -630,6 +630,15 @@ TDStretch * TDStretch::newInstance()
  
      // Check if MMX/SSE instruction set extensions supported by CPU
  
@@ -135,28 +102,11 @@ index 292404a..1331326 100644
  #ifdef SOUNDTOUCH_ALLOW_MMX
      // MMX routines available only with integer sample types
      if (uExtensions & SUPPORT_MMX)
-@@ -742,12 +751,12 @@ double TDStretch::calcCrossCorr(const short *mixingPos, const short *compare) co
-     for (i = 0; i < channels * overlapLength; i += 4) 
-     {
-         corr += (mixingPos[i] * compare[i] + 
--                 mixingPos[i + 1] * compare[i + 1] +
--                 mixingPos[i + 2] * compare[i + 2] + 
-+                 mixingPos[i + 1] * compare[i + 1]) >> overlapDividerBits;
-+        corr += (mixingPos[i + 2] * compare[i + 2] + 
-                  mixingPos[i + 3] * compare[i + 3]) >> overlapDividerBits;
-         norm += (mixingPos[i] * mixingPos[i] + 
--                 mixingPos[i + 1] * mixingPos[i + 1] +
--                 mixingPos[i + 2] * mixingPos[i + 2] + 
-+                 mixingPos[i + 1] * mixingPos[i + 1]) >> overlapDividerBits;
-+        norm += (mixingPos[i + 2] * mixingPos[i + 2] + 
-                  mixingPos[i + 3] * mixingPos[i + 3]) >> overlapDividerBits;
-     }
- 
 diff --git a/source/SoundTouch/TDStretch.h b/source/SoundTouch/TDStretch.h
-index 43610c9..ec06696 100644
+index f0d9513..2c1ea6e 100644
 --- a/source/SoundTouch/TDStretch.h
 +++ b/source/SoundTouch/TDStretch.h
-@@ -265,5 +265,17 @@ public:
+@@ -268,5 +268,18 @@ public:
  
  #endif /// SOUNDTOUCH_ALLOW_SSE
  
@@ -166,7 +116,8 @@ index 43610c9..ec06696 100644
 +    class TDStretchSSE2 : public TDStretch
 +    {
 +    protected:
-+        double calcCrossCorr(const short *mixingPos, const short *compare) const;
++        double calcCrossCorr(const short *mixingPos, const short *compare, double &norm) const;
++        double calcCrossCorrAccumulate(const short *mixingPos, const short *compare, double &norm) const;
 +        virtual void overlapStereo(short *output, const short *input) const;
 +    };
 +
@@ -174,48 +125,11 @@ index 43610c9..ec06696 100644
 +
  }
  #endif  /// TDStretch_H
-diff --git a/source/SoundTouch/mmx_optimized.cpp b/source/SoundTouch/mmx_optimized.cpp
-index 9b1fc1a..d64d5a0 100644
---- a/source/SoundTouch/mmx_optimized.cpp
-+++ b/source/SoundTouch/mmx_optimized.cpp
-@@ -93,19 +93,19 @@ double TDStretchMMX::calcCrossCorr(const short *pV1, const short *pV2) const
-         // _mm_add_pi32 : 2*32bit add
-         // _m_psrad     : 32bit right-shift
- 
--        temp = _mm_add_pi32(_mm_madd_pi16(pVec1[0], pVec2[0]),
--                            _mm_madd_pi16(pVec1[1], pVec2[1]));
--        temp2 = _mm_add_pi32(_mm_madd_pi16(pVec1[0], pVec1[0]),
--                             _mm_madd_pi16(pVec1[1], pVec1[1]));
--        accu = _mm_add_pi32(accu, _mm_sra_pi32(temp, shifter));
--        normaccu = _mm_add_pi32(normaccu, _mm_sra_pi32(temp2, shifter));
--
--        temp = _mm_add_pi32(_mm_madd_pi16(pVec1[2], pVec2[2]),
--                            _mm_madd_pi16(pVec1[3], pVec2[3]));
--        temp2 = _mm_add_pi32(_mm_madd_pi16(pVec1[2], pVec1[2]),
--                             _mm_madd_pi16(pVec1[3], pVec1[3]));
--        accu = _mm_add_pi32(accu, _mm_sra_pi32(temp, shifter));
--        normaccu = _mm_add_pi32(normaccu, _mm_sra_pi32(temp2, shifter));
-+        temp = _mm_add_pi32(_mm_sra_pi32(_mm_madd_pi16(pVec1[0], pVec2[0]), shifter),
-+                            _mm_sra_pi32(_mm_madd_pi16(pVec1[1], pVec2[1]), shifter));
-+        temp2 = _mm_add_pi32(_mm_sra_pi32(_mm_madd_pi16(pVec1[0], pVec1[0]), shifter),
-+                             _mm_sra_pi32(_mm_madd_pi16(pVec1[1], pVec1[1]), shifter));
-+        accu = _mm_add_pi32(accu, temp);
-+        normaccu = _mm_add_pi32(normaccu, temp2);
-+
-+        temp = _mm_add_pi32(_mm_sra_pi32(_mm_madd_pi16(pVec1[2], pVec2[2]), shifter),
-+                            _mm_sra_pi32(_mm_madd_pi16(pVec1[3], pVec2[3]), shifter));
-+        temp2 = _mm_add_pi32(_mm_sra_pi32(_mm_madd_pi16(pVec1[2], pVec1[2]), shifter),
-+                             _mm_sra_pi32(_mm_madd_pi16(pVec1[3], pVec1[3]), shifter));
-+        accu = _mm_add_pi32(accu, temp);
-+        normaccu = _mm_add_pi32(normaccu, temp2);
- 
-         pVec1 += 4;
-         pVec2 += 4;
 diff --git a/source/SoundTouch/sse_optimized.cpp b/source/SoundTouch/sse_optimized.cpp
-index f77ea02..5378446 100644
+index ea2a988..7481831 100644
 --- a/source/SoundTouch/sse_optimized.cpp
 +++ b/source/SoundTouch/sse_optimized.cpp
-@@ -359,3 +359,199 @@ uint FIRFilterSSE::evaluateFilterStereo(float *dest, const float *source, uint n
+@@ -368,3 +368,247 @@ uint FIRFilterSSE::evaluateFilterStereo(float *dest, const float *source, uint n
  }
  
  #endif  // SOUNDTOUCH_ALLOW_SSE
@@ -236,7 +150,7 @@ index f77ea02..5378446 100644
 +#include <math.h>
 +
 +// Calculates cross correlation of two buffers
-+double TDStretchSSE2::calcCrossCorr(const short *pV1, const short *pV2) const
++double TDStretchSSE2::calcCrossCorr(const short *pV1, const short *pV2, double &dnorm) const
 +{
 +    const   __m128i *pVec1      = (__m128i*)pV1;    // not 16byte aligned
 +    const   __m128i *pVec2      = (__m128i*)pV2;    // 16byte aligned
@@ -272,9 +186,57 @@ index f77ea02..5378446 100644
 +    corr = _mm_cvtsi128_si32(accu);
 +    norm = _mm_cvtsi128_si32(normaccu);
 +
-+    if (norm == 0) norm = 1;
++    dnorm = (double)norm;
 +
-+    return (double)corr / sqrt((double)norm);
++    return (double)corr / sqrt(dnorm < 1e-9 ? 1.0 : dnorm);
++}
++
++
++/// Update cross-correlation by accumulating "norm" coefficient by previously calculated value
++double TDStretchSSE2::calcCrossCorrAccumulate(const short *pV1, const short *pV2, double &dnorm) const
++{
++    const   __m128i *pVec1      = (__m128i*)pV1;    // not 16byte aligned
++    const   __m128i *pVec2      = (__m128i*)pV2;    // 16byte aligned
++            __m128i shifter     = _mm_cvtsi32_si128(overlapDividerBits);
++            __m128i accu;
++    int corr, lnorm;
++    int i;
++
++    // cancel first normalizer tap from previous round
++    lnorm = 0;
++    for (i = 1; i <= channels; i ++)
++    {
++        lnorm -= (pV1[-i] * pV1[-i]) >> overlapDividerBits;
++    }
++
++    accu = _mm_setzero_si128();
++
++    for (i = channels*overlapLength/16 ; i ; i--)
++    {
++        // Applies shifter immediately after product-sum to prevent overflow
++        accu = _mm_add_epi32(accu, _mm_sra_epi32(
++                   _mm_madd_epi16(_mm_loadu_si128(pVec1), pVec2[0]), shifter));
++
++        accu = _mm_add_epi32(accu, _mm_sra_epi32(
++                   _mm_madd_epi16(_mm_loadu_si128(pVec1+1), pVec2[1]), shifter));
++
++        pVec1 += 2;
++        pVec2 += 2;
++    }
++    accu     = _mm_add_epi32( _mm_srli_si128( accu, 4 ), accu );
++    accu     = _mm_add_epi32( _mm_srli_si128( accu, 8 ), accu );
++
++    corr = _mm_cvtsi128_si32(accu);
++
++    // update normalizer with last samples of this round
++    pV1 = (short *)pVec1;
++    for (int j = 1; j <= channels; j ++)
++    {
++        lnorm += (pV1[-j] * pV1[-j]) >> overlapDividerBits;
++    }
++    dnorm += (double)lnorm;
++
++    return (double)corr / sqrt(dnorm < 1e-9 ? 1.0 : dnorm);
 +}
 +
 +
