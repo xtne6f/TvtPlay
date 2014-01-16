@@ -153,6 +153,7 @@ private:
     int m_modTimestampMode;
     int m_initialStretchID;
     int m_pcrThresholdMsec;
+    bool m_fTryGaplessPause;
     int m_salt, m_hashListMax;
     bool m_fUpdateHashList;
 

@@ -50,7 +50,7 @@ public:
     bool SeekToBegin();
     bool SeekToEnd();
     bool Seek(int msec);
-    void Pause(bool fPause);
+    void Pause(bool fPause, bool fPurge = true);
     void SetSpeed(int num, int den);
     bool IsOpen() const { return m_file.IsOpen(); }
     bool IsPaused() const { return m_fPause; }
@@ -93,6 +93,7 @@ private:
     DWORD m_pcr, m_basePcr, m_initPcr, m_prevPcr;
     int m_rateCtrlMsec;
     bool m_fEnPcr, m_fShareWrite, m_fFixed, m_fPause;
+    bool m_fPurged;
     bool m_fForceSyncRead;
     int m_pcrPid, m_pcrPids[PCR_PIDS_MAX];
     int m_pcrPidCounts[PCR_PIDS_MAX];

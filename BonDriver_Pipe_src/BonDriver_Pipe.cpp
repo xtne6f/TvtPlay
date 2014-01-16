@@ -50,6 +50,7 @@ CBonDriverPipe::CBonDriverPipe()
     , m_pIoGetReq(NULL)
     , m_dwReadyReqNum(0)
     , m_dwCurChannel(0xFFFFFFFFUL)
+    , m_fPause(false)
 {
 }
 
@@ -121,11 +122,16 @@ const BOOL CBonDriverPipe::GetTsStream(BYTE **ppDst, DWORD *pdwSize, DWORD *pdwR
 
     if (m_dwReadyReqNum != 0) {
         // バッファからデータを取り出す
-        *pdwSize = m_pIoGetReq->dwSize;
         *ppDst = m_pIoGetReq->buff;
-        // バッファ位置を進める
-        m_pIoGetReq = m_pIoGetReq->pNext;
-        --m_dwReadyReqNum;
+        if (m_fPause) {
+            *pdwSize = 0;
+        }
+        else {
+            *pdwSize = m_pIoGetReq->dwSize;
+            // バッファ位置を進める
+            m_pIoGetReq = m_pIoGetReq->pNext;
+            --m_dwReadyReqNum;
+        }
 #ifdef EN_CTRL_PIPE
         *pdwRemain = m_dwReadyReqNum==0 ? 0 : max((int)m_dwReadyReqNum - ASYNCBUFFSIZE / ASYNCBUFFTIME, 1);
 #else
@@ -619,6 +625,17 @@ DWORD CBonDriverPipe::ProcessPipeMessage(LPCTSTR pszRequest, LPTSTR pszReply)
         PurgeTsStream();
         // "A "(要求は正しく処理された) + 1文字以上の応答文字列
         ::lstrcpy(pszReply, TEXT("A 1"));
+    }
+    else if (!::lstrcmp(pszRequest, TEXT("PAUSE 0"))) {
+        m_fPause = false;
+        ::lstrcpy(pszReply, TEXT("A 1"));
+    }
+    else if (!::lstrcmp(pszRequest, TEXT("PAUSE 1"))) {
+        m_fPause = true;
+        ::lstrcpy(pszReply, TEXT("A 1"));
+    }
+    else if (!::lstrcmp(pszRequest, TEXT("IS_PAUSED"))) {
+        ::lstrcpy(pszReply, m_fPause ? TEXT("A 1") : TEXT("A 0"));
     }
     else if (!::lstrcmp(pszRequest, TEXT("GET_READY_STATE"))) {
         CBlockLock lock(&m_reqLock);

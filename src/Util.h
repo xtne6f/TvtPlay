@@ -11,6 +11,7 @@
 #endif
 
 #define WM_ASFLT_STRETCH    (WM_APP + 1)
+#define WM_ASFLT_PAUSE      (WM_APP + 2)
 LRESULT ASFilterSendMessageTimeout(UINT Msg, WPARAM wParam, LPARAM lParam, UINT uTimeout);
 BOOL ASFilterSendNotifyMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 

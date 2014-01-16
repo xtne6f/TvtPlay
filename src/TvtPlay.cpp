@@ -33,7 +33,7 @@
 
 static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
 static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.2.1r2)";
-static const int INFO_VERSION = 22;
+static const int INFO_VERSION = 23;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
 #define WM_QUERY_CLOSE_NEXT (WM_APP + 2)
@@ -196,6 +196,7 @@ CTvtPlay::CTvtPlay()
     , m_modTimestampMode(0)
     , m_initialStretchID(-1)
     , m_pcrThresholdMsec(0)
+    , m_fTryGaplessPause(false)
     , m_salt(0)
     , m_hashListMax(0)
     , m_fUpdateHashList(false)
@@ -383,6 +384,7 @@ void CTvtPlay::LoadSettings()
         m_fUseQpc           = GetBufferedProfileInt(pBuf, TEXT("TsUsePerfCounter"), 1) != 0;
         m_modTimestampMode  = GetBufferedProfileInt(pBuf, TEXT("TsAvoidWraparound"), 0);
         m_pcrThresholdMsec  = GetBufferedProfileInt(pBuf, TEXT("TsPcrDiscontinuityThreshold"), 400);
+        m_fTryGaplessPause  = GetBufferedProfileInt(pBuf, TEXT("TsTryGaplessPause"), 0) != 0;
         m_fShowOpenDialog   = GetBufferedProfileInt(pBuf, TEXT("ShowOpenDialog"), 0) != 0;
         m_fRaisePriority    = GetBufferedProfileInt(pBuf, TEXT("RaiseMainThreadPriority"), 0) != 0;
         m_fAutoHide         = GetBufferedProfileInt(pBuf, TEXT("AutoHide"), 0) != 0;
@@ -588,6 +590,7 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
     WritePrivateProfileInt(SETTINGS, TEXT("TsAvoidWraparound"), m_modTimestampMode, m_szIniFileName);
     if (fWriteDefault) {
         WritePrivateProfileInt(SETTINGS, TEXT("TsPcrDiscontinuityThreshold"), m_pcrThresholdMsec, m_szIniFileName);
+        WritePrivateProfileInt(SETTINGS, TEXT("TsTryGaplessPause"), m_fTryGaplessPause, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("ShowOpenDialog"), m_fShowOpenDialog, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("RaiseMainThreadPriority"), m_fRaisePriority, m_szIniFileName);
     }
@@ -2585,8 +2588,21 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
                 }
                 break;
             case WM_TS_PAUSE:
-                pThis->m_tsSender.Pause(msg.wParam != 0);
-                ::SendMessageTimeout(pThis->m_hwndFrame, WM_QUERY_RESET, 0, 0, SMTO_NORMAL, 1000, &dwRes);
+                if (msg.wParam) {
+                    pThis->m_tsSender.Pause(true, false);
+                    // フィルタグラフのポーズを試みる
+                    if (!pThis->m_fTryGaplessPause || !ASFilterSendMessageTimeout(WM_ASFLT_PAUSE, TRUE, 0, 3000)) {
+                        // 従来のポーズ
+                        pThis->m_tsSender.Pause(true);
+                        ::SendMessageTimeout(pThis->m_hwndFrame, WM_QUERY_RESET, 0, 0, SMTO_NORMAL, 1000, &dwRes);
+                    }
+                }
+                else {
+                    if (!pThis->m_fTryGaplessPause || !ASFilterSendMessageTimeout(WM_ASFLT_PAUSE, FALSE, 0, 3000)) {
+                        ::SendMessageTimeout(pThis->m_hwndFrame, WM_QUERY_RESET, 0, 0, SMTO_NORMAL, 1000, &dwRes);
+                    }
+                    pThis->m_tsSender.Pause(false);
+                }
                 break;
             case WM_TS_SEEK_BGN:
                 posWatch = -1;
@@ -2750,6 +2766,10 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
 
     // 等速に戻しておく
     ASFilterSendNotifyMessage(WM_ASFLT_STRETCH, 0, MAKELPARAM(100, 100));
+    // フィルタグラフのポーズを戻しておく
+    if (pThis->m_fTryGaplessPause && pThis->m_tsSender.IsPaused()) {
+        ASFilterSendNotifyMessage(WM_ASFLT_PAUSE, FALSE, 0);
+    }
     return 0;
 }
 

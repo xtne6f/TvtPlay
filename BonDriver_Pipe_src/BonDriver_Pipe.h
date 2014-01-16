@@ -96,6 +96,7 @@ private:
     AsyncIoReq *m_pIoGetReq;
     DWORD m_dwReadyReqNum;
     DWORD m_dwCurChannel;
+    bool m_fPause;
 };
 
 #endif // INCLUDE_BON_DRIVER_PIPE_H

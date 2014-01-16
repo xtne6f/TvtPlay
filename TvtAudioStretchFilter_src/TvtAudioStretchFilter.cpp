@@ -48,6 +48,7 @@ static HINSTANCE g_hinstDLL;
 #define L_FILTER_NAME       L"TvtAudioStretchFilter"
 
 #define WM_ASFLT_STRETCH    (WM_APP + 1)
+#define WM_ASFLT_PAUSE      (WM_APP + 2)
 
 #define RATE_MIN 0.24f
 #define RATE_MAX 8.01f
@@ -501,14 +502,12 @@ HRESULT CTvtAudioStretchFilter::Transform(IMediaSample *pIn, IMediaSample *pOut)
 
 LRESULT CALLBACK CTvtAudioStretchFilter::WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    CTvtAudioStretchFilter *pThis = reinterpret_cast<CTvtAudioStretchFilter*>(::GetWindowLongPtr(hwnd, GWLP_USERDATA));
-
     switch (uMsg) {
     case WM_CREATE:
         {
             DEBUG_OUT(TEXT("CTvtAudioStretchFilter::WndProc(): WM_CREATE\n"));
             LPCREATESTRUCT pcs = reinterpret_cast<LPCREATESTRUCT>(lParam);
-            pThis = reinterpret_cast<CTvtAudioStretchFilter*>(pcs->lpCreateParams);
+            CTvtAudioStretchFilter *pThis = static_cast<CTvtAudioStretchFilter*>(pcs->lpCreateParams);
             ::SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pThis));
 
             CAutoLock lock(&pThis->m_csReceive);
@@ -522,6 +521,8 @@ LRESULT CALLBACK CTvtAudioStretchFilter::WndProc(HWND hwnd, UINT uMsg, WPARAM wP
     case WM_ASFLT_STRETCH:
         {
             DEBUG_OUT(TEXT("CTvtAudioStretchFilter::WndProc(): WM_ASFLT_STRETCH\n"));
+            CTvtAudioStretchFilter *pThis = reinterpret_cast<CTvtAudioStretchFilter*>(::GetWindowLongPtr(hwnd, GWLP_USERDATA));
+
             CAutoLock lock(&pThis->m_csReceive);
             if (!pThis->m_fAcceptConv) return FALSE;
 
@@ -546,6 +547,31 @@ LRESULT CALLBACK CTvtAudioStretchFilter::WndProc(HWND hwnd, UINT uMsg, WPARAM wP
             pThis->m_rate = rate;
         }
         return TRUE;
+    case WM_ASFLT_PAUSE:
+        {
+            DEBUG_OUT(TEXT("CTvtAudioStretchFilter::WndProc(): WM_ASFLT_PAUSE\n"));
+            CTvtAudioStretchFilter *pThis = reinterpret_cast<CTvtAudioStretchFilter*>(::GetWindowLongPtr(hwnd, GWLP_USERDATA));
+
+            // wParamに応じてフィルタグラフのポーズ状態を切り替える
+            bool fRet = false;
+            IFilterGraph *pGraph = pThis->GetFilterGraph();
+            IMediaControl *pMediaControl;
+            if (pGraph && SUCCEEDED(pGraph->QueryInterface(IID_IMediaControl, reinterpret_cast<void**>(&pMediaControl)))) {
+                OAFilterState fs;
+                HRESULT hr = pMediaControl->GetState(1000, &fs);
+                if (hr == S_OK || hr == VFW_S_CANT_CUE) {
+                    fRet = fs == State_Running && !wParam || fs == State_Paused && wParam ? true :
+                           fs == State_Running ? SUCCEEDED(pMediaControl->Pause()) :
+                           fs == State_Paused ? SUCCEEDED(pMediaControl->Run()) : false;
+                }
+                else if (hr == VFW_S_STATE_INTERMEDIATE) {
+                    fRet = fs == State_Running && !wParam || fs == State_Paused && wParam;
+                }
+                pMediaControl->Release();
+            }
+            return fRet ? TRUE : FALSE;
+        }
+        break;
     }
     return ::DefWindowProc(hwnd, uMsg, wParam, lParam);
 }

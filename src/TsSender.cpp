@@ -165,6 +165,7 @@ CTsSender::CTsSender()
     , m_fShareWrite(false)
     , m_fFixed(false)
     , m_fPause(false)
+    , m_fPurged(false)
     , m_fForceSyncRead(false)
     , m_pcrPid(-1)
     , m_pcrPidsLen(0)
@@ -255,6 +256,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
 
     // 初期状態はポーズのほうが都合がよいため
     m_fPause = true;
+    m_fPurged = true;
     SetSpeed(100, 100);
 
     __int64 fileSize = m_file.GetSize();
@@ -365,6 +367,7 @@ void CTsSender::SetModTimestamp(bool fModTimestamp)
 
 void CTsSender::Close()
 {
+    if (m_fPause) Pause(true, true);
     m_file.Close();
     CloseSocket();
     ClosePipe();
@@ -540,6 +543,8 @@ bool CTsSender::SeekToBegin()
 {
     // 受信側のストアをパージ
     if (!m_fPause) TransactMessage(TEXT("PURGE"));
+    else Pause(true, true);
+
     return Seek(0, FILE_BEGIN);
 }
 
@@ -551,6 +556,8 @@ bool CTsSender::SeekToEnd()
 
     // 受信側のストアをパージ
     if (!m_fPause) TransactMessage(TEXT("PURGE"));
+    else Pause(true, true);
+
     return Seek(-GetRate()*2, FILE_END);
 }
 
@@ -565,6 +572,7 @@ bool CTsSender::Seek(int msec)
 
     // 受信側のストアをパージ
     if (!m_fPause) TransactMessage(TEXT("PURGE"));
+    else Pause(true, true);
 
     __int64 rate = GetRate();
     __int64 size = m_file.GetSize();
@@ -627,17 +635,38 @@ bool CTsSender::Seek(int msec)
 }
 
 
-void CTsSender::Pause(bool fPause)
+// 一時停止する
+// !fPurgeのとき転送先がPAUSE命令に応答すればパージを省略する
+void CTsSender::Pause(bool fPause, bool fPurge)
 {
-    if (m_fPause && !fPause) {
-        // 基準PCRを設定(受信側のストアを増やすため少し引く)
-        m_baseTick = GetAdjTickCount() - m_initStore;
-        m_basePcr = m_pcr;
-        m_rateCtrlMsec = 0;
+    if (m_fPause && fPause && !m_fPurged && fPurge) {
+        TransactMessage(TEXT("PAUSE 0"));
+        TransactMessage(TEXT("PURGE"));
+        m_fPurged = true;
+    }
+    else if (m_fPause && !fPause) {
+        if (m_fPurged) {
+            // 基準PCRを設定(受信側のストアを増やすため少し引く)
+            m_baseTick = GetAdjTickCount() - m_initStore;
+            m_basePcr = m_pcr;
+            m_rateCtrlMsec = 0;
+        }
+        else {
+            // 基準PCRを設定
+            m_baseTick = GetAdjTickCount();
+            m_basePcr = m_pcr;
+            TransactMessage(TEXT("PAUSE 0"));
+        }
     }
     else if (!m_fPause && fPause) {
-        // 受信側のストアをパージ
-        TransactMessage(TEXT("PURGE"));
+        if (!fPurge && TransactMessage(TEXT("PAUSE 1"))) {
+            m_fPurged = false;
+        }
+        else {
+            // 受信側のストアをパージ
+            TransactMessage(TEXT("PURGE"));
+            m_fPurged = true;
+        }
     }
     m_fPause = fPause;
 }
