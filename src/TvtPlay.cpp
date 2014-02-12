@@ -2589,7 +2589,9 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
                 break;
             case WM_TS_PAUSE:
                 if (msg.wParam) {
-                    pThis->m_tsSender.Pause(true, false);
+                    if (pThis->m_fTryGaplessPause) {
+                        pThis->m_tsSender.Pause(true, false);
+                    }
                     // フィルタグラフのポーズを試みる
                     if (!pThis->m_fTryGaplessPause || !ASFilterSendMessageTimeout(WM_ASFLT_PAUSE, TRUE, 0, 3000)) {
                         // 従来のポーズ
