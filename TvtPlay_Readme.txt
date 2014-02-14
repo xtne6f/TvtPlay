@@ -1,14 +1,13 @@
-﻿TVTest TvtPlay Plugin ver.2.1r2 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.2.2 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
 再生するプラグインです。
 
 ■動作環境
-・Windows XP以降(ただしVistaは未確認)
-・TVTest ver.0.7.16 以降、or対応するTVH264
-・通常版: Visual C++ 2005 SP1 再頒布可能パッケージ(TVTestが起動するなら入ってる)
-・x64版:  Visual C++ 2010 SP1 再頒布可能パッケージ (x64)
+・Windows XP以降。ただしVistaと7は未確認
+・TVTest/TVH264 ver.0.7.16 以降。ver.0.8.1 以降を推奨
+・Visual C++ 2010 SP1 再頒布可能パッケージ (x86/x64)
 
 ■初期導入FAQ
 ○このReadme長いんだけど？
@@ -19,13 +18,12 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
 ○BonDriver_UDP(Pipe)切り替え時に自動でプラグインを有効にしてほしい
   「TVTest起動オプションについて」を参照
 ○TVTest起動時にたまにフリーズする
-  「設定ファイルについて」→設定キーRaiseMainThreadPriority を参照。もしくはこち
-  らの改変版TVTestを使用してください:
-  http://www1.axfc.net/uploader/Sc/so/381174
+  TVTest0.8.1以降を使ってください。使用できない場合は「設定ファイルについて」→
+  設定キーRaiseMainThreadPriority を参照
 ○倍速再生時にしばらくフリーズすることがある
-  倍速再生はなるべくBonDriver_Pipeを使ってください。「倍速再生について」を参照
-  最新のTVTest0.8.0では、ドロップしたTSファイルの倍速再生でデッドロックします。
-  そのようなファイルを再生する場合は上述の改変版TVTestを使用してください。
+  TVTest0.8.1以降を使ってください。これ以前のTVTestではドロップしたTSファイルの
+  倍速再生でデッドロックします。加えて倍速再生はなるべくBonDriver_Pipeを使ってく
+  ださい。「倍速再生について」を参照
 ○しばらく再生していると映像が途切れとぎれになったりする
   設定キーTsUsePerfCounter/TsEnableUnderrunCtrl を参照
 ○シークがおそい
@@ -37,18 +35,9 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
   「チャプター機能について」を参照
 
 ■以前のバージョンからの移行
-設定ファイルTvtPlay.iniは基本的にそのまま引き継げます。ただし、ボタンのアイコン
-用画像の配置転換などで、設定キーButton02～Button15のデフォルトが一部変更されてい
-ます。ボタンアイコンがおかしくなった場合は、一度これらのキーをメモ帳などを使って
-削除してみてください。
-(ver.1.8～ver.2.1からの移行)
-  TvtPlay.tvtpを置きかえてください。
-(ver.1.3～ver.1.7からの移行)
-  TvtPlay.tvtpとBonDriver_Pipe.dllとを置きかえてください。ver.1.8は
-  BonDriver_Pipe.dllの変更がメインなので必ず置きかえてください。
-(ver.1.2r2以前からの移行)
-  TvtPlay.tvtpとBonDriver_Pipe.dllとTvtAudioStretchFilter.axとを置きかえてくださ
-  い。
+TvtPlay.tvtpとBonDriver_Pipe.dllとTvtAudioStretchFilter.axとをすべて置きかえてく
+ださい。再頒布可能パッケージが2005→2010になったので注意してください。設定ファイ
+ルTvtPlay.iniは基本的にそのまま引き継げます。
 
 ■使い方
 TVTestのPluginsフォルダにTvtPlay.tvtpを入れてください。BonDriver_Pipe.dllは使用
@@ -87,9 +76,6 @@ BonDriver_UDPのプロセス間通信方式をパイプに改変したもので�
 ないのと、UDP/IPのスタックを介さないので軽い(はず…)のが利点です。興味のある方は
 使ってみてください。TVTestに対してはBonDriver_UDPのフリをするので、BonDriver_UDP
 と同じ要領で使ってください。BonDriver_UDPと同時使用もできます。
-導入にはVisual C++ 2005 SP1 再頒布可能パッケージ(x64版はVisual C++ 2010 SP1 再頒
-布可能パッケージ (x64))が必要です。x64版はファイル名を必ず"BonDriver_Pipe.dll"に
-リネームしてください。
 
 ■TVTest起動オプションについて
 TVTest起動時につぎのようなオプションを追加することで、プラグインの有効・無効の自
@@ -236,6 +222,11 @@ TsPcrDiscontinuityThreshold【ver.1.5r2～】
     # (またはドロップ)部分とみなしてビューアリセットをかけます。
     # 最小値は[=200]、または[=0]とすると検出しません。
     # 正常なTSファイルであれば、PCRは規定で100ミリ秒以下の間隔で埋め込まれます。
+TsTryGaplessPause【ver.2.2～】
+    ギャップなしで一時停止/再生する[=1]かどうか
+    # フレームが飛ぶことなく再生再開できます。デフォルト[=0]ですがオススメです。
+    # 音声フィルタにTvtAudioStretchFilterを指定している場合だけ効果があります。
+    # バッファ設定(TsEnableUnderrunCtrl)等によっては機能しない場合があります。
 ShowOpenDialog【ver.1.2～】
     プラグイン有効時に「ファイルを開く」ダイアログを表示する[=1]かどうか
     # /tvtpudp /tvtpipeと組みあわせて利用するとTVTestのチャンネル選択画面などで
@@ -458,7 +449,9 @@ TSファイルの同期・解析のために、tsselect-0.1.8(
 http://www.marumo.ne.jp/junk/tsselect-0.1.8.lzh)よりソースコードを改変利用してい
 ます。
 TvtAudioStretchFilterフィルタは、再生レート制御のために、SoundTouchライブラリver
-.1.6.0(http://www.surina.net/soundtouch/)を利用しています。
+.1.8.0(http://www.surina.net/soundtouch/)を利用し、TvtPlayスレ2>>774のSSE2最適化
+パッチ(http://toro.2ch.net/test/read.cgi/avi/1348364114/774 )を少し補正したもの
+を適用しています。
 デフォルトのアイコン画像"Buttons.bmp"は、「HDUS関係ファイル置き場」(
 http://2sen.dip.jp/dtv/)のup0598.zip「非公式 TvtPlayシークボタンカスタマイズ用ア
 イコン 修正2」のデザインをもとに作成しています。61～65番のアイコンはup0635.zip
@@ -490,6 +483,12 @@ http://toro.2ch.net/test/read.cgi/avi/1348364114/115 )を使用しています�
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.2.2 (2014-02-15)
+・SoundTouchライブラリの更新に追従
+・TvtAudioStretchFilterについて、5.1chのダウンミックス再生がオフのときch変化で無
+  音になることがあるのを修正
+・ギャップなしで一時停止/再生できる機能を追加(設定キーTsTryGaplessPause)
+・再生中ファイルのリネームや削除に対応
 ver.2.1r2 (2013-08-21)
 ・ver.2.1で全画面表示でのDrag&Dropができなくなったのを修正
   ・スレ指摘感謝です。その昔ver.1.2でも同じことをやらかしてたりする
