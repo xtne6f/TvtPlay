@@ -263,30 +263,43 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     if (fileSize < 0) goto ERROR_EXIT;
 
     // ファイル先頭のPCRを取得
-    if (!SeekToBegin()) goto ERROR_EXIT;
+    if (!SeekToBegin()) {
+        OutputDebugString(TEXT("CTsSender::Open(): SeekToBegin() Error\n"));
+        goto ERROR_EXIT;
+    }
     m_initPcr = m_pcr;
 
     // 動画の長さを取得
     m_fSpecialExtending = false;
-    if (Seek(-TS_SUPPOSED_RATE * 2, FILE_END)) {
-        // ファイル末尾が正常である場合
-        m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 2000;
-        m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) +
-                     (int)((long long)TS_SUPPOSED_RATE * 2000 / GetRate());
+    m_duration = 0;
+    // 最大で標準的なTSの末尾8秒間を調べる
+    for (int sec = 2; sec <= 8; sec *= 2) {
+        if (Seek(-TS_SUPPOSED_RATE * sec, FILE_END)) {
+            // ファイル末尾が正常である場合
+            m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 1000 * sec;
+            m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) +
+                         (int)((long long)TS_SUPPOSED_RATE * sec / GetRate());
+            break;
+        }
     }
-    else if (m_fShareWrite &&
-             SeekToBoundary(fileSize / 2, fileSize, buf, sizeof(buf) / 2) &&
-             Seek(-TS_SUPPOSED_RATE * 2, FILE_CURRENT))
+    if (m_duration <= 0 && m_fShareWrite &&
+        SeekToBoundary(fileSize / 2, fileSize, buf, sizeof(buf) / 2))
     {
         // 書き込み共有かつファイル末尾が正常でない場合
         __int64 filePos = m_file.GetPosition();
-        m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 2000;
-        // ファイルサイズからレートを計算できないため
-        m_specialExtendInitRate = filePos < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
-                                  static_cast<int>((filePos + TS_SUPPOSED_RATE * 2) * 1000 / m_duration);
-        m_fSpecialExtending = true;
+        for (int sec = 2; sec <= 8; sec *= 2) {
+            if (Seek(filePos - TS_SUPPOSED_RATE * sec, FILE_BEGIN)) {
+                filePos = m_file.GetPosition();
+                m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 1000 * sec;
+                // ファイルサイズからレートを計算できないため
+                m_specialExtendInitRate = filePos < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
+                                          static_cast<int>((filePos + TS_SUPPOSED_RATE * sec) * 1000 / m_duration);
+                m_fSpecialExtending = true;
+                break;
+            }
+        }
     }
-    else {
+    if (m_duration <= 0) {
         // 最低限、再生はできる場合
         m_duration = 0;
     }
@@ -298,7 +311,10 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
         }
     }
 
-    if (!SeekToBegin()) goto ERROR_EXIT;
+    if (!SeekToBegin()) {
+        OutputDebugString(TEXT("CTsSender::Open(): SeekToBegin()-2 Error\n"));
+        goto ERROR_EXIT;
+    }
 
     // 追っかけ時にファイルサイズ等の更新を取得するため
     if (m_fShareWrite) {
@@ -401,7 +417,7 @@ int CTsSender::Send()
             ::Sleep(10);
         }
         else {
-            fReadToPcr = ReadToPcr(40000, true, m_fForceSyncRead) == 2;
+            fReadToPcr = ReadToPcr(120000, true, m_fForceSyncRead) == 2;
             fReadToEof = !fReadToPcr;
         }
     }
@@ -728,7 +744,7 @@ int CTsSender::GetRate() const
         rate = fileSize < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
                static_cast<int>(fileSize * 1000 / m_duration);
     }
-    return min(max(rate, TS_SUPPOSED_RATE/128), TS_SUPPOSED_RATE*4);
+    return min(max(rate, TS_SUPPOSED_RATE/128), TS_SUPPOSED_RATE*12);
 }
 
 
@@ -930,12 +946,12 @@ bool CTsSender::Seek(__int64 distanceToMove, DWORD dwMoveMethod)
 
     m_curr = m_head = m_tail = NULL;
     m_fEnPcr = false;
-    if (ReadToPcr(40000, false, true) != 2) {
+    if (ReadToPcr(120000, false, true) != 2) {
         // なるべく呼び出し前の状態に回復させるが、完全とは限らない
         if (m_file.SetPointer(lastPos, FILE_BEGIN)) {
             m_curr = m_head = m_tail = NULL;
             m_fEnPcr = false;
-            if (ReadToPcr(40000, false, true) == 2) m_prevPcr = m_pcr;
+            if (ReadToPcr(120000, false, true) == 2) m_prevPcr = m_pcr;
         }
         return false;
     }
