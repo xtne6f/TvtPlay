@@ -28,8 +28,8 @@ int CPlaylist::PushBackListOrFile(LPCTSTR path, bool fMovePos)
         // TSファイルとして処理
         PLAY_INFO pi;
         ::lstrcpyn(pi.path, fullPath, _countof(pi.path));
-        pos = static_cast<int>(size());
-        push_back(pi);
+        pos = static_cast<int>(m_list.size());
+        m_list.push_back(pi);
     }
     if (fMovePos && pos >= 0) m_pos = pos;
     return pos;
@@ -73,8 +73,8 @@ int CPlaylist::PushBackList(LPCTSTR fullPath)
                         ::lstrcpyn(pi.path, line, _countof(pi.path));
                     }
                     if (::PathFileExists(pi.path)) {
-                        if (pos < 0) pos = static_cast<int>(size());
-                        push_back(pi);
+                        if (pos < 0) pos = static_cast<int>(m_list.size());
+                        m_list.push_back(pi);
                     }
                 }
             }
@@ -87,8 +87,8 @@ int CPlaylist::PushBackList(LPCTSTR fullPath)
 // 現在位置のPLAY_INFOを前に移動する
 bool CPlaylist::MoveCurrentToPrev()
 {
-    if (m_pos != 0 && m_pos < size()) {
-        std::swap((*this)[m_pos], (*this)[m_pos-1]);
+    if (m_pos != 0 && m_pos < m_list.size()) {
+        std::swap(m_list[m_pos], m_list[m_pos-1]);
         --m_pos;
         return true;
     }
@@ -98,78 +98,70 @@ bool CPlaylist::MoveCurrentToPrev()
 // 現在位置のPLAY_INFOを次に移動する
 bool CPlaylist::MoveCurrentToNext()
 {
-    if (m_pos+1 < size()) {
-        std::swap((*this)[m_pos], (*this)[m_pos+1]);
+    if (m_pos+1 < m_list.size()) {
+        std::swap(m_list[m_pos], m_list[m_pos+1]);
         ++m_pos;
         return true;
     }
     return false;
 }
 
-static inline bool CompareAsc(const PLAY_INFO& l, const PLAY_INFO& r) { return ::lstrcmpi(l.path, r.path) < 0; }
-
-static inline bool CompareDesc(const PLAY_INFO& l, const PLAY_INFO& r) { return ::lstrcmpi(l.path, r.path) > 0; }
+struct PLAY_INFO_COMPARE {
+    bool operator()(const CPlaylist::PLAY_INFO *l, const CPlaylist::PLAY_INFO *r) const { return ::lstrcmpi(l->path, r->path) < 0; }
+};
 
 // ソートまたはシャッフルする
-bool CPlaylist::Sort(SORT_MODE mode)
+void CPlaylist::Sort(SORT_MODE mode)
 {
-    size_t sz = size();
-    if (m_pos < sz) {
-        for (size_t i = 0; i < sz; ++i) {
-            (*this)[i].fWork = m_pos == i;
-        }
-        if (mode == SORT_ASC) {
-            std::sort(begin(), end(), CompareAsc);
-        }
-        else if (mode == SORT_DESC) {
-            std::sort(begin(), end(), CompareDesc);
-        }
-        else if (mode == SORT_SHUFFLE) {
-            std::srand(::GetTickCount());
-            std::random_shuffle(begin(), end());
-        }
-        for (size_t i = 0; i < sz; ++i) {
-            if ((*this)[i].fWork) {
-                m_pos = i;
-                break;
-            }
-        }
-        return true;
+    std::vector<PLAY_INFO> swapList = m_list;
+    std::vector<const PLAY_INFO*> sortList;
+    for (size_t i = 0; i < swapList.size(); ++i) {
+        sortList.push_back(&swapList[i]);
     }
-    return false;
+    if (mode == SORT_ASC || mode == SORT_DESC) {
+        std::sort(sortList.begin(), sortList.end(), PLAY_INFO_COMPARE());
+    }
+    else if (mode == SORT_SHUFFLE) {
+        std::srand(::GetTickCount());
+        std::random_shuffle(sortList.begin(), sortList.end());
+    }
+    m_list.clear();
+    size_t pos = m_pos;
+    for (size_t i = 0; i < sortList.size(); ++i) {
+        size_t j = mode == SORT_DESC ? sortList.size() - 1 - i : i;
+        m_list.push_back(*sortList[j]);
+        if (sortList[j] == &swapList[pos]) {
+            m_pos = i;
+        }
+    }
 }
 
 // 現在位置のPLAY_INFOを削除する
-bool CPlaylist::EraseCurrent()
+void CPlaylist::EraseCurrent()
 {
-    if (m_pos < size()) {
-        erase(begin() + m_pos);
+    if (!m_list.empty()) {
+        m_list.erase(m_list.begin() + m_pos);
         // 現在位置はまず次のPLAY_INFOに移すが、なければ前のPLAY_INFOに移す
-        if (m_pos != 0 && m_pos >= size()) --m_pos;
-        return true;
+        if (m_pos != 0 && m_pos >= m_list.size()) --m_pos;
     }
-    return false;
 }
 
 // 現在位置のPLAY_INFO以外を削除する
-bool CPlaylist::ClearWithoutCurrent()
+void CPlaylist::ClearWithoutCurrent()
 {
-    if (m_pos < size()) {
-        PLAY_INFO pi = (*this)[m_pos];
-        clear();
-        push_back(pi);
+    if (!m_list.empty()) {
+        m_list.erase(m_list.begin() + m_pos + 1, m_list.end());
+        m_list.erase(m_list.begin(), m_list.begin() + m_pos);
         m_pos = 0;
-        return true;
     }
-    return false;
 }
 
 // 現在位置を前に移動する
 // 移動できなければfalseを返す
 bool CPlaylist::Prev(bool fLoop)
 {
-    if (fLoop && !empty() && m_pos == 0) {
-        m_pos = size() - 1;
+    if (fLoop && !m_list.empty() && m_pos == 0) {
+        m_pos = m_list.size() - 1;
         return true;
     }
     else if (m_pos != 0) {
@@ -183,11 +175,11 @@ bool CPlaylist::Prev(bool fLoop)
 // 移動できなければfalseを返す
 bool CPlaylist::Next(bool fLoop)
 {
-    if (fLoop && !empty() && m_pos+1 >= size()) {
+    if (fLoop && !m_list.empty() && m_pos+1 >= m_list.size()) {
         m_pos = 0;
         return true;
     }
-    else if (m_pos+1 < size()) {
+    else if (m_pos+1 < m_list.size()) {
         ++m_pos;
         return true;
     }
@@ -200,7 +192,7 @@ int CPlaylist::ToString(TCHAR *pStr, int max, bool fFileNameOnly) const
     if (!pStr) {
         // 出力に必要な要素数を算出
         int strSize = 1;
-        for (const_iterator it = begin(); it != end(); ++it) {
+        for (std::vector<PLAY_INFO>::const_iterator it = m_list.begin(); it != m_list.end(); ++it) {
             LPCTSTR path = fFileNameOnly ? ::PathFindFileName((*it).path) : (*it).path;
             strSize += ::lstrlen(path) + 2;
         }
@@ -210,7 +202,7 @@ int CPlaylist::ToString(TCHAR *pStr, int max, bool fFileNameOnly) const
         // 出力
         int strPos = 0;
         pStr[0] = 0;
-        for (const_iterator it = begin(); max-strPos-2 > 0 && it != end(); ++it) {
+        for (std::vector<PLAY_INFO>::const_iterator it = m_list.begin(); max-strPos-2 > 0 && it != m_list.end(); ++it) {
             LPCTSTR path = fFileNameOnly ? ::PathFindFileName((*it).path) : (*it).path;
             ::lstrcpyn(pStr + strPos, path, max-strPos-2);
             ::lstrcat(pStr + strPos, TEXT("\r\n"));

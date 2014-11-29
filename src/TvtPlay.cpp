@@ -1167,13 +1167,13 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
     HMENU hTopMenu = ::LoadMenu(g_hinstDLL, MAKEINTRESOURCE(IDR_MENU_PLAYLIST));
     if (hTopMenu) {
         HMENU hmenu;
-        if (m_playlist.empty()) {
+        if (m_playlist.Get().empty()) {
             hmenu = ::GetSubMenu(hTopMenu, 1);
         }
         else {
             hmenu = ::GetSubMenu(hTopMenu, 0);
-            CPlaylist::const_iterator it = m_playlist.begin();
-            for (int cmdID = 1; it != m_playlist.end() && cmdID <= 10000; ++cmdID, ++it) {
+            std::vector<CPlaylist::PLAY_INFO>::const_iterator it = m_playlist.Get().begin();
+            for (int cmdID = 1; it != m_playlist.Get().end() && cmdID <= 10000; ++cmdID, ++it) {
                 TCHAR str[64];
                 ::lstrcpyn(str, PathFindFileName((*it).path), 64);
                 if (::lstrlen(str) == 63) ::lstrcpy(&str[60], TEXT("..."));
@@ -1243,7 +1243,7 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
         }
         break;
     default:
-        if (1 <= selID && selID - 1 < (int)m_playlist.size()) {
+        if (1 <= selID && selID - 1 < (int)m_playlist.Get().size()) {
             m_playlist.SetPosition(selID - 1);
             return OpenCurrent();
         }
@@ -1499,8 +1499,7 @@ int CTvtPlay::TrackPopup(HMENU hmenu, const POINT &pt, UINT flags)
 // プレイリストの現在位置のファイルを開く
 bool CTvtPlay::OpenCurrent(int offset, int stretchID)
 {
-    size_t pos = m_playlist.GetPosition();
-    return pos < m_playlist.size() ? Open(m_playlist[pos].path, offset, stretchID) : false;
+    return !m_playlist.Get().empty() ? Open(m_playlist.Get()[m_playlist.GetPosition()].path, offset, stretchID) : false;
 }
 
 
@@ -2068,7 +2067,7 @@ void CTvtPlay::OnCommand(int id, const POINT *pPt, UINT flags)
         SeekToBegin();
         break;
     case ID_COMMAND_SEEK_END:
-        if (m_playlist.size() >= 2 && m_playlist.Next(IsAllRepeat())) OpenCurrent();
+        if (m_playlist.Get().size() >= 2 && m_playlist.Next(IsAllRepeat())) OpenCurrent();
         else SeekToEnd();
         break;
     case ID_COMMAND_SEEK_PREV:
@@ -2490,14 +2489,14 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
         }
     case WM_TVTP_GET_PATH:
         if (pThis->IsOpen()) {
-            size_t pos = pThis->m_playlist.GetPosition();
-            if (pos < pThis->m_playlist.size()) {
-                int len = ::lstrlen(pThis->m_playlist[pos].path);
+            if (!pThis->m_playlist.Get().empty()) {
+                size_t pos = pThis->m_playlist.GetPosition();
+                int len = ::lstrlen(pThis->m_playlist.Get()[pos].path);
                 if (!lParam) {
                     return len;
                 }
                 if (len < static_cast<int>(wParam)) {
-                    ::lstrcpy(reinterpret_cast<LPWSTR>(lParam), pThis->m_playlist[pos].path);
+                    ::lstrcpy(reinterpret_cast<LPWSTR>(lParam), pThis->m_playlist.Get()[pos].path);
                     return len;
                 }
             }
