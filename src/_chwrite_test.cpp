@@ -62,7 +62,6 @@ int _tmain(int argc, TCHAR *argv[])
     //     ・"c"なら{正整数}の単位はmsec
     //     ・"d"なら{正整数}の単位は100msec
     //     ・"e"なら{正整数}はCHAPTER_POS_MAX(動画の末尾)
-    //   ・{文字列}は0～CHAPTER_NAME_MAX-1文字
     // ・仕様を満たさないコマンドは(できるだけ)全体を無視する
     // ・例1: "c-c" (仕様を満たす最小コマンド)
     // ・例2: "c-1234cName1-3456c-2345c2ndName-0e-c"

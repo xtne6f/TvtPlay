@@ -31,7 +31,7 @@ CSeekStatusItem::CSeekStatusItem(ITvtPlayController *pPlugin, bool fDrawOfs, boo
 
 void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
 {
-    CChapterMap &chMap = m_pPlugin->GetChapter();
+    const std::map<int, CChapterMap::CHAPTER> &chMap = m_pPlugin->GetChapter().Get();
     int dur = m_pPlugin->GetDuration();
     int pos = m_pPlugin->GetApparentPosition();
     COLORREF crText = ::GetTextColor(hdc);
@@ -49,9 +49,9 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
     int barX = rcBar.left + ConvUnit(pos, rcBar.right - rcBar.left, dur);
 
     // マウスホバー中のチャプターを探す
-    CChapterMap::const_iterator itHover = chMap.end();
+    std::map<int, CChapterMap::CHAPTER>::const_iterator itHover = chMap.end();
     bool fMouseOnBar = rcBar.left <= m_mousePos.x && m_mousePos.x < rcBar.right;
-    if (fMouseOnBar && 0<=m_mousePos.y && m_mousePos.y<=rcBar.top && chMap.IsOpen()) {
+    if (fMouseOnBar && 0<=m_mousePos.y && m_mousePos.y<=rcBar.top) {
         int chapPosL = ConvUnit(m_mousePos.x-rcBar.left-5, dur, rcBar.right - rcBar.left);
         int chapPosR = ConvUnit(m_mousePos.x-rcBar.left+5, dur, rcBar.right - rcBar.left);
         if (chapPosR >= dur) chapPosR = INT_MAX;
@@ -90,9 +90,9 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
             else ::wsprintf(szTotText, TEXT(" (%d:%02d:%02d)"), totSec/60/60%24, totSec/60%60, totSec%60);
         }
         szChName[0] = 0;
-        if (itHover != chMap.end() && itHover->second.val[0]) {
+        if (itHover != chMap.end() && itHover->second.name[0]) {
             szChName[0] = TEXT(' ');
-            ::lstrcpyn(szChName+1, itHover->second.val, _countof(szChName)-1);
+            ::lstrcpyn(szChName+1, &itHover->second.name.front(), _countof(szChName)-1);
         }
         if (posSec < 3600 && dur < 3600000) {
             ::wsprintf(szText, TEXT("%02d:%02d%s%s%s"), posSec/60%60, posSec%60, szOfsText, szTotText, szChName);
@@ -159,10 +159,10 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
 
     // チャプターを描画
     HBRUSH hbr = ::CreateSolidBrush(crText);
-    if (hpen && hbr && chMap.IsOpen()) {
+    if (hpen && hbr) {
         HPEN hpenOld = SelectPen(hdc, hpen);
         bool isIn = false, isX = false;
-        CChapterMap::const_iterator it = chMap.begin();
+        std::map<int, CChapterMap::CHAPTER>::const_iterator it = chMap.begin();
         for (; it != chMap.end(); ++it) {
             int chapX = rcBar.left + ConvUnit(it->first, rcBar.right - rcBar.left, dur);
             POINT apt[3] = { chapX, rcBar.top-3,
@@ -213,17 +213,17 @@ void CSeekStatusItem::ProcessSeek(int x)
 
 void CSeekStatusItem::OnLButtonDown(int x, int y)
 {
-    CChapterMap &chMap = m_pPlugin->GetChapter();
+    const std::map<int, CChapterMap::CHAPTER> &chMap = m_pPlugin->GetChapter().Get();
     int dur = m_pPlugin->GetDuration();
     RECT rc, rcc;
     GetRect(&rc);
     GetClientRect(&rcc);
 
-    if (y <= (rc.bottom-rc.top)/2-2 && chMap.IsOpen() && !chMap.empty()) {
+    if (y <= (rc.bottom-rc.top)/2-2 && !chMap.empty()) {
         int chapPosL = ConvUnit(x-(rcc.left-rc.left)-2-5, dur, rcc.right-rcc.left-4);
         int chapPosR = ConvUnit(x-(rcc.left-rc.left)-2+5, dur, rcc.right-rcc.left-4);
         if (chapPosR >= dur) chapPosR = INT_MAX;
-        CChapterMap::const_iterator it = chMap.lower_bound(chapPosL);
+        std::map<int, CChapterMap::CHAPTER>::const_iterator it = chMap.lower_bound(chapPosL);
         if (it != chMap.end() && it->first < chapPosR) {
             m_pPlugin->SeekAbsolute(it->first);
         }
@@ -253,17 +253,17 @@ void CSeekStatusItem::OnLButtonUp(int x, int y)
 
 void CSeekStatusItem::OnRButtonDown(int x, int y)
 {
-    CChapterMap &chMap = m_pPlugin->GetChapter();
+    const std::map<int, CChapterMap::CHAPTER> &chMap = m_pPlugin->GetChapter().Get();
     int dur = m_pPlugin->GetDuration();
     RECT rc, rcc;
     GetRect(&rc);
     GetClientRect(&rcc);
 
-    if (y <= (rc.bottom-rc.top)/2-2 && chMap.IsOpen() && !chMap.empty()) {
+    if (y <= (rc.bottom-rc.top)/2-2 && !chMap.empty()) {
         int chapPosL = ConvUnit(x-(rcc.left-rc.left)-2-5, dur, rcc.right-rcc.left-4);
         int chapPosR = ConvUnit(x-(rcc.left-rc.left)-2+5, dur, rcc.right-rcc.left-4);
         if (chapPosR >= dur) chapPosR = INT_MAX;
-        CChapterMap::const_iterator it = chMap.lower_bound(chapPosL);
+        std::map<int, CChapterMap::CHAPTER>::const_iterator it = chMap.lower_bound(chapPosL);
         POINT pt;
         UINT flags;
         if (GetMenuPos(&pt, &flags)) {

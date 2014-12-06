@@ -1279,35 +1279,30 @@ void CTvtPlay::StretchWithPopup(const POINT &pt, UINT flags)
 
 void CTvtPlay::SeekChapterWithPopup(const POINT &pt, UINT flags)
 {
-    if (!m_chapter.IsOpen() || m_chapter.empty()) return;
+    if (m_chapter.Get().empty()) return;
 
     HMENU hmenu = ::CreatePopupMenu();
     if (hmenu) {
         int i = 0;
         int selID = 0;
-        CChapterMap::iterator it;
+        std::map<int, CChapterMap::CHAPTER>::const_iterator it;
 
-        for (i = 0, it = m_chapter.begin(); it != m_chapter.end(); i++, it++)
+        for (i = 0, it = m_chapter.Get().begin(); it != m_chapter.Get().end(); i++, it++)
         {
             TCHAR str[128];
-            ::wsprintf(str, TEXT("%d:%02d:%02d.%03d %s"),
+            ::wsprintf(str, TEXT("%d:%02d:%02d.%03d %.63s"),
                        it->first/3600000, it->first/60000%60, it->first/1000%60, it->first%1000,
-                       it->second.val);
+                       &it->second.name.front());
             ::AppendMenu(hmenu, MF_STRING, 1 + i, str);
         }
         selID = TrackPopup(hmenu, pt, flags);
         ::DestroyMenu(hmenu);
 
-        if (0 <= selID - 1 && selID - 1 < (int)m_chapter.size())
+        if (0 <= selID - 1 && selID - 1 < (int)m_chapter.Get().size())
         {
-            for (i = 0, it = m_chapter.begin(); it != m_chapter.end(); i++, it++)
-            {
-                if (i == selID - 1)
-                {
-                    SeekAbsolute(it->first);
-                    break;
-                }
-            }
+            it = m_chapter.Get().begin();
+            std::advance(it, selID - 1);
+            SeekAbsolute(it->first);
         }
     }
 }
@@ -1315,18 +1310,17 @@ void CTvtPlay::SeekChapterWithPopup(const POINT &pt, UINT flags)
 
 static INT_PTR CALLBACK EditChapterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    // WM_INITDIALOGのとき不定
-    CHAPTER *pch = reinterpret_cast<CHAPTER*>(::GetWindowLongPtr(hDlg, GWLP_USERDATA));
+    std::pair<int, CChapterMap::CHAPTER> *pch;
     switch (uMsg) {
     case WM_INITDIALOG:
         ::SetWindowLongPtr(hDlg, GWLP_USERDATA, lParam);
-        pch = reinterpret_cast<CHAPTER*>(lParam);
-        ::SetDlgItemText(hDlg, IDC_EDIT_NAME, pch->second.val);
+        pch = reinterpret_cast<std::pair<int, CChapterMap::CHAPTER>*>(lParam);
+        ::SetDlgItemText(hDlg, IDC_EDIT_NAME, &pch->second.name.front());
         ::SetDlgItemInt(hDlg, IDC_EDIT_HOUR, pch->first/3600000%100, FALSE);
         ::SetDlgItemInt(hDlg, IDC_EDIT_MIN, pch->first/60000%60, FALSE);
         ::SetDlgItemInt(hDlg, IDC_EDIT_SEC, pch->first/1000%60, FALSE);
         ::SetDlgItemInt(hDlg, IDC_EDIT_MSEC, pch->first%1000, FALSE);
-        ::SendDlgItemMessage(hDlg, IDC_EDIT_NAME, EM_LIMITTEXT, _countof(pch->second.val) - 1, 0);
+        ::SendDlgItemMessage(hDlg, IDC_EDIT_NAME, EM_LIMITTEXT, 4095, 0);
         ::SendDlgItemMessage(hDlg, IDC_EDIT_HOUR, EM_LIMITTEXT, 2, 0);
         ::SendDlgItemMessage(hDlg, IDC_EDIT_MIN, EM_LIMITTEXT, 2, 0);
         ::SendDlgItemMessage(hDlg, IDC_EDIT_SEC, EM_LIMITTEXT, 2, 0);
@@ -1341,9 +1335,12 @@ static INT_PTR CALLBACK EditChapterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, 
             ::SetDlgItemInt(hDlg, IDC_EDIT_MSEC, 999, FALSE);
             break;
         case IDOK:
-            if (!::GetDlgItemText(hDlg, IDC_EDIT_NAME, pch->second.val, _countof(pch->second.val))) {
-                pch->second.val[0] = 0;
+            pch = reinterpret_cast<std::pair<int, CChapterMap::CHAPTER>*>(::GetWindowLongPtr(hDlg, GWLP_USERDATA));
+            pch->second.name.resize(4096);
+            if (!::GetDlgItemText(hDlg, IDC_EDIT_NAME, &pch->second.name.front(), 4096)) {
+                pch->second.name[0] = 0;
             }
+            pch->second.name.resize(::lstrlen(&pch->second.name.front()) + 1);
             pch->first = ::GetDlgItemInt(hDlg, IDC_EDIT_HOUR, NULL, FALSE)%100*3600000 +
                          ::GetDlgItemInt(hDlg, IDC_EDIT_MIN, NULL, FALSE)%60*60000 +
                          ::GetDlgItemInt(hDlg, IDC_EDIT_SEC, NULL, FALSE)%60*1000 +
@@ -1363,9 +1360,9 @@ static INT_PTR CALLBACK EditChapterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, 
 // ポップアップメニュー選択でチャプターを編集する
 void CTvtPlay::EditChapterWithPopup(int pos, const POINT &pt, UINT flags)
 {
-    CChapterMap::const_iterator ci = m_chapter.find(pos);
-    if (!m_chapter.IsOpen() || ci == m_chapter.end()) return;
-    CHAPTER ch = *ci;
+    std::map<int, CChapterMap::CHAPTER>::const_iterator ci = m_chapter.Get().find(pos);
+    if (ci == m_chapter.Get().end()) return;
+    std::pair<int, CChapterMap::CHAPTER> ch = *ci;
 
     // メニュー生成
     int selID = 0;
@@ -1373,9 +1370,9 @@ void CTvtPlay::EditChapterWithPopup(int pos, const POINT &pt, UINT flags)
     if (hTopMenu) {
         HMENU hmenu = ::GetSubMenu(hTopMenu, 0);
         TCHAR str[128];
-        ::wsprintf(str, TEXT("%d:%02d:%02d.%03d %s"),
+        ::wsprintf(str, TEXT("%d:%02d:%02d.%03d %.63s"),
                    ch.first/3600000, ch.first/60000%60, ch.first/1000%60, ch.first%1000,
-                   ch.second.val);
+                   &ch.second.name.front());
         ::ModifyMenu(hmenu, IDM_CHAPTER_EDIT, MF_STRING, IDM_CHAPTER_EDIT, str);
         ::CheckMenuItem(hmenu, IDM_CHAPTER_IN, ch.second.IsIn() ? MF_CHECKED : MF_UNCHECKED);
         ::CheckMenuItem(hmenu, IDM_CHAPTER_OUT, ch.second.IsOut() ? MF_CHECKED : MF_UNCHECKED);
@@ -1399,47 +1396,54 @@ void CTvtPlay::EditChapterWithPopup(int pos, const POINT &pt, UINT flags)
             m_fPopuping = false;
         }
     }
-    if (!selID || !m_chapter.IsOpen() || m_chapter.find(pos) == m_chapter.end()) return;
+    if (!selID || m_chapter.Get().count(pos) == 0) return;
 
     // マップのチャプターをchの値に更新する
-    m_chapter.erase(pos);
     switch (selID) {
+    case IDM_CHAPTER_EDIT:
+        m_chapter.Insert(ch, pos);
+        break;
     case IDM_CHAPTER_FORWARD:
-        if (ch.first < CHAPTER_POS_MAX)
+        if (ch.first < CChapterMap::CHAPTER_POS_MAX)
             ch.first = max(ch.first-200, 0);
+        m_chapter.Insert(ch, pos);
         break;
     case IDM_CHAPTER_BACKWARD:
-        ch.first = min(ch.first+200, CHAPTER_POS_MAX);
+        ch.first = min(ch.first+200, CChapterMap::CHAPTER_POS_MAX);
+        m_chapter.Insert(ch, pos);
+        break;
+    case IDM_CHAPTER_ERASE:
+        m_chapter.Erase(pos);
         break;
     case IDM_CHAPTER_IN:
-        if (ch.second.IsOut()) ch.second.val[0] = TEXT('i');
-        else ch.second.InvertPrefix(TEXT('i'));
+        ch.second.SetOut(false);
+        ch.second.SetIn(!ch.second.IsIn());
+        m_chapter.Insert(ch, pos);
         break;
     case IDM_CHAPTER_OUT:
-        if (ch.second.IsIn()) ch.second.val[0] = TEXT('o');
-        else ch.second.InvertPrefix(TEXT('o'));
+        ch.second.SetIn(false);
+        ch.second.SetOut(!ch.second.IsOut());
+        m_chapter.Insert(ch, pos);
         break;
     case IDM_CHAPTER_X_IN:
         {
-            CHAPTER_NAME chName;
-            ::lstrcpyn(chName.val, ch.second.val + (ch.second.IsIn()||ch.second.IsOut() ? 1 : 0) +
-                       (ch.second.IsX() ? 1 : 0), _countof(chName.val) - 2);
-            ::lstrcpy(ch.second.val, ch.second.IsIn() && ch.second.IsX() ? TEXT("") : TEXT("ix"));
-            ::lstrcat(ch.second.val, chName.val);
+            bool fSet = ch.second.IsIn() && ch.second.IsX();
+            ch.second.SetOut(false);
+            ch.second.SetIn(!fSet);
+            ch.second.SetX(!fSet);
+            m_chapter.Insert(ch, pos);
         }
         break;
     case IDM_CHAPTER_X_OUT:
         {
-            CHAPTER_NAME chName;
-            ::lstrcpyn(chName.val, ch.second.val + (ch.second.IsIn()||ch.second.IsOut() ? 1 : 0) +
-                       (ch.second.IsX() ? 1 : 0), _countof(chName.val) - 2);
-            ::lstrcpy(ch.second.val, ch.second.IsOut() && ch.second.IsX() ? TEXT("") : TEXT("ox"));
-            ::lstrcat(ch.second.val, chName.val);
+            bool fSet = ch.second.IsOut() && ch.second.IsX();
+            ch.second.SetIn(false);
+            ch.second.SetOut(!fSet);
+            ch.second.SetX(!fSet);
+            m_chapter.Insert(ch, pos);
         }
         break;
     }
-    if (selID != IDM_CHAPTER_ERASE) m_chapter.insert(ch);
-    m_chapter.Save();
     BeginWatchingNextChapter(false);
 }
 
@@ -1458,25 +1462,11 @@ void CTvtPlay::EditAllChaptersWithPopup(const POINT &pt, UINT flags)
     if (!selID || !m_chapter.IsOpen()) return;
 
     if (selID == IDM_CHAPTER_FORWARD) {
-        CChapterMap::iterator it = m_chapter.begin();
-        while (it != m_chapter.end()) {
-            CHAPTER ch = *it;
-            m_chapter.erase(it);
-            if (ch.first < CHAPTER_POS_MAX) ch.first = max(ch.first - 200, 0);
-            it = m_chapter.insert(ch).first;
-            ++it;
-        }
+        m_chapter.ShiftAll(-200);
     }
     else if (selID == IDM_CHAPTER_BACKWARD) {
-        CChapterMap::iterator it = m_chapter.end();
-        while (it != m_chapter.begin()) {
-            CHAPTER ch = *(--it);
-            m_chapter.erase(it);
-            if (ch.first > 0) ch.first = min(ch.first + 200, CHAPTER_POS_MAX);
-            it = m_chapter.insert(ch).first;
-        }
+        m_chapter.ShiftAll(200);
     }
-    m_chapter.Save();
     BeginWatchingNextChapter(false);
 }
 
@@ -1537,12 +1527,12 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset, int stretchID)
 
     // チャプターを読み込む
     m_chapter.Open(fileName, m_szChaptersDirName);
-    if (!fSeeked && m_fSkipXChapter && m_chapter.IsOpen()) {
+    if (!fSeeked && m_fSkipXChapter) {
         // 先頭から1秒未満のスキップ開始チャプターを解釈
-        CChapterMap::const_iterator it = m_chapter.begin();
-        for (; it != m_chapter.end() && it->first < 1000; ++it) {
+        std::map<int, CChapterMap::CHAPTER>::const_iterator it = m_chapter.Get().begin();
+        for (; it != m_chapter.Get().end() && it->first < 1000; ++it) {
             if (it->second.IsIn() && it->second.IsX()) {
-                for (++it; it != m_chapter.end(); ++it) {
+                for (++it; it != m_chapter.Get().end(); ++it) {
                     // スキップ終了チャプターまでシーク
                     if (it->second.IsOut() && it->second.IsX()) {
                         m_tsSender.Seek(it->first);
@@ -1763,7 +1753,7 @@ void CTvtPlay::Stretch(int stretchID)
 // シークが発生すると監視は終了するので注意
 void CTvtPlay::BeginWatchingNextChapter(bool fDoDelay)
 {
-    if (m_hThread && m_chapter.IsOpen() && !m_chapter.empty()) {
+    if (m_hThread && !m_chapter.Get().empty()) {
         if (fDoDelay) {
             // シーク時などはGetPosition()が更新されるまで遅延させる
             ::SetTimer(m_hwndFrame, TIMER_ID_WATCH_POS_GT, TIMER_WATCH_POS_GT_INTERVAL, NULL);
@@ -1773,8 +1763,8 @@ void CTvtPlay::BeginWatchingNextChapter(bool fDoDelay)
             // 監視位置は必ずposより大きくする(でないと即座にWM_SATISFIED_POS_GTが呼ばれてしまう)
             int pos = GetPosition();
             if (pos >= 0) {
-                CChapterMap::const_iterator it = m_chapter.upper_bound(pos);
-                for (; it != m_chapter.end(); ++it) {
+                std::map<int, CChapterMap::CHAPTER>::const_iterator it = m_chapter.Get().upper_bound(pos);
+                for (; it != m_chapter.Get().end(); ++it) {
                     if (m_fSkipXChapter && it->second.IsIn() && it->second.IsX() ||
                         m_fRepeatChapter && it->second.IsOut())
                     {
@@ -2071,21 +2061,21 @@ void CTvtPlay::OnCommand(int id, const POINT *pPt, UINT flags)
         else SeekToEnd();
         break;
     case ID_COMMAND_SEEK_PREV:
-        if (m_chapter.IsOpen() && !m_chapter.empty()) {
+        if (!m_chapter.Get().empty()) {
             int pos = GetPosition();
             if (pos >= 3000) {
                 // 再生中の連続ジャンプを考慮して多めに戻す
-                CChapterMap::const_iterator it = m_chapter.lower_bound(pos - 3000);
-                if (it != m_chapter.begin()) SeekAbsolute((--it)->first);
+                std::map<int, CChapterMap::CHAPTER>::const_iterator it = m_chapter.Get().lower_bound(pos - 3000);
+                if (it != m_chapter.Get().begin()) SeekAbsolute((--it)->first);
             }
         }
         break;
     case ID_COMMAND_SEEK_NEXT:
-        if (m_chapter.IsOpen() && !m_chapter.empty()) {
+        if (!m_chapter.Get().empty()) {
             int pos = GetPosition();
             if (pos >= 0) {
-                CChapterMap::const_iterator it = m_chapter.lower_bound(pos + 1000);
-                if (it != m_chapter.end()) SeekAbsolute(it->first);
+                std::map<int, CChapterMap::CHAPTER>::const_iterator it = m_chapter.Get().lower_bound(pos + 1000);
+                if (it != m_chapter.Get().end()) SeekAbsolute(it->first);
             }
         }
         break;
@@ -2096,15 +2086,10 @@ void CTvtPlay::OnCommand(int id, const POINT *pPt, UINT flags)
                 // ユーザは映像のタイミングでチャプターを付けるので、少し戻す
                 pos = max(pos - m_supposedDispDelay, 0);
                 // 追加位置から±3秒以内に既存のチャプターがないか
-                CChapterMap::const_iterator it = m_chapter.lower_bound(pos - 3000);
-                if (it == m_chapter.end() || it->first > pos + 3000) {
-                    CHAPTER ch;
+                std::map<int, CChapterMap::CHAPTER>::const_iterator it = m_chapter.Get().lower_bound(pos - 3000);
+                if (it == m_chapter.Get().end() || it->first > pos + 3000) {
                     // どうせPCR挿入間隔の精度しか出ないので100msec単位に落とす
-                    ch.first = pos / 100 * 100;
-                    // 無名チャプター
-                    ch.second.val[0] = 0;
-                    m_chapter.insert(ch);
-                    m_chapter.Save();
+                    m_chapter.Insert(std::make_pair(pos / 100 * 100, CChapterMap::CHAPTER()));
                     m_statusView.UpdateItem(STATUS_ITEM_SEEK);
                 }
             }
@@ -2437,12 +2422,12 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
     case WM_SATISFIED_POS_GT:
         DEBUG_OUT(TEXT("CTvtPlay::FrameWindowProc(): WM_SATISFIED_POS_GT\n"));
         if (pThis->m_chapter.IsOpen()) {
-            CChapterMap::const_iterator it = pThis->m_chapter.find(static_cast<int>(lParam) -
-                                                                   pThis->m_supposedDispDelay);
-            if (pThis->m_fSkipXChapter && it != pThis->m_chapter.end() &&
+            std::map<int, CChapterMap::CHAPTER>::const_iterator it =
+                pThis->m_chapter.Get().find(static_cast<int>(lParam) - pThis->m_supposedDispDelay);
+            if (pThis->m_fSkipXChapter && it != pThis->m_chapter.Get().end() &&
                 it->second.IsIn() && it->second.IsX())
             {
-                for (++it; it != pThis->m_chapter.end(); ++it) {
+                for (++it; it != pThis->m_chapter.Get().end(); ++it) {
                     // スキップ終了チャプターまでシーク
                     if (it->second.IsOut() && it->second.IsX()) {
                         pThis->SeekAbsolute(it->first);
@@ -2450,8 +2435,8 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
                     }
                 }
             }
-            else if (pThis->m_fRepeatChapter && it != pThis->m_chapter.end() &&
-                     it->second.IsOut() && it != pThis->m_chapter.begin())
+            else if (pThis->m_fRepeatChapter && it != pThis->m_chapter.Get().end() &&
+                     it->second.IsOut() && it != pThis->m_chapter.Get().begin())
             {
                 bool isX = it->second.IsX();
                 do {
@@ -2460,7 +2445,7 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
                         pThis->SeekAbsolute(it->first);
                         break;
                     }
-                } while (it != pThis->m_chapter.begin());
+                } while (it != pThis->m_chapter.Get().begin());
             }
             pThis->BeginWatchingNextChapter(true);
         }

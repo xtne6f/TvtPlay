@@ -1,5 +1,7 @@
 ﻿#include <Windows.h>
 #include <Shlwapi.h>
+#include <algorithm>
+#include <vector>
 #include <map>
 #include "Util.h"
 #include "ChapterMap.h"
@@ -9,29 +11,13 @@
 #define ASSERT assert
 #endif
 
-void CHAPTER_NAME::InvertPrefix(TCHAR c)
-{
-    ASSERT(c);
-    TCHAR tmp[_countof(val)];
-    if (!::ChrCmpI(val[0], c)) {
-        ::lstrcpy(tmp, val + 1);
-        ::lstrcpy(val, tmp);
-    }
-    else {
-        ::lstrcpy(tmp, val);
-        val[0] = c;
-        ::lstrcpyn(val + 1, tmp, _countof(val) - 1);
-    }
-}
-
 CChapterMap::CChapterMap()
     : m_hDir(INVALID_HANDLE_VALUE)
     , m_hEvent(NULL)
     , m_fWritable(false)
-    , m_fWaiting(false)
     , m_retryCount(0)
 {
-    m_path[0] = m_longName[0] = m_shortName[0] = 0;
+    m_path[0] = 0;
 }
 
 CChapterMap::~CChapterMap()
@@ -109,18 +95,10 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
         }
         ::lstrcpy(m_path, chReadPath);
 
-        // ReadDirectoryChangesW()のために長短ファイル名を用意
-        TCHAR tmpPath[MAX_PATH];
-        rv = ::GetShortPathName(m_path, tmpPath, _countof(tmpPath));
-        if (rv && rv < _countof(tmpPath)) {
-            ::lstrcpy(m_shortName, ::PathFindFileName(tmpPath));
-        }
-        ::lstrcpy(m_longName, ::PathFindFileName(m_path));
-
         // 変更監視のためにディレクトリを開く
-        m_hEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+        TCHAR tmpPath[MAX_PATH];
         ::lstrcpy(tmpPath, m_path);
-        if (m_hEvent && ::PathRemoveFileSpec(tmpPath)) {
+        if (::PathRemoveFileSpec(tmpPath)) {
             m_hDir = ::CreateFile(tmpPath, FILE_LIST_DIRECTORY,
                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                   NULL, OPEN_EXISTING,
@@ -153,7 +131,7 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
 
 void CChapterMap::Close()
 {
-    clear();
+    m_map.clear();
     if (NeedToSync()) {
         ::CloseHandle(m_hDir);
         m_hDir = INVALID_HANDLE_VALUE;
@@ -162,9 +140,9 @@ void CChapterMap::Close()
         ::CloseHandle(m_hEvent);
         m_hEvent = NULL;
     }
-    m_fWritable = m_fWaiting = false;
+    m_fWritable = false;
     m_retryCount = 0;
-    m_path[0] = m_longName[0] = m_shortName[0] = 0;
+    m_path[0] = 0;
 }
 
 // .chapterファイルの変更を監視し、変更があれば読み込む
@@ -174,7 +152,7 @@ bool CChapterMap::Sync()
 {
     if (!NeedToSync()) return false;
 
-    if (m_fWaiting && HasOverlappedIoCompleted(&m_ol)) {
+    if (m_hEvent && HasOverlappedIoCompleted(&m_ol)) {
         // ディレクトリに変更があった
         DWORD xferred;
         if (::GetOverlappedResult(m_hDir, &m_ol, &xferred, FALSE)) {
@@ -182,13 +160,20 @@ bool CChapterMap::Sync()
                 m_retryCount = RETRY_LIMIT;
             }
             else {
+                TCHAR shortPath[MAX_PATH];
+                DWORD rv = ::GetShortPathName(m_path, shortPath, _countof(shortPath));
+                if (!rv || rv >= _countof(shortPath)) {
+                    shortPath[0] = 0;
+                }
+                LPCTSTR longName = ::PathFindFileName(m_path);
+                LPCTSTR shortName = ::PathFindFileName(shortPath);
                 for (BYTE *pBuf = m_buf;;) {
                     FILE_NOTIFY_INFORMATION *pInfo = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(pBuf);
                     TCHAR tmpName[MAX_PATH];
                     ::lstrcpyn(tmpName, pInfo->FileName,
                                min(_countof(tmpName), pInfo->FileNameLength / sizeof(WCHAR) + 1));
-                    if (m_longName[0] && !::lstrcmpi(tmpName, m_longName) ||
-                        m_shortName[0] && !::lstrcmpi(tmpName, m_shortName))
+                    if (longName[0] && !::lstrcmpi(tmpName, longName) ||
+                        shortName[0] && !::lstrcmpi(tmpName, shortName))
                     {
                         m_retryCount = RETRY_LIMIT;
                         break;
@@ -201,23 +186,30 @@ bool CChapterMap::Sync()
         else {
             ASSERT(false);
         }
-        m_fWaiting = false;
+        ::CloseHandle(m_hEvent);
+        m_hEvent = NULL;
     }
 
-    if (!m_fWaiting) {
+    if (!m_hEvent) {
         // ディレクトリの監視をはじめる
-        memset(&m_ol, 0, sizeof(m_ol));
-        m_ol.hEvent = m_hEvent;
-        m_fWaiting = ::ReadDirectoryChangesW(m_hDir, &m_buf, sizeof(m_buf), FALSE,
-                                             FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE,
-                                             NULL, &m_ol, NULL) != 0;
-        ASSERT(m_fWaiting);
+        m_hEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+        if (m_hEvent) {
+            memset(&m_ol, 0, sizeof(m_ol));
+            m_ol.hEvent = m_hEvent;
+            if (::ReadDirectoryChangesW(m_hDir, &m_buf, sizeof(m_buf), FALSE,
+                                        FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE,
+                                        NULL, &m_ol, NULL) == 0)
+            {
+                ::CloseHandle(m_hEvent);
+                m_hEvent = NULL;
+            }
+        }
     }
 
     // 書き込み中かもしれないので必要ならリトライする
     if (m_retryCount > 0) {
         if (!::PathFileExists(m_path)) {
-            clear();
+            m_map.clear();
             m_retryCount = 0;
             return true;
         }
@@ -233,44 +225,82 @@ bool CChapterMap::Sync()
     return false;
 }
 
+bool CChapterMap::Insert(const std::pair<int, CHAPTER> &ch, int pos)
+{
+    if (IsOpen() && 0 <= ch.first && ch.first <= CHAPTER_POS_MAX &&
+        (ch.first == pos || m_map.count(ch.first) == 0) &&
+        (pos < 0 || m_map.count(pos) != 0))
+    {
+        m_map.erase(pos);
+        m_map.insert(ch);
+        Save();
+        return true;
+    }
+    return false;
+}
+
+bool CChapterMap::Erase(int pos)
+{
+    if (m_map.erase(pos) != 0) {
+        Save();
+        return true;
+    }
+    return false;
+}
+
+void CChapterMap::ShiftAll(int offset)
+{
+    std::map<int, CHAPTER>::const_iterator it;
+    if (offset < 0) {
+        for (it = m_map.begin(); it != m_map.end(); ++it) {
+            std::pair<int, CHAPTER> ch = *it;
+            if (ch.first < CHAPTER_POS_MAX) ch.first = max(ch.first + offset, 0);
+            it = m_map.insert(m_map.erase(it), ch);
+        }
+    }
+    else {
+        for (it = m_map.end(); it != m_map.begin(); ) {
+            std::pair<int, CHAPTER> ch = *(--it);
+            if (ch.first > 0) ch.first = min(ch.first + offset, CHAPTER_POS_MAX);
+            it = m_map.insert(m_map.erase(it), ch);
+        }
+    }
+    Save();
+}
+
 bool CChapterMap::Save() const
 {
     if (!IsOpen() || !m_fWritable) return false;
 
-    if (empty() && ::PathFileExists(m_path)) {
+    if (m_map.empty() && ::PathFileExists(m_path)) {
         return ::DeleteFile(m_path) != 0;
     }
 
     // 全チャプターが100msecの倍数なら短い形式にする
     bool fShortStyle = true;
-    for (const_iterator it = begin(); it != end(); ++it) {
+    for (std::map<int, CHAPTER>::const_iterator it = m_map.begin(); it != m_map.end(); ++it) {
         if (it->first < CHAPTER_POS_MAX && it->first % 100 != 0) {
             fShortStyle = false;
             break;
         }
     }
 
-    // 作業領域を確保(ワーストケース)
-    TCHAR *pCmd = new TCHAR[size() * (13 + CHAPTER_NAME_MAX) + 4];
-    TCHAR *p = pCmd;
-
-    ::lstrcpy(p, TEXT("c-"));
-    p += 2;
-    for (const_iterator it = begin(); it != end(); ++it) {
-        TCHAR rpl[CHAPTER_NAME_MAX];
-        ::lstrcpy(rpl, it->second.val);
+    std::vector<TCHAR> cmd;
+    cmd.push_back(TEXT('c'));
+    cmd.push_back(TEXT('-'));
+    for (std::map<int, CHAPTER>::const_iterator it = m_map.begin(); it != m_map.end(); ++it) {
+        TCHAR str[16];
+        cmd.insert(cmd.end(), str, str + ::wsprintf(str, TEXT("%d"), it->first >= CHAPTER_POS_MAX ? 0 : fShortStyle ? it->first / 100 : it->first));
+        cmd.push_back(it->first >= CHAPTER_POS_MAX ? TEXT('e') : fShortStyle ? TEXT('d') : TEXT('c'));
+        cmd.insert(cmd.end(), it->second.name.begin(), it->second.name.end() - 1);
         // ハイフンは使用できないので全角マイナスに置換
-        for (TCHAR *q = rpl; *q; ++q) if (*q == TEXT('-')) *q = TEXT('－');
-        ASSERT(it->first >= 0);
-        p += ::wsprintf(p, TEXT("%d%c%s-"),
-                        it->first>=CHAPTER_POS_MAX ? 0 : fShortStyle ? max(it->first/100,0) : max(it->first,0),
-                        it->first>=CHAPTER_POS_MAX ? TEXT('e') : fShortStyle ? TEXT('d') : TEXT('c'), rpl);
+        std::replace(cmd.end() - (it->second.name.size() - 1), cmd.end(), TEXT('-'), TEXT('－'));
+        cmd.push_back(TEXT('-'));
     }
-    ::lstrcat(p, TEXT("c"));
+    cmd.push_back(TEXT('c'));
+    cmd.push_back(TEXT('\0'));
 
-    bool rv = WriteUtfFileToEnd(m_path, 0, pCmd);
-    delete [] pCmd;
-    return rv;
+    return WriteUtfFileToEnd(m_path, 0, &cmd.front());
 }
 
 bool CChapterMap::InsertCommand(LPCTSTR p)
@@ -283,21 +313,20 @@ bool CChapterMap::InsertCommand(LPCTSTR p)
     //     ・"c"なら{正整数}の単位はmsec
     //     ・"d"なら{正整数}の単位は100msec
     //     ・"e"なら{正整数}はCHAPTER_POS_MAX(動画の末尾)
-    //   ・{文字列}は0～CHAPTER_NAME_MAX-1文字
     // ・仕様を満たさないコマンドは(できるだけ)全体を無視する
     // ・例1: "c-c" (仕様を満たす最小コマンド)
     // ・例2: "c-1234cName1-3456c-2345c2ndName-0e-c"
-    clear();
+    m_map.clear();
     if (!::StrCmpNI(p, TEXT("c-"), 2)) {
         p += 2;
+        std::pair<int, CHAPTER> ch;
         for (;;) {
             if (!::ChrCmpI(*p, TEXT('c'))) return true;
-            CHAPTER ch;
             if (!::StrToIntEx(p, STIF_DEFAULT, &ch.first)) break;
             while (TEXT('0') <= *p && *p <= TEXT('9')) ++p;
 
             LPCTSTR q = ::StrChr(p, TEXT('-'));
-            if (!q || q==p || q-p > CHAPTER_NAME_MAX) break;
+            if (!q || q==p) break;
 
             TCHAR c = (TCHAR)::CharLower((LPTSTR)(*p));
             if (c==TEXT('c') || c==TEXT('d') || c==TEXT('e')) {
@@ -305,14 +334,15 @@ bool CChapterMap::InsertCommand(LPCTSTR p)
                 else if (c==TEXT('d')) ch.first *= 100;
                 if (ch.first >= 0) {
                     ch.first = min(ch.first, CHAPTER_POS_MAX);
-                    ::lstrcpyn(ch.second.val, p+1, static_cast<int>(q-p));
-                    insert(ch);
+                    ch.second.name.assign(p+1, q);
+                    ch.second.name.push_back(TEXT('\0'));
+                    m_map.insert(ch);
                 }
             }
             p = q+1;
         }
     }
-    clear();
+    m_map.clear();
     return false;
 }
 
@@ -324,30 +354,33 @@ bool CChapterMap::InsertOgmStyleCommand(LPCTSTR p)
     // CHAPTER01NAME=the first chapter
     // CHAPTER02=HH:MM:SS.sss
     // CHAPTER02NAME=another chapter
-    clear();
+    m_map.clear();
     TCHAR idStr[32] = {0};
-    CHAPTER ch;
+    std::pair<int, CHAPTER> ch;
+    std::vector<TCHAR> line;
     while (*p) {
         // 1行取得してpを進める
-        TCHAR line[CHAPTER_NAME_MAX + 64];
         int len = ::StrCSpn(p, TEXT("\r\n"));
-        ::lstrcpyn(line, p, min(len+1, _countof(line)));
+        line.assign(p, p + len);
+        line.push_back(TEXT('\0'));
         p += len;
         if (*p == TEXT('\r') && *(p+1) == TEXT('\n')) ++p;
         if (*p) ++p;
         // 左右の空白文字を取り除く
-        ::StrTrim(line, TEXT(" \t"));
+        ::StrTrim(&line.front(), TEXT(" \t"));
+        line.resize(::lstrlen(&line.front()) + 1);
 
-        if (!::StrCmpNI(line, TEXT("CHAPTER"), 7)) {
-            if (idStr[0] && !::StrCmpNI(line+7, idStr, ::lstrlen(idStr))) {
+        if (!::StrCmpNI(&line.front(), TEXT("CHAPTER"), 7)) {
+            line.erase(line.begin(), line.begin() + 7);
+            if (idStr[0] && !::StrCmpNI(&line.front(), idStr, ::lstrlen(idStr))) {
                 // "CHAPTER[0-9]*NAME="
-                ::lstrcpyn(ch.second.val, line+7 + ::lstrlen(idStr), CHAPTER_NAME_MAX);
-                insert(ch);
+                ch.second.name.assign(line.begin() + ::lstrlen(idStr), line.end());
+                m_map.insert(ch);
                 idStr[0] = 0;
             }
             else {
                 // 例えば"CHAPTER[0-9]*COMMENT="などは無視する
-                LPCTSTR q = line+7;
+                LPCTSTR q = &line.front();
                 while (TEXT('0') <= *q && *q <= TEXT('9')) ++q;
                 if (*q == TEXT('=')) {
                     idStr[0] = 0;
@@ -356,7 +389,7 @@ bool CChapterMap::InsertOgmStyleCommand(LPCTSTR p)
                         ch.first = ::StrToInt(q+1)*3600000 + ::StrToInt(q+4)*60000 + ::StrToInt(q+7)*1000 + ::StrToInt(q+10);
                         if (ch.first >= 0) {
                             ch.first = min(ch.first, CHAPTER_POS_MAX);
-                            ::lstrcpyn(idStr, line+7, min(static_cast<int>(q-(line+7)+1), _countof(idStr)-5));
+                            ::lstrcpyn(idStr, &line.front(), min(static_cast<int>(q-&line.front()+1), _countof(idStr)-5));
                             ::lstrcat(idStr, TEXT("NAME="));
                         }
                     }
@@ -365,7 +398,7 @@ bool CChapterMap::InsertOgmStyleCommand(LPCTSTR p)
         }
         else if (line[0]) {
             // 空行以外は認めない
-            clear();
+            m_map.clear();
             return false;
         }
     }
