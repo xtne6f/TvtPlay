@@ -47,23 +47,24 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
     // 拡張子除去
     ::PathRemoveExtension(pathWoExt);
 
-    // 動画ファイルと同じ階層の.chapter[.txt]へのパスを生成
-    TCHAR chPath[MAX_PATH], ogmPath[MAX_PATH];
-    chPath[0] = ogmPath[0] = 0;
+    // 動画ファイルと同じ階層の.chapter[.txt][s.txt]へのパスを生成
+    TCHAR chPath[MAX_PATH], ogmPath[MAX_PATH], ogm2Path[MAX_PATH];
+    chPath[0] = ogmPath[0] = ogm2Path[0] = 0;
     int len = ::lstrlen(pathWoExt);
     if (len < _countof(chPath) - 8) {
         // PathAddExtension()を使ってはいけない!
         len = ::wsprintf(chPath, TEXT("%s.chapter"), pathWoExt);
         if (len <= _countof(ogmPath) - 4) ::wsprintf(ogmPath, TEXT("%s.txt"), chPath);
+        if (len <= _countof(ogm2Path) - 5) ::wsprintf(ogm2Path, TEXT("%ss.txt"), chPath);
     }
     else {
         // 少なくとも.chapterへのパスは生成できなければならない
         return false;
     }
 
-    // ディレクトリが存在すれば、chapters階層の.chapter[.txt]へのパスを生成
-    TCHAR subChPath[MAX_PATH], subOgmPath[MAX_PATH];
-    subChPath[0] = subOgmPath[0] = 0;
+    // ディレクトリが存在すれば、chapters階層の.chapter[.txt][s.txt]へのパスを生成
+    TCHAR subChPath[MAX_PATH], subOgmPath[MAX_PATH], subOgm2Path[MAX_PATH];
+    subChPath[0] = subOgmPath[0] = subOgm2Path[0] = 0;
     if (subDirName[0]) {
         TCHAR subPathWoExt[MAX_PATH];
         ::lstrcpy(subPathWoExt, pathWoExt);
@@ -76,6 +77,7 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
             if (len < _countof(subChPath) - 8) {
                 len = ::wsprintf(subChPath, TEXT("%s.chapter"), subPathWoExt);
                 if (len <= _countof(subOgmPath) - 4) ::wsprintf(subOgmPath, TEXT("%s.txt"), subChPath);
+                if (len <= _countof(subOgm2Path) - 5) ::wsprintf(subOgm2Path, TEXT("%ss.txt"), subChPath);
             }
         }
     }
@@ -111,7 +113,9 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
         ::lstrcpy(m_path, subChPath[0] ? subChPath : chPath);
 
         LPCTSTR ogmReadPath = subOgmPath[0] && ::PathFileExists(subOgmPath) ? subOgmPath :
-                              ogmPath[0] && ::PathFileExists(ogmPath) ? ogmPath : NULL;
+                              ogmPath[0] && ::PathFileExists(ogmPath) ? ogmPath :
+                              subOgm2Path[0] && ::PathFileExists(subOgm2Path) ? subOgm2Path :
+                              ogm2Path[0] && ::PathFileExists(ogm2Path) ? ogm2Path : NULL;
         if (ogmReadPath) {
             // BOMがなければANSIコードページで読む
             TCHAR *pCmd = NewReadUtfFileToEnd(ogmReadPath, FILE_SHARE_READ, true);
