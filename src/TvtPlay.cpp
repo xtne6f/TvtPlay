@@ -506,9 +506,18 @@ void CTvtPlay::LoadTVTestSettings()
         LoadFontSetting(&logFont, m_szIniFileName);
         fFontLoaded = true;
     }
+    else {
+        // 可能ならAPIでフォント設定を取得する
+        TVTest::SettingInfo settingInfo;
+        settingInfo.pszName = TEXT("StatusBarFont");
+        settingInfo.Type = TVTest::SETTING_TYPE_DATA;
+        settingInfo.Value.pData = &logFont;
+        settingInfo.ValueSize = sizeof(logFont);
+        fFontLoaded = m_pApp->GetSetting(&settingInfo);
+    }
     ::GetPrivateProfileString(TEXT("ColorScheme"), TEXT("Name"), TEXT("!"), val, _countof(val), m_szIniFileName);
     if (val[0] != TEXT('!')) {
-        scheme.Load(m_szIniFileName);
+        scheme.Load(m_szIniFileName, m_pApp->GetVersion() < TVTest::MakeVersion(0,9,0));
         fColorLoaded = true;
     }
 
@@ -532,7 +541,7 @@ void CTvtPlay::LoadTVTestSettings()
             if (fileLock.Create(szMutexName)) {
                 if (fileLock.Wait(5000)) {
                     if (!fFontLoaded) LoadFontSetting(&logFont, szAppIniPath);
-                    if (!fColorLoaded) scheme.Load(szAppIniPath);
+                    if (!fColorLoaded) scheme.Load(szAppIniPath, m_pApp->GetVersion() < TVTest::MakeVersion(0,9,0));
                     fileLock.Release();
                 }
                 fileLock.Close();

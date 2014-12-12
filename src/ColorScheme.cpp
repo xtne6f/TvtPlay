@@ -25,21 +25,39 @@ static const LPCTSTR GradientDirectionList[] = {
 #define HEXRGB(hex) RGB((hex)>>16,((hex)>>8)&0xFF,(hex)&0xFF)
 
 const CColorScheme::ColorInfo CColorScheme::m_ColorInfoList[NUM_COLORS] = {
-	{HEXRGB(0x777777),	TEXT("StatusBack"),							TEXT("ステータスバー背景1")},
-	{HEXRGB(0x222222),	TEXT("StatusBack2"),						TEXT("ステータスバー背景2")},
-	{HEXRGB(0xBBBBBB),	TEXT("StatusText"),							TEXT("ステータスバー文字")},
-	{HEXRGB(0x777777),	TEXT("StatusItemBorder"),					TEXT("ステータスバー項目外枠")},
-	{HEXRGB(0x222222),	TEXT("StatusBottomItemBack"),				TEXT("ステータスバー下段背景1")},
-	{HEXRGB(0x222222),	TEXT("StatusBottomItemBack2"),				TEXT("ステータスバー下段背景2")},
-	{HEXRGB(0xBBBBBB),	TEXT("StatusBottomItemText"),				TEXT("ステータスバー下段文字")},
-	{HEXRGB(0x222222),	TEXT("StatusBottomItemBorder"),				TEXT("ステータスバー下段外枠")},
-	{HEXRGB(0x3384FF),	TEXT("StatusHighlightBack"),				TEXT("ステータスバー選択背景1")},
-	{HEXRGB(0x33D6FF),	TEXT("StatusHighlightBack2"),				TEXT("ステータスバー選択背景2")},
-	{HEXRGB(0x333333),	TEXT("StatusHighlightText"),				TEXT("ステータスバー選択文字")},
-	{HEXRGB(0x3384FF),	TEXT("StatusHighlightBorder"),				TEXT("ステータスバー選択外枠")},
-	{HEXRGB(0x777777),	TEXT("StatusBorder"),						TEXT("ステータスバー外枠")},
-	{HEXRGB(0xDF3F00),	TEXT("StatusRecordingCircle"),				TEXT("ステータスバー録画●")},
-	{HEXRGB(0x777777),	TEXT("ScreenBorder"),						TEXT("画面の外枠")},
+	{HEXRGB(0x333333),	TEXT("StatusBack")},
+	{HEXRGB(0x111111),	TEXT("StatusBack2")},
+	{HEXRGB(0x999999),	TEXT("StatusText")},
+	{HEXRGB(0x777777),	TEXT("StatusItemBorder")},
+	{HEXRGB(0x111111),	TEXT("StatusBottomItemBack")},
+	{HEXRGB(0x111111),	TEXT("StatusBottomItemBack2")},
+	{HEXRGB(0x999999),	TEXT("StatusBottomItemText")},
+	{HEXRGB(0x111111),	TEXT("StatusBottomItemBorder")},
+	{HEXRGB(0x4486E8),	TEXT("StatusHighlightBack")},
+	{HEXRGB(0x3C76CC),	TEXT("StatusHighlightBack2")},
+	{HEXRGB(0xDDDDDD),	TEXT("StatusHighlightText")},
+	{HEXRGB(0x3C76CC),	TEXT("StatusHighlightBorder")},
+	{HEXRGB(0x111111),	TEXT("StatusBorder")},
+	{HEXRGB(0xDF3F00),	TEXT("StatusRecordingCircle")},
+	{HEXRGB(0x000000),	TEXT("ScreenBorder")},
+};
+
+const CColorScheme::ColorInfo CColorScheme::m_ColorInfoLegacyList[NUM_COLORS] = {
+	{HEXRGB(0x777777),	TEXT("StatusBack")},
+	{HEXRGB(0x222222),	TEXT("StatusBack2")},
+	{HEXRGB(0xBBBBBB),	TEXT("StatusText")},
+	{HEXRGB(0x777777),	TEXT("StatusItemBorder")},
+	{HEXRGB(0x222222),	TEXT("StatusBottomItemBack")},
+	{HEXRGB(0x222222),	TEXT("StatusBottomItemBack2")},
+	{HEXRGB(0xBBBBBB),	TEXT("StatusBottomItemText")},
+	{HEXRGB(0x222222),	TEXT("StatusBottomItemBorder")},
+	{HEXRGB(0x3384FF),	TEXT("StatusHighlightBack")},
+	{HEXRGB(0x33D6FF),	TEXT("StatusHighlightBack2")},
+	{HEXRGB(0x333333),	TEXT("StatusHighlightText")},
+	{HEXRGB(0x3384FF),	TEXT("StatusHighlightBorder")},
+	{HEXRGB(0x777777),	TEXT("StatusBorder")},
+	{HEXRGB(0xDF3F00),	TEXT("StatusRecordingCircle")},
+	{HEXRGB(0x777777),	TEXT("ScreenBorder")},
 };
 
 const CColorScheme::GradientInfo CColorScheme::m_GradientInfoList[NUM_GRADIENTS] = {
@@ -237,7 +255,7 @@ bool CColorScheme::SetName(LPCTSTR pszName)
 }
 
 
-bool CColorScheme::Load(LPCTSTR pszFileName)
+bool CColorScheme::Load(LPCTSTR pszFileName,bool fLegacy)
 {
 	CSettings Settings;
 	TCHAR szText[MAX_COLORSCHEME_NAME];
@@ -249,7 +267,7 @@ bool CColorScheme::Load(LPCTSTR pszFileName)
 		SetName(szText);
 	::ZeroMemory(m_LoadedFlags,sizeof(m_LoadedFlags));
 	for (i=0;i<NUM_COLORS;i++) {
-		if (Settings.ReadColor(m_ColorInfoList[i].pszText,&m_ColorList[i]))
+		if (Settings.ReadColor((fLegacy?m_ColorInfoLegacyList:m_ColorInfoList)[i].pszText,&m_ColorList[i]))
 			SetLoadedFlag(i);
 	}
 	for (i=0;i<NUM_COLORS;i++) {
@@ -377,14 +395,6 @@ void CColorScheme::SetDefault()
 	}
 	for (i=0;i<NUM_BORDERS;i++)
 		m_BorderList[i]=m_BorderInfoList[i].DefaultType;
-}
-
-
-LPCTSTR CColorScheme::GetColorName(int Type)
-{
-	if (Type<0 || Type>=NUM_COLORS)
-		return NULL;
-	return m_ColorInfoList[Type].pszName;
 }
 
 

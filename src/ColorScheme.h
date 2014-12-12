@@ -71,13 +71,12 @@ public:
 	LPCTSTR GetName() const { return m_Name.c_str(); }
 	bool SetName(LPCTSTR pszName);
 	LPCTSTR GetFileName() const { return m_FileName.c_str(); }
-	bool Load(LPCTSTR pszFileName);
+	bool Load(LPCTSTR pszFileName,bool fLegacy=false);
 	bool SetFileName(LPCTSTR pszFileName);
 	void SetDefault();
 	bool IsLoaded(int Type) const;
 	void SetLoaded();
 
-	static LPCTSTR GetColorName(int Type);
 	static COLORREF GetDefaultColor(int Type);
 	static Theme::GradientType GetDefaultGradientType(int Gradient);
 	static bool GetDefaultGradientStyle(int Gradient,GradientStyle *pStyle);
@@ -96,7 +95,6 @@ private:
 	struct ColorInfo {
 		COLORREF DefaultColor;
 		LPCTSTR pszText;
-		LPCTSTR pszName;
 	};
 	struct GradientInfo {
 		LPCTSTR pszText;
@@ -120,6 +118,7 @@ private:
 	DWORD m_LoadedFlags[(NUM_COLORS+31)/32];
 	void SetLoadedFlag(int Color);
 	static const ColorInfo m_ColorInfoList[NUM_COLORS];
+	static const ColorInfo m_ColorInfoLegacyList[NUM_COLORS];
 	static const GradientInfo m_GradientInfoList[NUM_GRADIENTS];
 	static const BorderInfo m_BorderInfoList[NUM_BORDERS];
 	static const StyleInfo m_StyleList[NUM_STYLES];
