@@ -601,7 +601,6 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
         WritePrivateProfileInt(SETTINGS, TEXT("TsPcrDiscontinuityThreshold"), m_pcrThresholdMsec, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("TsTryGaplessPause"), m_fTryGaplessPause, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("ShowOpenDialog"), m_fShowOpenDialog, m_szIniFileName);
-        WritePrivateProfileInt(SETTINGS, TEXT("RaiseMainThreadPriority"), m_fRaisePriority, m_szIniFileName);
     }
     WritePrivateProfileInt(SETTINGS, TEXT("AutoHide"), m_fAutoHide, m_szIniFileName);
     if (fWriteDefault) {
@@ -2269,7 +2268,7 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
                 pThis->m_szSpecFileName[0] = 0;
             }
             // 起動時フリーズ対策(仮)
-            if (pThis->m_fRaisePriority) {
+            if (pThis->m_fRaisePriority && pThis->m_pApp->GetVersion() < TVTest::MakeVersion(0,8,1)) {
                 ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
             }
         }
