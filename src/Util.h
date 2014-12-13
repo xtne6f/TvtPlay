@@ -15,7 +15,7 @@
 LRESULT ASFilterSendMessageTimeout(UINT Msg, WPARAM wParam, LPARAM lParam, UINT uTimeout);
 BOOL ASFilterSendNotifyMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 
-#define READ_FILE_MAX_SIZE (256 * 1024)
+#define READ_FILE_MAX_SIZE (4096 * 1024)
 #define ICON_SIZE 16
 
 TCHAR *NewGetPrivateProfileSection(LPCTSTR lpAppName, LPCTSTR lpFileName);
