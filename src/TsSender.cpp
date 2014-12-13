@@ -58,10 +58,9 @@ static void PtsDtsToArray(BYTE *pDest, DWORD clk45khz)
     pDest[4] = (BYTE)((clk45khz<<2)|(pDest[4]&0x02)|1);  // 5:0
 }
 
-void CTsTimestampShifter::Transform(BYTE *pPacket)
+void CTsTimestampShifter::Transform_(BYTE *pPacket)
 {
     MAGIC_NUMBER(0x73658165);
-    if (!m_fEnabled) return;
 
     TS_HEADER header;
     extract_ts_header(&header, pPacket);
@@ -879,7 +878,7 @@ int CTsSender::ReadToPcr(int limit, bool fSend, bool fSyncRead)
     }
 
     // PCR/PTS/DTSを変更
-    if (m_tsShifter.IsEnabled()) m_tsShifter.Transform(m_curr);
+    m_tsShifter.Transform(m_curr);
 
     m_curr += m_unitSize;
 #endif

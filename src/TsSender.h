@@ -11,10 +11,11 @@ public:
     ~CTsTimestampShifter();
     void SetInitialPcr(DWORD pcr45khz);
     void Reset();
-    void Transform(BYTE *pPacket);
+    void Transform(BYTE *pPacket) { if (m_fEnabled) Transform_(pPacket); }
     void Enable(bool fEnable) { m_fEnabled = fEnable; }
     bool IsEnabled() const { return m_fEnabled; };
 private:
+    void Transform_(BYTE *pPacket);
     DWORD m_shift45khz;
     PAT m_pat;
     bool m_fEnabled;

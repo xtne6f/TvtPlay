@@ -689,8 +689,8 @@ void CTvtPlay::SaveFileInfoSetting(const std::list<HASH_INFO> &hashList) const
     if (!m_fSettingsLoaded || m_hashListMax <= 0) return;
 
     // 不整合を防ぐため一度に書き込む
-    TCHAR *pBuf = new TCHAR[32 + hashList.size() * 96];
-    TCHAR *p = pBuf;
+    std::vector<TCHAR> buf(32 + hashList.size() * 96);
+    TCHAR *p = &buf.front();
     p += ::wsprintf(p, TEXT("Enabled=1")) + 1;
     std::list<HASH_INFO>::const_iterator it = hashList.begin();
     for (int i = 0; i < m_hashListMax && it != hashList.end(); ++i, ++it) {
@@ -698,8 +698,7 @@ void CTvtPlay::SaveFileInfoSetting(const std::list<HASH_INFO> &hashList) const
         p += ::wsprintf(p, TEXT("Resume%d=%d"), i, it->resumePos) + 1;
     }
     p[0] = 0;
-    ::WritePrivateProfileSection(TEXT("FileInfo"), pBuf, m_szIniFileName);
-    delete [] pBuf;
+    ::WritePrivateProfileSection(TEXT("FileInfo"), &buf.front(), m_szIniFileName);
 }
 
 // ファイル固有情報を更新する
@@ -1049,7 +1048,7 @@ bool CTvtPlay::OpenWithDialog()
 
     HWND hwndOwner = GetFullscreenWindow();
     if (!hwndOwner) hwndOwner = m_pApp->GetAppWindow();
-    LPTSTR lpstrFile;
+    std::vector<TCHAR> bufFile(32768, TEXT('\0'));
 
     OPENFILENAME ofn = {0};
     ofn.lStructSize = sizeof(OPENFILENAME);
@@ -1060,25 +1059,24 @@ bool CTvtPlay::OpenWithDialog()
     ofn.Flags       = OFN_HIDEREADONLY | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR |
                       OFN_ALLOWMULTISELECT | OFN_EXPLORER;
     // OFN_ENABLEHOOKではVistaスタイルが適用されないため
-    ofn.nMaxFile    = 32768;
-    ofn.lpstrFile   = lpstrFile = new TCHAR[ofn.nMaxFile];
-    lpstrFile[0] = 0;
+    ofn.nMaxFile    = static_cast<DWORD>(bufFile.size());
+    ofn.lpstrFile   = &bufFile.front();
 
     bool fAdded = false;
     m_fDialogOpen = true;
     if (::GetOpenFileName(&ofn)) {
-        LPCTSTR spec = lpstrFile + ::lstrlen(lpstrFile) + 1;
+        LPCTSTR spec = &bufFile.front() + ::lstrlen(&bufFile.front()) + 1;
         if (*spec) {
             // 複数のファイルが選択された
             for (; *spec; spec += ::lstrlen(spec) + 1) {
                 TCHAR path[MAX_PATH];
-                if (::PathCombine(path, lpstrFile, spec)) {
+                if (::PathCombine(path, &bufFile.front(), spec)) {
                     if (m_playlist.PushBackListOrFile(path, !fAdded) >= 0) fAdded = true;
                 }
             }
         }
         else {
-            fAdded = m_playlist.PushBackListOrFile(lpstrFile, true) >= 0;
+            fAdded = m_playlist.PushBackListOrFile(&bufFile.front(), true) >= 0;
         }
     }
     else if (::CommDlgExtendedError() == FNERR_BUFFERTOOSMALL) {
@@ -1087,14 +1085,13 @@ bool CTvtPlay::OpenWithDialog()
     }
     m_fDialogOpen = false;
 
-    delete [] lpstrFile;
     return fAdded ? OpenCurrent() : false;
 }
 
 
-static inline bool CompareAsc(LPCTSTR& l, LPCTSTR& r) { return ::lstrcmpi(l, r) < 0; }
-
-static inline bool CompareDesc(LPCTSTR& l, LPCTSTR& r) { return ::lstrcmpi(l, r) > 0; }
+struct LPTSTR_COMPARE {
+    bool operator()(LPCTSTR l, LPCTSTR r) const { return ::lstrcmpi(l, r) < 0; }
+};
 
 // ポップアップメニュー選択でファイルを開く
 bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
@@ -1126,10 +1123,10 @@ bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
     int listSize = static_cast<int>(findList.size());
 
     // ファイル名を昇順or降順ソート
-    std::vector<LPCTSTR> nameList;
-    nameList.resize(listSize);
+    std::vector<LPCTSTR> nameList(listSize);
     for (int i = 0; i < listSize; ++i) nameList[i] = findList[i].cFileName;
-    std::sort(nameList.begin(), nameList.end(), m_fPopupDesc ? CompareDesc : CompareAsc);
+    std::sort(nameList.begin(), nameList.end(), LPTSTR_COMPARE());
+    if (m_fPopupDesc) std::reverse(nameList.begin(), nameList.end());
 
     // ポップアップしない部分をとばす
     int skipSize = max(listSize - m_popupMax, 0);
@@ -2803,7 +2800,7 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
     }
 
     // PCR/PTS/DTSを変更
-    if (t.m_tsShifter.IsEnabled()) t.m_tsShifter.Transform(pData);
+    t.m_tsShifter.Transform(pData);
 
 #ifdef EN_SWC
     TS_HEADER header;

@@ -6,7 +6,7 @@
 #include "Util.h"
 #include "ChapterMap.h"
 
-#ifndef __AFX_H__
+#ifndef ASSERT
 #include <cassert>
 #define ASSERT assert
 #endif
