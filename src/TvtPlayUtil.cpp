@@ -37,7 +37,9 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
     COLORREF crText = ::GetTextColor(hdc);
     COLORREF crBk = ::GetBkColor(hdc);
     COLORREF crBar = m_pPlugin->IsPaused() ? MixColor(crText, crBk, 128) : crText;
-    RECT rcBar, rc;
+    RECT rcBar, rcr, rcc, rc;
+    GetRect(&rcr);
+    GetClientRect(&rcc);
 
     // バーの最大矩形(外枠を含まない)
     rcBar.left   = pRect->left + 2;
@@ -49,11 +51,14 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
     int barX = rcBar.left + ConvUnit(pos, rcBar.right - rcBar.left, dur);
 
     // マウスホバー中のチャプターを探す
+    POINT mousePos = m_mousePos;
+    mousePos.x += pRect->left - (rcc.left - rcr.left);
+    mousePos.y += pRect->top - (rcc.top - rcr.top);
     std::map<int, CChapterMap::CHAPTER>::const_iterator itHover = chMap.end();
-    bool fMouseOnBar = rcBar.left <= m_mousePos.x && m_mousePos.x < rcBar.right;
-    if (fMouseOnBar && 0<=m_mousePos.y && m_mousePos.y<=rcBar.top) {
-        int chapPosL = ConvUnit(m_mousePos.x-rcBar.left-5, dur, rcBar.right - rcBar.left);
-        int chapPosR = ConvUnit(m_mousePos.x-rcBar.left+5, dur, rcBar.right - rcBar.left);
+    bool fMouseOnBar = rcBar.left <= mousePos.x && mousePos.x < rcBar.right;
+    if (fMouseOnBar && 0 <= mousePos.y && mousePos.y < rcBar.top - 1) {
+        int chapPosL = ConvUnit(mousePos.x-rcBar.left-5, dur, rcBar.right - rcBar.left);
+        int chapPosR = ConvUnit(mousePos.x-rcBar.left+5, dur, rcBar.right - rcBar.left);
         if (chapPosR >= dur) chapPosR = INT_MAX;
         itHover = chMap.lower_bound(chapPosL);
         if (itHover != chMap.end() && itHover->first >= chapPosR) itHover = chMap.end();
@@ -68,7 +73,7 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
         TCHAR szText[256], szOfsText[64], szTotText[64], szChName[16];
         // マウスホバー中のチャプター位置もしくはマウス位置
         int posSec = itHover != chMap.end() ? itHover->first / 1000 :
-                     ConvUnit(m_mousePos.x - rcBar.left, dur, rcBar.right - rcBar.left) / 1000;
+                     ConvUnit(mousePos.x - rcBar.left, dur, rcBar.right - rcBar.left) / 1000;
 
         szOfsText[0] = 0;
         if (m_fDrawOfs) {
@@ -107,7 +112,7 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
         {
             drawPosWidth = rc.right - rc.left + 10;
         }
-        drawPosX = min(m_mousePos.x + 5, rcBar.right - drawPosWidth - 1);
+        drawPosX = min(mousePos.x + 5, rcBar.right - drawPosWidth - 1);
 
         // バーを描画
         ::SetRect(&rc, drawPosX+1, rcBar.top, min(max(barX, drawPosX+1), drawPosX+drawPosWidth-1), rcBar.bottom);
@@ -219,7 +224,7 @@ void CSeekStatusItem::OnLButtonDown(int x, int y)
     GetRect(&rc);
     GetClientRect(&rcc);
 
-    if (y <= (rc.bottom-rc.top)/2-2 && !chMap.empty()) {
+    if (y < (rc.bottom-rc.top)/2-3 && !chMap.empty()) {
         int chapPosL = ConvUnit(x-(rcc.left-rc.left)-2-5, dur, rcc.right-rcc.left-4);
         int chapPosR = ConvUnit(x-(rcc.left-rc.left)-2+5, dur, rcc.right-rcc.left-4);
         if (chapPosR >= dur) chapPosR = INT_MAX;
@@ -259,7 +264,7 @@ void CSeekStatusItem::OnRButtonDown(int x, int y)
     GetRect(&rc);
     GetClientRect(&rcc);
 
-    if (y <= (rc.bottom-rc.top)/2-2 && !chMap.empty()) {
+    if (y < (rc.bottom-rc.top)/2-3 && !chMap.empty()) {
         int chapPosL = ConvUnit(x-(rcc.left-rc.left)-2-5, dur, rcc.right-rcc.left-4);
         int chapPosR = ConvUnit(x-(rcc.left-rc.left)-2+5, dur, rcc.right-rcc.left-4);
         if (chapPosR >= dur) chapPosR = INT_MAX;
