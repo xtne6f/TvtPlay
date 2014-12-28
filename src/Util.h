@@ -117,11 +117,6 @@ inline void extract_ts_header(TS_HEADER *dst, const unsigned char *packet)
     dst->continuity_counter           = packet[3] & 0x0f;
 }
 
-#define ABSTRACT_DECL			__declspec(novtable)
-#define ABSTRACT_CLASS(name)	ABSTRACT_DECL name abstract
-
-#define APP_NAME TEXT("TvtPlay")
-
 class CCriticalLock
 {
 public:
@@ -143,29 +138,6 @@ private:
     CCriticalLock *m_pLock;
 };
 
-inline bool IsStringEmpty(LPCWSTR pszString) {
-	return pszString==NULL || pszString[0]==L'\0';
-}
-
 COLORREF MixColor(COLORREF Color1,COLORREF Color2,BYTE Ratio=128);
-bool CompareLogFont(const LOGFONT *pFont1,const LOGFONT *pFont2);
-
-class CGlobalLock
-{
-	HANDLE m_hMutex;
-	bool m_fOwner;
-
-	// delete
-	CGlobalLock(const CGlobalLock &);
-	CGlobalLock &operator=(const CGlobalLock &);
-
-public:
-	CGlobalLock();
-	~CGlobalLock();
-	bool Create(LPCTSTR pszName);
-	bool Wait(DWORD Timeout=INFINITE);
-	void Close();
-	void Release();
-};
 
 #endif // INCLUDE_UTIL_H

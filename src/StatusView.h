@@ -1,161 +1,85 @@
-﻿#ifndef STATUS_VIEW_H
+#ifndef STATUS_VIEW_H
 #define STATUS_VIEW_H
 
 
 #include <vector>
-#include <string>
-#include "BasicWindow.h"
-#include "Theme.h"
 #include "DrawUtil.h"
-#include "WindowUtil.h"
-#include "Aero.h"
 
 
 class CStatusView;
 
-class ABSTRACT_CLASS(CStatusItem)
+class CStatusItem
 {
+public:
+    CStatusItem(CStatusView *pStatus, int id, int width);
+    virtual ~CStatusItem() {}
+    bool GetRect(RECT *pRect) const;
+    bool GetClientRect(RECT *pRect) const;
+    int GetID() const { return m_ID; }
+    int GetWidth() const { return m_Width; }
+    void SetWidth(int width) { m_Width = max(width, m_MinWidth); }
+    int GetMinWidth() const { return m_MinWidth; }
+    bool Update();
+    virtual void Draw(HDC hdc, const RECT *pRect) = 0;
+    virtual void OnLButtonDown(int x, int y) {}
+    virtual void OnLButtonUp(int x, int y) {}
+    virtual void OnRButtonDown(int x, int y) { OnLButtonDown(x, y); }
+    virtual void OnMouseMove(int x, int y) {}
 protected:
-	CStatusView *m_pStatus;
-	int m_ID;
-	int m_DefaultWidth;
-	int m_Width;
-	int m_MinWidth;
-	bool m_fVisible;
-	bool m_fBreak;
-
-	bool GetMenuPos(POINT *pPos,UINT *pFlags);
-	enum {
-		DRAWTEXT_HCENTER = 0x00000001UL
-	};
-	void DrawText(HDC hdc,const RECT *pRect,LPCTSTR pszText,DWORD Flags=0) const;
-	void DrawIcon(HDC hdc,const RECT *pRect,HBITMAP hbm,int SrcX=0,int SrcY=0,
-				  int IconWidth=16,int IconHeight=16,bool fEnabled=true) const;
-
-public:
-	CStatusItem(int ID,int DefaultWidth);
-	virtual ~CStatusItem() {}
-	int GetIndex() const;
-	bool GetRect(RECT *pRect) const;
-	bool GetClientRect(RECT *pRect) const;
-	int GetID() const { return m_ID; }
-	int GetDefaultWidth() const { return m_DefaultWidth; }
-	int GetWidth() const { return m_Width; }
-	bool SetWidth(int Width);
-	int GetMinWidth() const { return m_MinWidth; }
-	void SetVisible(bool fVisible);
-	bool GetVisible() const { return m_fVisible; }
-	bool Update();
-	virtual LPCTSTR GetName() const=0;
-	virtual void Draw(HDC hdc,const RECT *pRect)=0;
-	virtual void DrawPreview(HDC hdc,const RECT *pRect) { Draw(hdc,pRect); }
-	virtual void OnLButtonDown(int x,int y) {}
-	virtual void OnLButtonUp(int x,int y) {}
-	virtual void OnRButtonDown(int x,int y) { OnLButtonDown(x,y); }
-	virtual void OnLButtonDoubleClick(int x,int y) { OnLButtonDown(x,y); }
-	virtual void OnMouseMove(int x,int y) {}
-	virtual void OnVisibleChange(bool fVisible) {}
-	virtual void OnFocus(bool fFocus) {}
-	virtual bool OnMouseHover(int x,int y) { return false; }
-	virtual LRESULT OnNotifyMessage(LPNMHDR pnmh) { return 0; }
-
-	friend CStatusView;
+    CStatusView *m_pStatus;
+    int m_ID;
+    int m_Width;
+    int m_MinWidth;
+    bool GetMenuPos(POINT *pPos, UINT *pFlags) const;
+    void DrawIcon(HDC hdc, const RECT *pRect, HBITMAP hbm, int srcX = 0, int srcY = 0, int iconWidth = 16, int iconHeight = 16) const;
 };
 
-class CStatusView : public CCustomWindow
+class CStatusView
 {
 public:
-	class ABSTRACT_CLASS(CEventHandler)
-	{
-	protected:
-		CStatusView *m_pStatusView;
-
-	public:
-		CEventHandler();
-		virtual ~CEventHandler();
-		virtual void OnMouseLeave() {}
-		virtual void OnHeightChanged(int Height) {}
-		friend CStatusView;
-	};
-
-	struct ThemeInfo {
-		Theme::Style ItemStyle;
-		Theme::Style HighlightItemStyle;
-		Theme::Style BottomItemStyle;
-		Theme::BorderInfo Border;
-	};
-
-	static bool Initialize(HINSTANCE hinst);
-	CStatusView();
-	~CStatusView();
-// CBasicWindow
-	bool Create(HWND hwndParent,DWORD Style,DWORD ExStyle=0,int ID=0) override;
-	void SetVisible(bool fVisible) override;
-// CStatusView
-	int NumItems() const { return (int)m_ItemList.size(); }
-	const CStatusItem *GetItem(int Index) const;
-	CStatusItem *GetItem(int Index);
-	const CStatusItem *GetItemByID(int ID) const;
-	CStatusItem *GetItemByID(int ID);
-	bool AddItem(CStatusItem *pItem);
-	int IDToIndex(int ID) const;
-	int IndexToID(int Index) const;
-	void UpdateItem(int ID);
-	bool GetItemRect(int ID,RECT *pRect) const;
-	bool GetItemRectByIndex(int Index,RECT *pRect) const;
-	bool GetItemClientRect(int ID,RECT *pRect) const;
-	int GetItemHeight() const;
-	bool SetItemMargin(const RECT &Margin);
-	void GetItemMargin(RECT *pMargin) const;
-	int GetFontHeight() const { return m_FontHeight; }
-	int GetIntegralWidth() const;
-	void SetSingleText(LPCTSTR pszText);
-	bool SetTheme(const ThemeInfo *pTheme);
-	bool GetTheme(ThemeInfo *pTheme) const;
-	bool SetFont(const LOGFONT *pFont);
-	bool GetFont(LOGFONT *pFont) const;
-	bool SetMultiRow(bool fMultiRow);
-	bool SetMaxRows(int MaxRows);
-	int CalcHeight(int Width) const;
-	int GetCurItem() const;
-	bool SetEventHandler(CEventHandler *pEventHandler);
-	bool SetItemOrder(const int *pOrderList);
-	bool DrawItemPreview(CStatusItem *pItem,HDC hdc,const RECT *pRect,
-						 bool fHighlight=false,HFONT hfont=NULL) const;
-	bool EnableBufferedPaint(bool fEnable);
-	void EnableSizeAdjustment(bool fEnable);
-
+    enum VIEW_EVENT {
+        VIEW_EVENT_NONE,
+        VIEW_EVENT_ENTER,
+        VIEW_EVENT_LEAVE,
+    };
+    enum MOUSE_ACTION {
+        MOUSE_ACTION_NONE,
+        MOUSE_ACTION_LDOWN,
+        MOUSE_ACTION_LUP,
+        MOUSE_ACTION_RDOWN,
+        MOUSE_ACTION_MOVE,
+    };
+    CStatusView();
+    ~CStatusView();
+    int NumItems() const { return static_cast<int>(m_itemList.size()); }
+    CStatusItem *GetItem(int index) const { return 0 <= index && index < NumItems() ? m_itemList[index] : NULL; }
+    CStatusItem *GetItemByID(int id) const { return GetItem(IDToIndex(id)); }
+    void AddItem(CStatusItem *pItem) { m_itemList.push_back(pItem); }
+    int IDToIndex(int id) const;
+    bool SetItemMargin(const RECT &margin);
+    void GetItemMargin(RECT *pMargin) const { *pMargin = m_itemMargin; }
+    bool OnViewEvent(VIEW_EVENT ev);
+    bool OnMouseAction(MOUSE_ACTION action, HWND hwnd, const POINT &cursorPos, const RECT &statusRect);
+    bool GetHotRect(const RECT &statusRect, RECT *pRect) const;
+    void Draw(HDC hdc, const RECT &statusRect, const LOGFONT &logFont, COLORREF crText, COLORREF crBk, COLORREF crHText, COLORREF crHBk);
+    HWND GetHandle() const { return m_hwnd; }
+    bool GetClientRect(RECT *pRect) const;
+    bool GetItemRect(int id, RECT *pRect) const;
+    bool GetItemClientRect(int id, RECT *pRect) const;
+    bool GetItemPartition(int index, int *left, int *right) const;
+    bool Invalidate() { return m_fInvalidate = m_hwnd != NULL; }
+    int GetCurItem() const { return m_hotItem < 0 ? -1 : m_itemList[m_hotItem]->GetID(); }
 private:
-	static HINSTANCE m_hinst;
-
-	DrawUtil::CFont m_Font;
-	int m_FontHeight;
-	int m_ItemHeight;
-	RECT m_ItemMargin;
-	bool m_fMultiRow;
-	int m_MaxRows;
-	int m_Rows;
-	ThemeInfo m_Theme;
-	std::vector<CStatusItem*> m_ItemList;
-	bool m_fSingleMode;
-	std::basic_string<TCHAR> m_SingleText;
-	int m_HotItem;
-	CMouseLeaveTrack m_MouseLeaveTrack;
-	bool m_fOnButtonDown;
-	CEventHandler *m_pEventHandler;
-	DrawUtil::COffscreen m_Offscreen;
-	bool m_fBufferedPaint;
-	CBufferedPaint m_BufferedPaint;
-	bool m_fAdjustSize;
-
-	void SetHotItem(int Item);
-	void Draw(HDC hdc,const RECT *pPaintRect);
-	void AdjustSize();
-	void CalcRows();
-
-// CCustomWindow
-	LRESULT OnMessage(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam) override;
+    RECT m_itemMargin;
+    std::vector<CStatusItem*> m_itemList;
+    int m_hotItem;
+    RECT m_statusRect;
+    HWND m_hwnd;
+    bool m_fInvalidate;
 };
 
+inline bool CStatusItem::GetRect(RECT *pRect) const { return m_pStatus->GetItemRect(m_ID, pRect); }
+inline bool CStatusItem::GetClientRect(RECT *pRect) const { return m_pStatus->GetItemClientRect(m_ID, pRect); }
+inline bool CStatusItem::Update() { return m_pStatus->Invalidate(); }
 
 #endif

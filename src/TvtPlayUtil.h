@@ -63,17 +63,10 @@ public:
     virtual void OnCommand(int id, const POINT *pPt = NULL, UINT flags = 0)=0;
 };
 
-class CStatusViewEventHandler : public CStatusView::CEventHandler
-{
-public:
-    void OnMouseLeave();
-};
-
 class CSeekStatusItem : public CStatusItem
 {
 public:
-    CSeekStatusItem(ITvtPlayController *pPlugin, bool fDrawOfs, bool fDrawTot, int width, int seekMode);
-    LPCTSTR GetName() const { return TEXT("シークバー"); }
+    CSeekStatusItem(CStatusView *pStatus, ITvtPlayController *pPlugin, bool fDrawOfs, bool fDrawTot, int width, int seekMode);
     void Draw(HDC hdc, const RECT *pRect);
     void OnLButtonDown(int x, int y);
     void OnLButtonUp(int x, int y);
@@ -92,10 +85,9 @@ private:
 class CPositionStatusItem : public CStatusItem
 {
 public:
-    CPositionStatusItem(ITvtPlayController *pPlugin);
-    LPCTSTR GetName() const { return TEXT("再生位置"); }
+    CPositionStatusItem(CStatusView *pStatus, ITvtPlayController *pPlugin);
     void Draw(HDC hdc, const RECT *pRect);
-    int CalcSuitableWidth();
+    int CalcSuitableWidth(HWND hwnd, const LOGFONT &logFont);
     void OnRButtonDown(int x, int y);
 private:
     ITvtPlayController *m_pPlugin;
@@ -104,8 +96,7 @@ private:
 class CButtonStatusItem : public CStatusItem
 {
 public:
-    CButtonStatusItem(ITvtPlayController *pPlugin, int id, int subID, int width, const DrawUtil::CBitmap &icon);
-    LPCTSTR GetName() const { return TEXT("ボタン"); }
+    CButtonStatusItem(CStatusView *pStatus, ITvtPlayController *pPlugin, int id, int subID, int width, const DrawUtil::CBitmap &icon);
     void Draw(HDC hdc, const RECT *pRect);
     void OnLButtonDown(int x, int y);
     void OnRButtonDown(int x, int y);

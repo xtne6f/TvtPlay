@@ -165,45 +165,33 @@
     <PostBuildEvent />
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="Aero.h" />
     <ClInclude Include="AsyncFileReader.h" />
-    <ClInclude Include="BasicWindow.h" />
     <ClInclude Include="CaptionAnalyzer.h" />
     <ClInclude Include="ChapterMap.h" />
-    <ClInclude Include="ColorScheme.h" />
     <ClInclude Include="DrawUtil.h" />
     <ClInclude Include="Playlist.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="Settings.h" />
     <ClInclude Include="TvtPlayUtil.h" />
     <ClInclude Include="StatusView.h" />
-    <ClInclude Include="Theme.h" />
     <ClInclude Include="TsSender.h" />
     <ClInclude Include="TVTestPlugin.h" />
     <ClInclude Include="TvtPlay.h" />
     <ClInclude Include="Util.h" />
-    <ClInclude Include="WindowUtil.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Aero.cpp" />
     <ClCompile Include="AsyncFileReader.cpp" />
-    <ClCompile Include="BasicWindow.cpp" />
     <ClCompile Include="CaptionAnalyzer.cpp" />
     <ClCompile Include="ChapterMap.cpp" />
-    <ClCompile Include="ColorScheme.cpp" />
     <ClCompile Include="DrawUtil.cpp" />
     <ClCompile Include="Playlist.cpp" />
-    <ClCompile Include="Settings.cpp" />
     <ClCompile Include="TvtPlayUtil.cpp" />
     <ClCompile Include="StatusView.cpp" />
-    <ClCompile Include="Theme.cpp" />
     <ClCompile Include="TsSender.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">MaxSpeed</Optimization>
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">MaxSpeed</Optimization>
     </ClCompile>
     <ClCompile Include="TvtPlay.cpp" />
     <ClCompile Include="Util.cpp" />
-    <ClCompile Include="WindowUtil.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="TvtPlay.rc" />

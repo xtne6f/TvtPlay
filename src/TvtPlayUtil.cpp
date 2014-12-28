@@ -7,25 +7,14 @@
 #include "ChapterMap.h"
 #include "TvtPlayUtil.h"
 
-void CStatusViewEventHandler::OnMouseLeave()
-{
-    CStatusItem *pItem = m_pStatusView->GetItemByID(STATUS_ITEM_SEEK);
-    if (pItem) {
-        // ちょっと汚い…
-        CSeekStatusItem *pSeekItem = dynamic_cast<CSeekStatusItem*>(pItem);
-        pSeekItem->SetMousePos(-1, -1);
-        pSeekItem->Update();
-    }
-}
-
-CSeekStatusItem::CSeekStatusItem(ITvtPlayController *pPlugin, bool fDrawOfs, bool fDrawTot, int width, int seekMode)
-    : CStatusItem(STATUS_ITEM_SEEK, max(width, 64))
+CSeekStatusItem::CSeekStatusItem(CStatusView *pStatus, ITvtPlayController *pPlugin, bool fDrawOfs, bool fDrawTot, int width, int seekMode)
+    : CStatusItem(pStatus, STATUS_ITEM_SEEK, max(width, 64))
     , m_pPlugin(pPlugin)
     , m_fDrawOfs(fDrawOfs)
     , m_fDrawTot(fDrawTot)
     , m_seekMode(seekMode==1 ? 1 : seekMode==2 ? 2 : 0)
 {
-    m_MinWidth = m_DefaultWidth;
+    m_MinWidth = m_Width;
     SetMousePos(-1, -1);
 }
 
@@ -55,7 +44,7 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
     mousePos.x += pRect->left - (rcc.left - rcr.left);
     mousePos.y += pRect->top - (rcc.top - rcr.top);
     std::map<int, CChapterMap::CHAPTER>::const_iterator itHover = chMap.end();
-    bool fMouseOnBar = rcBar.left <= mousePos.x && mousePos.x < rcBar.right;
+    bool fMouseOnBar = m_pStatus->GetCurItem() == m_ID && rcBar.left <= mousePos.x && mousePos.x < rcBar.right;
     if (fMouseOnBar && 0 <= mousePos.y && mousePos.y < rcBar.top - 1) {
         int chapPosL = ConvUnit(mousePos.x-rcBar.left-5, dur, rcBar.right - rcBar.left);
         int chapPosR = ConvUnit(mousePos.x-rcBar.left+5, dur, rcBar.right - rcBar.left);
@@ -309,8 +298,8 @@ void CSeekStatusItem::OnMouseMove(int x, int y)
 }
 
 
-CPositionStatusItem::CPositionStatusItem(ITvtPlayController *pPlugin)
-    : CStatusItem(STATUS_ITEM_POSITION, 64)
+CPositionStatusItem::CPositionStatusItem(CStatusView *pStatus, ITvtPlayController *pPlugin)
+    : CStatusItem(pStatus, STATUS_ITEM_POSITION, 64)
     , m_pPlugin(pPlugin)
 {
     m_MinWidth = 0;
@@ -348,14 +337,13 @@ void CPositionStatusItem::Draw(HDC hdc, const RECT *pRect)
 }
 
 // 表示に適したアイテム幅を算出する
-int CPositionStatusItem::CalcSuitableWidth()
+int CPositionStatusItem::CalcSuitableWidth(HWND hwnd, const LOGFONT &logFont)
 {
     int rv = -1;
-    LOGFONT logFont;
-    if (m_pStatus->GetFont(&logFont)) {
+    {
         HFONT hfont = ::CreateFontIndirect(&logFont);
         if (hfont) {
-            HDC hdc = ::GetDC(m_pStatus->GetHandle());
+            HDC hdc = ::GetDC(hwnd);
             if (hdc) {
                 // 表示に適したアイテム幅を算出
                 TCHAR szText[128];
@@ -370,7 +358,7 @@ int CPositionStatusItem::CalcSuitableWidth()
                     rv = rc.right - rc.left;
                 }
                 SelectFont(hdc, hfontOld);
-                ::ReleaseDC(m_pStatus->GetHandle(), hdc);
+                ::ReleaseDC(hwnd, hdc);
             }
             ::DeleteObject(hfont);
         }
@@ -387,13 +375,13 @@ void CPositionStatusItem::OnRButtonDown(int x, int y)
     }
 }
 
-CButtonStatusItem::CButtonStatusItem(ITvtPlayController *pPlugin, int id, int subID, int width, const DrawUtil::CBitmap &icon)
-    : CStatusItem(id, max(width, 0))
+CButtonStatusItem::CButtonStatusItem(CStatusView *pStatus, ITvtPlayController *pPlugin, int id, int subID, int width, const DrawUtil::CBitmap &icon)
+    : CStatusItem(pStatus, id, max(width, 0))
     , m_pPlugin(pPlugin)
     , m_subID(subID)
     , m_icon(icon)
 {
-    m_MinWidth = m_DefaultWidth;
+    m_MinWidth = m_Width;
 }
 
 void CButtonStatusItem::Draw(HDC hdc, const RECT *pRect)

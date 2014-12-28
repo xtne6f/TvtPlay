@@ -6,7 +6,6 @@ class CTvtPlay : public TVTest::CTVTestPlugin, public ITvtPlayController
 {
     static const int BUTTON_MAX = 18;
     static const int BUTTON_TEXT_MAX = 192;
-    static const int TIMER_AUTO_HIDE_INTERVAL = 100;
     static const int TIMER_UPDATE_HASH_LIST_INTERVAL = 5000;
     static const int TIMER_SYNC_CHAPTER_INTERVAL = 1000;
     static const int TIMER_WATCH_POS_GT_INTERVAL = 1000;
@@ -51,7 +50,6 @@ private:
     };
     void AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst);
     void LoadSettings();
-    void LoadTVTestSettings();
     void SaveSettings(bool fWriteDefault = false) const;
     bool LoadFileInfoSetting(std::list<HASH_INFO> &hashList) const;
     void SaveFileInfoSetting(const std::list<HASH_INFO> &hashList) const;
@@ -76,13 +74,10 @@ private:
     void SetRepeatFlags(bool fAllRepeat, bool fSingleRepeat);
     void Stretch(int stretchID);
     void BeginWatchingNextChapter(bool fDoDelay);
-    bool CalcStatusRect(RECT *pRect, bool fInit = false);
-    void OnResize(bool fInit = false);
-    void OnDispModeChange(bool fStandby, bool fInit = false);
-    void OnFrameResize();
-    void ProcessAutoHide(bool fNoDecDispCount);
     void EnablePluginByDriverName();
     void OnPreviewChange(bool fPreview);
+    void AdjustSeekItem(int statusWidth);
+    void SetWidthPositionItem();
     static LRESULT CALLBACK EventCallback(UINT Event, LPARAM lParam1, LPARAM lParam2, void *pClientData);
     static BOOL CALLBACK WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pResult, void *pUserData);
     static LRESULT CALLBACK FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -109,20 +104,12 @@ private:
 
     // コントロール
     HWND m_hwndFrame;
-    bool m_fAutoHide, m_fAutoHideActive;
-    bool m_fHoveredFromOutside;
-    int m_statusRow, m_statusRowFull;
-    int m_statusHeight;
     bool m_fSeekDrawOfs, m_fSeekDrawTot, m_fPosDrawTot;
     int m_seekItemMinWidth, m_posItemWidth;
-    int m_timeoutOnCmd, m_timeoutOnMove;
     int m_seekItemOrder, m_posItemOrder;
-    int m_dispCount;
     DWORD m_lastDropCount;
     int m_resetDropInterval;
-    POINT m_lastCurPos, m_idleCurPos;
     CStatusView m_statusView;
-    CStatusViewEventHandler m_eventHandler;
     TCHAR m_szIconFileName[MAX_PATH];
     int m_seekList[COMMAND_S_MAX];
     int m_stretchList[COMMAND_S_MAX];

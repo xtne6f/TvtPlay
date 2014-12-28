@@ -36,28 +36,10 @@
     <ClInclude Include="TsSender.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="BasicWindow.h">
-      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
-    </ClInclude>
-    <ClInclude Include="ColorScheme.h">
-      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
-    </ClInclude>
     <ClInclude Include="DrawUtil.h">
       <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
     </ClInclude>
-    <ClInclude Include="Settings.h">
-      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
-    </ClInclude>
     <ClInclude Include="StatusView.h">
-      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
-    </ClInclude>
-    <ClInclude Include="Theme.h">
-      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
-    </ClInclude>
-    <ClInclude Include="Aero.h">
-      <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
-    </ClInclude>
-    <ClInclude Include="WindowUtil.h">
       <Filter>ヘッダー ファイル\TVTestStatusView</Filter>
     </ClInclude>
     <ClInclude Include="Playlist.h">
@@ -86,28 +68,10 @@
     <ClCompile Include="TsSender.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="BasicWindow.cpp">
-      <Filter>ソース ファイル\TVTestStatusView</Filter>
-    </ClCompile>
-    <ClCompile Include="ColorScheme.cpp">
-      <Filter>ソース ファイル\TVTestStatusView</Filter>
-    </ClCompile>
     <ClCompile Include="DrawUtil.cpp">
       <Filter>ソース ファイル\TVTestStatusView</Filter>
     </ClCompile>
-    <ClCompile Include="Settings.cpp">
-      <Filter>ソース ファイル\TVTestStatusView</Filter>
-    </ClCompile>
     <ClCompile Include="StatusView.cpp">
-      <Filter>ソース ファイル\TVTestStatusView</Filter>
-    </ClCompile>
-    <ClCompile Include="Theme.cpp">
-      <Filter>ソース ファイル\TVTestStatusView</Filter>
-    </ClCompile>
-    <ClCompile Include="Aero.cpp">
-      <Filter>ソース ファイル\TVTestStatusView</Filter>
-    </ClCompile>
-    <ClCompile Include="WindowUtil.cpp">
       <Filter>ソース ファイル\TVTestStatusView</Filter>
     </ClCompile>
     <ClCompile Include="Playlist.cpp">
