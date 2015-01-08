@@ -105,6 +105,9 @@ bool CStatusView::OnMouseAction(MOUSE_ACTION action, HWND hwnd, const POINT &cur
             case MOUSE_ACTION_LUP:
                 m_itemList[i]->OnLButtonUp(x, y);
                 break;
+            case MOUSE_ACTION_LDOUBLECLICK:
+                m_itemList[i]->OnLButtonDoubleClick(x, y);
+                break;
             case MOUSE_ACTION_RDOWN:
                 m_itemList[i]->OnRButtonDown(x, y);
                 break;

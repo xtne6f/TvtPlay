@@ -23,6 +23,7 @@ public:
     virtual void Draw(HDC hdc, const RECT *pRect) = 0;
     virtual void OnLButtonDown(int x, int y) {}
     virtual void OnLButtonUp(int x, int y) {}
+    virtual void OnLButtonDoubleClick(int x, int y) { OnLButtonDown(x, y); }
     virtual void OnRButtonDown(int x, int y) { OnLButtonDown(x, y); }
     virtual void OnMouseMove(int x, int y) {}
 protected:
@@ -46,6 +47,7 @@ public:
         MOUSE_ACTION_NONE,
         MOUSE_ACTION_LDOWN,
         MOUSE_ACTION_LUP,
+        MOUSE_ACTION_LDOUBLECLICK,
         MOUSE_ACTION_RDOWN,
         MOUSE_ACTION_MOVE,
     };
