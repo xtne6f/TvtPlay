@@ -1,4 +1,4 @@
-#ifndef STATUS_VIEW_H
+﻿#ifndef STATUS_VIEW_H
 #define STATUS_VIEW_H
 
 

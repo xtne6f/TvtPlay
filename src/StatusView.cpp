@@ -1,4 +1,4 @@
-#include <Windows.h>
+﻿#include <Windows.h>
 #include <WindowsX.h>
 #include "StatusView.h"
 
@@ -136,7 +136,7 @@ void CStatusView::Draw(HDC hdc, const RECT &statusRect, const LOGFONT &logFont, 
 {
     HFONT hfont = ::CreateFontIndirect(&logFont);
     if (hfont) {
-        // OnMouseAction()�Ȃǂ̕\����̈ʒu�Ƃ͈�v���Ȃ�
+        // OnMouseAction()などの表示上の位置とは一致しない
         m_statusRect = statusRect;
         for (int i = 0; i < NumItems(); ++i) {
             RECT rc;
