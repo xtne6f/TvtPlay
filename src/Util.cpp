@@ -6,7 +6,7 @@
 #if 1 // 同一プロセスからTvtAudioStretchFilterへのメッセージ送信コード
 #define ASFLT_FILTER_NAME   TEXT("TvtAudioStretchFilter")
 
-static HWND ASFilterFindWindow()
+HWND ASFilterFindWindow()
 {
     TCHAR szName[128];
     ::wsprintf(szName, TEXT("%s,%lu"), ASFLT_FILTER_NAME, ::GetCurrentProcessId());

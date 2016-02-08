@@ -2538,7 +2538,8 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
     int speed = 100, posWatch = -1;
     int lowSpeed = 100;
     int stretchMode = 0;
-    int fLowSpeed = false;
+    bool fLowSpeed = false;
+    MSG msgSetSpeed = {};
     static const int RESET_WAIT = 10;
     int resetCount = -RESET_WAIT;
     {
@@ -2557,6 +2558,22 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
     for (;;) {
         BOOL rv = ::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE);
         ::SetEvent(pThis->m_hThreadEvent);
+        if (rv && msg.message == WM_TS_SET_SPEED || !rv && msgSetSpeed.message == WM_TS_SET_SPEED) {
+            if (rv) {
+                // このメッセージはフィルタが生成されるかタイムアウトまで先送りする
+                msgSetSpeed = msg;
+                msgSetSpeed.time = ::GetTickCount();
+                msg.message = WM_NULL;
+            }
+            if (ASFilterFindWindow()) {
+                msg = msgSetSpeed;
+                msgSetSpeed.message = WM_NULL;
+                rv = TRUE;
+            }
+            else if (::GetTickCount() - msg.time > 10000) {
+                msgSetSpeed.message = WM_NULL;
+            }
+        }
         if (rv) {
             if (msg.message == WM_QUIT) break;
             switch (msg.message) {
@@ -2629,7 +2646,7 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
                     fLowSpeed = pThis->m_captionAnalyzer.CheckShowState(pThis->m_pcr);
                 }
 #endif
-                if (!ASFilterSendMessageTimeout(WM_ASFLT_STRETCH, stretchMode, MAKELPARAM(fLowSpeed?lowSpeed:speed, 100), 1000)) {
+                if (!ASFilterSendMessageTimeout(WM_ASFLT_STRETCH, stretchMode, MAKELPARAM(fLowSpeed?lowSpeed:speed, 100), 3000)) {
                     // コマンド失敗の場合は等速にする
                     speed = lowSpeed = 100;
                 }
@@ -2679,6 +2696,7 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
                     ASFilterSendNotifyMessage(WM_ASFLT_STRETCH, 0, MAKELPARAM(100, 100));
                     pThis->m_tsSender.SetSpeed(100, 100);
                     speed = lowSpeed = 100;
+                    msgSetSpeed.message = WM_NULL;
                 }
             }
 #ifdef EN_SWC
@@ -2704,7 +2722,7 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
                     }
                 }
                 if (fSetSpeed) {
-                    if (!ASFilterSendMessageTimeout(WM_ASFLT_STRETCH, stretchMode, MAKELPARAM(fLowSpeed?lowSpeed:speed, 100), 1000)) {
+                    if (!ASFilterSendMessageTimeout(WM_ASFLT_STRETCH, stretchMode, MAKELPARAM(fLowSpeed?lowSpeed:speed, 100), 3000)) {
                         // コマンド失敗の場合は等速にする
                         speed = lowSpeed = 100;
                     }
