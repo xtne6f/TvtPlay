@@ -29,7 +29,7 @@
 #include "TVTestPlugin.h"
 #include "TvtPlay.h"
 
-#define INFO_DESCRIPTION_SUFFIX L")"
+#define INFO_DESCRIPTION_SUFFIX L"+)"
 
 static const WCHAR INFO_PLUGIN_NAME[] = L"TvtPlay";
 static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.2.2" INFO_DESCRIPTION_SUFFIX;
