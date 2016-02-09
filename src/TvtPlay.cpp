@@ -31,8 +31,10 @@
 #include "TVTestPlugin.h"
 #include "TvtPlay.h"
 
-static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.2.2)";
+#define INFO_DESCRIPTION_SUFFIX L")"
+
+static const WCHAR INFO_PLUGIN_NAME[] = L"TvtPlay";
+static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.2.2" INFO_DESCRIPTION_SUFFIX;
 static const int INFO_VERSION = 23;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
@@ -68,10 +70,10 @@ static const int INFO_VERSION = 23;
 #define WM_TS_WATCH_POS_GT  (WM_APP + 10)
 #define WM_TS_INIT_DONE     (WM_APP + 11)
 
-static LPCTSTR SETTINGS = TEXT("Settings");
-static LPCTSTR TVTPLAY_FRAME_WINDOW_CLASS = TEXT("TvtPlay Frame");
-static LPCSTR UDP_ADDR = "127.0.0.1";
-static LPCTSTR PIPE_NAME = TEXT("\\\\.\\pipe\\BonDriver_Pipe%02d");
+static const TCHAR SETTINGS[] = TEXT("Settings");
+static const TCHAR TVTPLAY_FRAME_WINDOW_CLASS[] = TEXT("TvtPlay Frame");
+static const char UDP_ADDR[] = "127.0.0.1";
+static const TCHAR PIPE_NAME[] = TEXT("\\\\.\\pipe\\BonDriver_Pipe%02d");
 
 enum {
     TIMER_ID_AUTO_HIDE = 1,
@@ -111,7 +113,7 @@ static const int DEFAULT_STRETCH_LIST[COMMAND_S_MAX] = {
     400, 200, 50, 25
 };
 
-static LPCTSTR DEFAULT_BUTTON_LIST[] = {
+static const LPCTSTR DEFAULT_BUTTON_LIST[] = {
     TEXT("0,Open"), TEXT(";1,Close"), TEXT("4:5:14,Loop"),
     TEXT(";9,Prev  2,SeekToBgn"),
     TEXT("'-'6'0,SeekA"), TEXT(";'-'3'0,SeekB"),
