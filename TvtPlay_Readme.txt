@@ -1,13 +1,13 @@
-﻿TVTest TvtPlay Plugin ver.2.2 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.2.3 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
 再生するプラグインです。
 
 ■動作環境
-・Windows XP以降。ただしVistaと7は未確認
+・Windows XP以降
 ・TVTest/TVH264 ver.0.7.16 以降。ver.0.8.1 以降を推奨
-・Visual C++ 2010 SP1 再頒布可能パッケージ (x86/x64)
+・Visual Studio 2015 Update 1 の Visual C++ 再頒布可能パッケージ (x86/x64)
 
 ■初期導入FAQ
 ○このReadme長いんだけど？
@@ -35,14 +35,16 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
   「チャプター機能について」を参照
 
 ■以前のバージョンからの移行
-TvtPlay.tvtpとBonDriver_Pipe.dllとTvtAudioStretchFilter.axとをすべて置きかえてく
-ださい。再頒布可能パッケージが2005→2010になったので注意してください。設定ファイ
-ルTvtPlay.iniは基本的にそのまま引き継げます。
+TvtPlay.tvtpを以前のものと置きかえてください。必要に応じて(更新があれば)
+BonDriver_Pipe.dllとTvtAudioStretchFilter.axも置きかえてください。設定ファイル
+TvtPlay.iniは基本的にそのまま引き継げます。
 
 ■使い方
 TVTestのPluginsフォルダにTvtPlay.tvtpを入れてください。BonDriver_Pipe.dllは使用
 しないならば捨ててください(後述の「BonDriver_Pipe.dllについて」を参照)。なお、
 TvtPlay.tvtp_x64はx64版のTVTest利用者向けです。
+"plus"フォルダにあるTvtPlay.tvtpはTVTest0.9.0以降専用です。TVTest0.9.0は未リリー
+スのため今後の仕様変更により使えなくなる可能性もあります。
 
 TVTest起動オプションの最後に拡張子.ts .m2t .m2ts .m3u .tslist いずれかのファイル
 パスを付加するとプラグインは有効になり、起動時にそのファイルを開きます。起動オプ
@@ -231,7 +233,7 @@ ShowOpenDialog【ver.1.2～】
     プラグイン有効時に「ファイルを開く」ダイアログを表示する[=1]かどうか
     # /tvtpudp /tvtpipeと組みあわせて利用するとTVTestのチャンネル選択画面などで
     # 便利かもしれません。
-RaiseMainThreadPriority【ver.1.5r3～】
+RaiseMainThreadPriority【ver.1.5r3～ TVTest0.8.1以降は廃止】
     プラグイン有効かつ起動時にTVTestの主スレッド優先度を少し上げる[=1]かどうか
     # TVTest起動時に数秒～数十秒間フリーズする現象がみられる場合は試してみてくだ
     # さい。
@@ -369,20 +371,14 @@ GetTickCount、[=1]ならQueryPerformanceCounterにします。どちらでも�
 同じです。DirectshowのレンダラはQueryPerformanceCounterを基準としているはずなの
 で、ほとんどの環境で[=1]が適切だと思います。
 
-興味のある方は、src.zipの中にある_qpc_test.exeで2つのAPIの計時結果を比較してみて
-ください。当方環境では、PC負荷が変動(可変クロックCPUのクロック値が頻繁に変化)す
-るような状況でずれが大きく(数分間で1000msecオーダー)なりました。このような環境の
-PCでは、たとえば時計が一日に数秒～数分単位で遅れるor進む、アナログチューナの音声
-と映像のずれが次第に激しくなる、といった現象もみられるかもしれません。
-
 ■チャプター機能について
 [ver.1.6からの変更点]
 ・chaptersフォルダがあれば利用するようになりました:
   <チャプターを読みこむ優先順位>
     1. chaptersフォルダの.chapter
     2. TSファイルのあるフォルダの.chapter
-    3. chaptersフォルダの.chapter.txt
-    4. TSファイルのあるフォルダの.chapter.txt
+    3. chaptersフォルダの.chapter[s].txt
+    4. TSファイルのあるフォルダの.chapter[s].txt
     5. TSファイル名に含まれるチャプター
   <.chapterファイルを書きこむ優先順位>
     1. 読みこんだ.chapter
@@ -407,8 +403,8 @@ PCでは、たとえば時計が一日に数秒～数分単位で遅れるor進�
   <旧>foo.ts→foo.ts.chapter <新>foo.ts→foo.chapter
 ・OGMスタイルのチャプターファイル読み込み(書き込みはできない)に対応しました。前
   項の.chapterファイルがないとき、つぎの命名ルールのファイルを読み込みます:
-  foo.ts→foo.chapter.txt
-・右クリックでチャプター名(63文字まで)を変更できるようになりました
+  foo.ts→foo.chapter[s].txt
+・右クリックでチャプター名を変更できるようになりました
 
 [使い方]
 まず、キー割り当ての「チャプターを追加」を適当なキーに割り当ててください。このキ
@@ -424,7 +420,7 @@ PCでは、たとえば時計が一日に数秒～数分単位で遅れるor進�
 
 [上級者or開発者向け]
 .chapterファイルを直接編集すれば、チャプターに名前をつけたり、動的なチャプターづ
-けができます。チャプター機能の詳細については、src.zipの中にある_chwrite_test.cpp
+けができます。チャプター機能の詳細についてはソースコード"src/_chwrite_test.cpp"
 のコメントも参考にしてください(今後、仕様がかわるかもしれません)。
 
 ■仕様
@@ -462,7 +458,7 @@ http://toro.2ch.net/test/read.cgi/avi/1348364114/115 )を使用しています�
 プレイリストのシャッフル機能はmike氏(https://github.com/mike2 )のコミットを使用
 しています。
 また、おもにTVTest ver.0.7.23からソースコードを流用しています。特に以下のファイ
-ルはほぼ改変なしに流用しています(差分は"diff_TVTestStatusView_orig.txt"を参照)
+ルはほぼ改変なしに流用しています:
   "Aero.cpp"
   "Aero.h"
   "BasicWindow.cpp"
@@ -483,6 +479,9 @@ http://toro.2ch.net/test/read.cgi/avi/1348364114/115 )を使用しています�
 その他の部分は勝手に改変・利用してもらって構いません。
 
 ■更新履歴
+ver.2.3 (2016-02-09)
+・ソース管理をGitHubに移行した。以後の更新内容は省略
+・https://github.com/xtne6f/TvtPlay
 ver.2.2 (2014-02-15)
 ・SoundTouchライブラリの更新に追従
 ・TvtAudioStretchFilterについて、5.1chのダウンミックス再生がオフのときch変化で無
