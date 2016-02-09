@@ -6,7 +6,7 @@
 #if 1 // 同一プロセスからTvtAudioStretchFilterへのメッセージ送信コード
 #define ASFLT_FILTER_NAME   TEXT("TvtAudioStretchFilter")
 
-static HWND ASFilterFindWindow()
+HWND ASFilterFindWindow()
 {
     TCHAR szName[128];
     ::wsprintf(szName, TEXT("%s,%lu"), ASFLT_FILTER_NAME, ::GetCurrentProcessId());
@@ -436,6 +436,7 @@ void extract_pat(PAT *pat, const unsigned char *payload, int payload_size, int u
 #define PES_PRIVATE_DATA    0x06
 #define ADTS_TRANSPORT      0x0F
 #define AVC_VIDEO           0x1B
+#define H_265_VIDEO         0x24
 // for スカパーSD
 #define MPEG2_AUDIO         0x04
 // for Blu-ray
@@ -474,6 +475,7 @@ void extract_pmt(PMT *pmt, const unsigned char *payload, int payload_size, int u
                 stream_type == PES_PRIVATE_DATA ||
                 stream_type == ADTS_TRANSPORT ||
                 stream_type == AVC_VIDEO ||
+                stream_type == H_265_VIDEO ||
                 stream_type == MPEG2_AUDIO ||
                 stream_type == PS_BD_AC3_AUDIO)
             {

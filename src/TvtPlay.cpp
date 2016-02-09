@@ -29,8 +29,10 @@
 #include "TVTestPlugin.h"
 #include "TvtPlay.h"
 
-static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
-static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.2.2)";
+#define INFO_DESCRIPTION_SUFFIX L")"
+
+static const WCHAR INFO_PLUGIN_NAME[] = L"TvtPlay";
+static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.2.2" INFO_DESCRIPTION_SUFFIX;
 static const int INFO_VERSION = 23;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
@@ -66,10 +68,10 @@ static const int INFO_VERSION = 23;
 #define WM_TS_WATCH_POS_GT  (WM_APP + 10)
 #define WM_TS_INIT_DONE     (WM_APP + 11)
 
-static LPCTSTR SETTINGS = TEXT("Settings");
-static LPCTSTR TVTPLAY_FRAME_WINDOW_CLASS = TEXT("TvtPlay Frame");
-static LPCSTR UDP_ADDR = "127.0.0.1";
-static LPCTSTR PIPE_NAME = TEXT("\\\\.\\pipe\\BonDriver_Pipe%02d");
+static const TCHAR SETTINGS[] = TEXT("Settings");
+static const TCHAR TVTPLAY_FRAME_WINDOW_CLASS[] = TEXT("TvtPlay Frame");
+static const char UDP_ADDR[] = "127.0.0.1";
+static const TCHAR PIPE_NAME[] = TEXT("\\\\.\\pipe\\BonDriver_Pipe%02d");
 
 enum {
     TIMER_ID_RESET_DROP = 2,
@@ -108,7 +110,7 @@ static const int DEFAULT_STRETCH_LIST[COMMAND_S_MAX] = {
     400, 200, 50, 25
 };
 
-static LPCTSTR DEFAULT_BUTTON_LIST[] = {
+static const LPCTSTR DEFAULT_BUTTON_LIST[] = {
     TEXT("0,Open"), TEXT(";1,Close"), TEXT("4:5:14,Loop"),
     TEXT(";9,Prev  2,SeekToBgn"),
     TEXT("'-'6'0,SeekA"), TEXT(";'-'3'0,SeekB"),
@@ -2279,7 +2281,8 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
     int speed = 100, posWatch = -1;
     int lowSpeed = 100;
     int stretchMode = 0;
-    int fLowSpeed = false;
+    bool fLowSpeed = false;
+    MSG msgSetSpeed = {};
     static const int RESET_WAIT = 10;
     int resetCount = -RESET_WAIT;
     {
@@ -2298,6 +2301,22 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
     for (;;) {
         BOOL rv = ::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE);
         ::SetEvent(pThis->m_hThreadEvent);
+        if (rv && msg.message == WM_TS_SET_SPEED || !rv && msgSetSpeed.message == WM_TS_SET_SPEED) {
+            if (rv) {
+                // このメッセージはフィルタが生成されるかタイムアウトまで先送りする
+                msgSetSpeed = msg;
+                msgSetSpeed.time = ::GetTickCount();
+                msg.message = WM_NULL;
+            }
+            if (ASFilterFindWindow()) {
+                msg = msgSetSpeed;
+                msgSetSpeed.message = WM_NULL;
+                rv = TRUE;
+            }
+            else if (::GetTickCount() - msg.time > 10000) {
+                msgSetSpeed.message = WM_NULL;
+            }
+        }
         if (rv) {
             if (msg.message == WM_QUIT) break;
             switch (msg.message) {
@@ -2370,7 +2389,7 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
                     fLowSpeed = pThis->m_captionAnalyzer.CheckShowState(pThis->m_pcr);
                 }
 #endif
-                if (!ASFilterSendMessageTimeout(WM_ASFLT_STRETCH, stretchMode, MAKELPARAM(fLowSpeed?lowSpeed:speed, 100), 1000)) {
+                if (!ASFilterSendMessageTimeout(WM_ASFLT_STRETCH, stretchMode, MAKELPARAM(fLowSpeed?lowSpeed:speed, 100), 3000)) {
                     // コマンド失敗の場合は等速にする
                     speed = lowSpeed = 100;
                 }
@@ -2420,6 +2439,7 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
                     ASFilterSendNotifyMessage(WM_ASFLT_STRETCH, 0, MAKELPARAM(100, 100));
                     pThis->m_tsSender.SetSpeed(100, 100);
                     speed = lowSpeed = 100;
+                    msgSetSpeed.message = WM_NULL;
                 }
             }
 #ifdef EN_SWC
@@ -2445,7 +2465,7 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
                     }
                 }
                 if (fSetSpeed) {
-                    if (!ASFilterSendMessageTimeout(WM_ASFLT_STRETCH, stretchMode, MAKELPARAM(fLowSpeed?lowSpeed:speed, 100), 1000)) {
+                    if (!ASFilterSendMessageTimeout(WM_ASFLT_STRETCH, stretchMode, MAKELPARAM(fLowSpeed?lowSpeed:speed, 100), 3000)) {
                         // コマンド失敗の場合は等速にする
                         speed = lowSpeed = 100;
                     }

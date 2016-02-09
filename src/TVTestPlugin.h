@@ -114,6 +114,14 @@
 	  ・MESSAGE_GETSTATUSITEMINFO
 	  ・MESSAGE_STATUSITEMNOTIFY
 	  ・MESSAGE_REGISTERTSPROCESSOR
+	  ・MESSAGE_REGISTERPANELITEM
+	  ・MESSAGE_SETPANELITEM
+	  ・MESSAGE_GETPANELITEMINFO
+	  ・MESSAGE_SELECTCHANNEL
+	  ・MESSAGE_GETFAVORITELIST
+	  ・MESSAGE_FREEFAVORITELIST
+	  ・MESSAGE_GET1SEGMODE
+	  ・MESSAGE_SET1SEGMODE
 	・以下のイベントを追加した
 	  ・EVENT_FILTERGRAPH_INITIALIZE
 	  ・EVENT_FILTERGRAPH_INITIALIZED
@@ -123,11 +131,16 @@
 	  ・EVENT_STATUSITEM_DRAW
 	  ・EVENT_STATUSITEM_NOTIFY
 	  ・EVENT_STATUSITEM_MOUSE
+	  ・EVENT_PANELITEM_NOTIFY
+	  ・EVENT_FAVORITESCHANGED
+	  ・EVENT_1SEGMODECHANGED
 	・MESSAGE_GETSETTING で取得できる設定に以下を追加した
 	  ・OSDFont
 	  ・PanelFont
 	  ・ProgramGuideFont
 	  ・StatusBarFont
+	  ・DPI
+	・プラグインのフラグに PLUGIN_FLAG_NOENABLEDDISABLED を追加した
 
 	ver.0.0.13 (TVTest ver.0.7.16 or later)
 	・以下のメッセージを追加した
@@ -265,14 +278,18 @@ enum {
 
 // プラグインのフラグ
 enum {
-	PLUGIN_FLAG_HASSETTINGS		=0x00000001UL,	// 設定ダイアログがある
-	PLUGIN_FLAG_ENABLEDEFAULT	=0x00000002UL	// デフォルトで有効
-												// 特別な理由が無い限り使わない
+	PLUGIN_FLAG_HASSETTINGS			=0x00000001UL,	// 設定ダイアログがある
+	PLUGIN_FLAG_ENABLEDEFAULT		=0x00000002UL	// デフォルトで有効
+													// 特別な理由が無い限り使わない
 #if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,10)
-	,PLUGIN_FLAG_DISABLEONSTART	=0x00000004UL	// 起動時は必ず無効
+	,PLUGIN_FLAG_DISABLEONSTART		=0x00000004UL	// 起動時は必ず無効
 #endif
 #if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,11)
-	,PLUGIN_FLAG_NOUNLOAD		=0x00000008UL	// 終了時以外アンロード不可
+	,PLUGIN_FLAG_NOUNLOAD			=0x00000008UL	// 終了時以外アンロード不可
+#endif
+#if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,14)
+	,PLUGIN_FLAG_NOENABLEDDISABLED	=0x00000010UL	// 有効/無効の区別がない
+													// メニューに表示されず、EVENT_PLUGINENABLE が送られません
 #endif
 };
 
@@ -430,6 +447,14 @@ enum {
 	MESSAGE_GETSTATUSITEMINFO,			// ステータス項目の情報を取得
 	MESSAGE_STATUSITEMNOTIFY,			// ステータス項目の通知
 	MESSAGE_REGISTERTSPROCESSOR,		// TSプロセッサの登録
+	MESSAGE_REGISTERPANELITEM,			// パネル項目を登録
+	MESSAGE_SETPANELITEM,				// パネル項目の設定
+	MESSAGE_GETPANELITEMINFO,			// パネル項目の情報を取得
+	MESSAGE_SELECTCHANNEL,				// チャンネルを選択する
+	MESSAGE_GETFAVORITELIST,			// お気に入りチャンネルを取得
+	MESSAGE_FREEFAVORITELIST,			// お気に入りチャンネルを解放
+	MESSAGE_GET1SEGMODE,				// ワンセグモードを取得
+	MESSAGE_SET1SEGMODE,				// ワンセグモードを設定
 #endif
 	MESSAGE_TRAILER
 };
@@ -496,6 +521,9 @@ enum {
 	EVENT_STATUSITEM_DRAW,						// ステータス項目を描画
 	EVENT_STATUSITEM_NOTIFY,					// ステータス項目の通知
 	EVENT_STATUSITEM_MOUSE,						// ステータス項目のマウス操作
+	EVENT_PANELITEM_NOTIFY,						// パネル項目の通知
+	EVENT_FAVORITESCHANGED,						// お気に入りチャンネルが変更された
+	EVENT_1SEGMODECHANGED,						// ワンセグモードが変わった
 #endif
 	EVENT_TRAILER
 };
@@ -597,6 +625,7 @@ inline bool MsgGetCurrentChannelInfo(PluginParam *pParam,ChannelInfo *pInfo) {
 }
 
 // チャンネルを設定する
+// 機能が追加された MESSAGE_SELECTCHANNEL もあります。
 #if TVTEST_PLUGIN_VERSION<TVTEST_PLUGIN_VERSION_(0,0,8)
 inline bool MsgSetChannel(PluginParam *pParam,int Space,int Channel) {
 	return (*pParam->Callback)(pParam,MESSAGE_SETCHANNEL,Space,Channel)!=0;
@@ -674,6 +703,7 @@ inline int MsgGetDriverName(PluginParam *pParam,LPWSTR pszName,int MaxLength) {
 
 // BonDriverを設定する
 // ファイル名のみか相対パスを指定すると、BonDriver 検索フォルダの設定が使用されます。
+// NULL を指定すると現在の BonDriver が解放されます(ver.0.0.14 以降)。
 inline bool MsgSetDriverName(PluginParam *pParam,LPCWSTR pszName) {
 	return (*pParam->Callback)(pParam,MESSAGE_SETDRIVERNAME,(LPARAM)pszName,0)!=0;
 }
@@ -1201,6 +1231,21 @@ inline bool MsgAddLog(PluginParam *pParam,LPCWSTR pszText)
 	return (*pParam->Callback)(pParam,MESSAGE_ADDLOG,(LPARAM)pszText,0)!=0;
 }
 
+#if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,14)
+// ログの種類
+enum {
+	LOG_TYPE_INFORMATION,	// 情報
+	LOG_TYPE_WARNING,		// 警告
+	LOG_TYPE_ERROR			// エラー
+};
+
+// ログを記録する
+inline bool MsgAddLog(PluginParam *pParam,LPCWSTR pszText,int Type)
+{
+	return (*pParam->Callback)(pParam,MESSAGE_ADDLOG,(LPARAM)pszText,Type)!=0;
+}
+#endif
+
 #endif	// TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,3)
 
 #if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,5)
@@ -1374,6 +1419,7 @@ enum SettingType {
 	PanelFont             パネルのフォント                    データ(LOGFONT)
 	ProgramGuideFont      番組表のフォント                    データ(LOGFONT)
 	StatusBarFont         ステータスバーのフォント            データ(LOGFONT)
+	DPI                   UIのDPI                             int
 */
 
 // 設定を取得する
@@ -1435,12 +1481,12 @@ inline DWORD MsgGetSetting(PluginParam *pParam,LPCWSTR pszName,LPWSTR pszString,
 }
 
 // フォントの設定を取得する
-inline bool MsgGetSetting(PluginParam *pParam,LPCWSTR pszName,LOGFONT *pFont)
+inline bool MsgGetSetting(PluginParam *pParam,LPCWSTR pszName,LOGFONTW *pFont)
 {
 	SettingInfo Info;
 	Info.pszName=pszName;
 	Info.Type=SETTING_TYPE_DATA;
-	Info.ValueSize=sizeof(LOGFONT);
+	Info.ValueSize=sizeof(LOGFONTW);
 	Info.Value.pData=pFont;
 	return (*pParam->Callback)(pParam,MESSAGE_GETSETTING,(LPARAM)&Info,0)!=FALSE;
 }
@@ -2234,6 +2280,7 @@ struct GetLogInfo {
 	DWORD Serial;	// ログのシリアルナンバー
 	LPWSTR pszText;	// 取得する文字列
 	DWORD MaxText;	// 文字列の最大長
+	int Type;		// ログの種類(LOG_TYPE_*)
 };
 
 // ログ取得のフラグ
@@ -2461,6 +2508,7 @@ struct StatusItemGetInfo {
 	HWND hwnd;			// ウィンドウハンドル
 	RECT ItemRect;		// 項目の領域
 	RECT ContentRect;	// 項目の余白を除いた領域
+	DWORD Style;		// スタイルフラグ(STATUS_ITEM_STYLE_*)
 };
 
 // ステータス項目の情報取得
@@ -2468,7 +2516,8 @@ enum {
 	STATUS_ITEM_GET_INFO_MASK_STATE			=0x00000001U,	// State を取得
 	STATUS_ITEM_GET_INFO_MASK_HWND			=0x00000002U,	// hwnd を取得
 	STATUS_ITEM_GET_INFO_MASK_ITEMRECT		=0x00000004U,	// ItemRect を取得
-	STATUS_ITEM_GET_INFO_MASK_CONTENTRECT	=0x00000008U	// ContentRect を取得
+	STATUS_ITEM_GET_INFO_MASK_CONTENTRECT	=0x00000008U,	// ContentRect を取得
+	STATUS_ITEM_GET_INFO_MASK_STYLE			=0x00000010U	// Style を取得
 };
 
 // ステータス項目の情報を取得する
@@ -2553,16 +2602,26 @@ struct StatusItemMouseEventInfo {
 	POINT CursorPos;	// カーソル位置(クライアント座標)
 	RECT ItemRect;		// 項目の領域
 	RECT ContentRect;	// 項目の余白を除いた領域
+	int WheelDelta;		// ホイール移動量
 };
 
 // ステータス項目のマウス操作の種類
+// DOWN か DOUBLECLICK が送られた際に SetCapture() でマウスキャプチャが行われると、
+// キャプチャが解除された時に CAPTURERELEASE が送られます。
 enum {
 	STATUS_ITEM_MOUSE_ACTION_LDOWN=1,		// 左ボタンが押された
 	STATUS_ITEM_MOUSE_ACTION_LUP,			// 左ボタンが離された
 	STATUS_ITEM_MOUSE_ACTION_LDOUBLECLICK,	// 左ダブルクリック
 	STATUS_ITEM_MOUSE_ACTION_RDOWN,			// 右ボタンが押された
 	STATUS_ITEM_MOUSE_ACTION_RUP,			// 右ボタンが離された
-	STATUS_ITEM_MOUSE_ACTION_MOVE			// カーソル移動
+	STATUS_ITEM_MOUSE_ACTION_RDOUBLECLICK,	// 右ダブルクリック
+	STATUS_ITEM_MOUSE_ACTION_MDOWN,			// 中央ボタンが押された
+	STATUS_ITEM_MOUSE_ACTION_MUP,			// 中央ボタンが離された
+	STATUS_ITEM_MOUSE_ACTION_MDOUBLECLICK,	// 中央ダブルクリック
+	STATUS_ITEM_MOUSE_ACTION_MOVE,			// カーソル移動
+	STATUS_ITEM_MOUSE_ACTION_WHEEL,			// ホイール
+	STATUS_ITEM_MOUSE_ACTION_HORZWHEEL,		// 横ホイール
+	STATUS_ITEM_MOUSE_ACTION_CAPTURERELEASE	// キャプチャが解除された
 };
 
 // TSプロセッサのインターフェースは TVTestInterface.h で宣言されています。
@@ -2593,6 +2652,213 @@ struct TSProcessorInfo {
 // TSプロセッサを登録する
 inline bool MsgRegisterTSProcessor(PluginParam *pParam,const TSProcessorInfo *pInfo) {
 	return (*pParam->Callback)(pParam,MESSAGE_REGISTERTSPROCESSOR,(LPARAM)pInfo,0)!=FALSE;
+}
+
+// パネル項目のスタイル
+enum {
+	PANEL_ITEM_STYLE_NEEDFOCUS	=0x0001U	// キーボードフォーカスを受け取る
+};
+
+// パネル項目の状態
+enum {
+	PANEL_ITEM_STATE_ENABLED	=0x0001U,	// 有効(タブに表示されている)
+	PANEL_ITEM_STATE_ACTIVE		=0x0002U	// アクティブ
+};
+
+// パネル項目の情報
+struct PanelItemInfo {
+	DWORD Size;			// 構造体のサイズ
+	DWORD Flags;		// 各種フラグ(現在は常に0)
+	DWORD Style;		// スタイルフラグ(PANEL_ITEM_STYLE_* の組み合わせ)
+	int ID;				// 識別子
+	LPCWSTR pszIDText;	// 識別子文字列
+	LPCWSTR pszTitle;	// タイトル
+	HBITMAP hbmIcon;	// アイコンのビットマップ
+};
+
+// パネル項目を登録する
+inline bool MsgRegisterPanelItem(PluginParam *pParam,const PanelItemInfo *pInfo) {
+	return (*pParam->Callback)(pParam,MESSAGE_REGISTERPANELITEM,(LPARAM)pInfo,0)!=FALSE;
+}
+
+// パネル項目の設定の情報
+struct PanelItemSetInfo {
+	DWORD Size;			// 構造体のサイズ
+	DWORD Mask;			// 設定する情報のマスク(PANEL_ITEM_SET_INFO_MASK_* の組み合わせ)
+	int ID;				// 項目の識別子
+	DWORD StateMask;	// 状態フラグのマスク(PANEL_ITEM_STATE_* の組み合わせ)
+	DWORD State;		// 状態フラグ(PANEL_ITEM_STATE_* の組み合わせ)
+	DWORD StyleMask;	// スタイルフラグのマスク(PANEL_ITEM_STYLE_* の組み合わせ)
+	DWORD Style;		// スタイルフラグ(PANEL_ITEM_STYLE_* の組み合わせ)
+};
+
+// パネル項目の設定
+enum {
+	PANEL_ITEM_SET_INFO_MASK_STATE	=0x00000001U,	// StateMask / State を設定
+	PANEL_ITEM_SET_INFO_MASK_STYLE	=0x00000002U	// StyleMask / Style を設定
+};
+
+// ステータス項目を設定する
+// PanelItemSetInfo の Size に構造体のサイズを、Mask に設定したい情報を、
+// ID に設定したい項目の識別子を指定して呼び出します。
+/*
+	// 例
+	// 項目の有効状態を設定する
+	void EnablePanelItem(PluginParam *pParam, int ID, bool fEnable)
+	{
+		PanelItemSetInfo Info;
+		Info.Size = sizeof(PanelItemSetInfo);
+		Info.Mask = PANEL_ITEM_SET_INFO_MASK_STATE;
+		Info.ID = ID;
+		Info.StateMask = PANEL_ITEM_STATE_ENABLED;
+		Info.State = fEnable ? PANEL_ITEM_STATE_ENABLED : 0;
+		MsgSetPanelItem(pParam, &Info);
+	}
+*/
+inline bool MsgSetPanelItem(PluginParam *pParam,const PanelItemSetInfo *pInfo) {
+	return (*pParam->Callback)(pParam,MESSAGE_SETPANELITEM,(LPARAM)pInfo,0)!=FALSE;
+}
+
+// パネル項目の情報取得
+struct PanelItemGetInfo {
+	DWORD Size;			// 構造体のサイズ
+	DWORD Mask;			// 取得する情報のマスク(PANEL_ITEM_GET_INFO_MASK_* の組み合わせ)
+	int ID;				// 項目の識別子
+	DWORD State;		// 項目の状態フラグ(PANEL_ITEM_STATE_* の組み合わせ)
+	HWND hwndParent;	// 親ウィンドウのハンドル
+	HWND hwndItem;		// 項目のウィンドウハンドル
+	DWORD Style;		// スタイルフラグ(PANEL_ITEM_STYLE_* の組み合わせ)
+};
+
+// パネル項目の情報取得マスク
+enum {
+	PANEL_ITEM_GET_INFO_MASK_STATE		=0x0001U,	// State を取得
+	PANEL_ITEM_GET_INFO_MASK_HWNDPARENT	=0x0002U,	// hwndParent を取得
+	PANEL_ITEM_GET_INFO_MASK_HWNDITEM	=0x0004U,	// hwndItem を取得
+	PANEL_ITEM_GET_INFO_MASK_STYLE		=0x0008U	// Style を取得
+};
+
+// パネル項目の情報を取得する
+// PanelItemGetInfo の Size に構造体のサイズを、Mask に取得したい情報を、
+// ID に取得したい項目の識別子を指定して呼び出します。
+inline bool MsgGetPanelItemInfo(PluginParam *pParam,PanelItemGetInfo *pInfo) {
+	return (*pParam->Callback)(pParam,MESSAGE_GETPANELITEMINFO,(LPARAM)pInfo,0)!=FALSE;
+}
+
+// パネル項目の通知情報
+// EVENT_PANELITEM_NOTIFY で渡されます
+struct PanelItemEventInfo {
+	int ID;				// 項目の識別子
+	UINT Event;			// イベントの種類(PANEL_ITEM_EVENT_* のいずれか)
+};
+
+// パネル項目のイベント
+enum {
+	PANEL_ITEM_EVENT_CREATE=1,		// 項目を作成する
+	PANEL_ITEM_EVENT_ACTIVATE,		// 項目がアクティブになる
+	PANEL_ITEM_EVENT_DEACTIVATE,	// 項目が非アクティブになる
+	PANEL_ITEM_EVENT_ENABLE,		// 項目が有効になる
+	PANEL_ITEM_EVENT_DISABLE		// 項目が無効になる
+};
+
+// パネル項目作成イベントの情報
+// PANEL_ITEM_EVENT_CREATE で渡されます。
+// hwndItem に作成したウィンドウのハンドルを返します。
+struct PanelItemCreateEventInfo {
+	PanelItemEventInfo EventInfo;
+	RECT ItemRect;
+	HWND hwndParent;
+	HWND hwndItem;
+};
+
+// チャンネル選択の情報
+struct ChannelSelectInfo {
+	DWORD Size;				// 構造体のサイズ
+	DWORD Flags;			// 各種フラグ(CHANNEL_SELECT_FLAG_* の組み合わせ)
+	LPCWSTR pszTuner;		// チューナー名(NULL で指定なし)
+	int Space;				// チューニング空間(-1 で指定なし)
+	int Channel;			// チャンネル(-1 で指定なし)
+	WORD NetworkID;			// ネットワークID(0 で指定なし)
+	WORD TransportStreamID;	// トランスポートストリームID(0 で指定なし)
+	WORD ServiceID;			// サービスID(0 で指定なし)
+};
+
+// チャンネル選択のフラグ
+enum {
+	CHANNEL_SELECT_FLAG_STRICTSERVICE	=0x0001U	// ServiceID の指定を厳密に扱う
+};
+
+// チャンネルを選択する
+inline bool MsgSelectChannel(PluginParam *pParam,const ChannelSelectInfo *pInfo) {
+	return (*pParam->Callback)(pParam,MESSAGE_SELECTCHANNEL,(LPARAM)pInfo,0)!=FALSE;
+}
+
+// お気に入り項目の種類
+enum {
+	FAVORITE_ITEM_TYPE_FOLDER,	// フォルダ
+	FAVORITE_ITEM_TYPE_CHANNEL	// チャンネル
+};
+
+// お気に入り項目の情報
+struct FavoriteItemInfo {
+	DWORD Type;						// 種類(FAVORITE_ITEM_TYPE_* のいずれか)
+	DWORD Flags;					// 各種フラグ(現在は常に0)
+	LPCWSTR pszName;				// 名前
+	union {
+		// Type == FAVORITE_ITEM_TYPE_FOLDER の場合
+		struct {
+			DWORD Flags;								// 各種フラグ(現在は常に0)
+			DWORD ItemCount;							// 子項目数
+			const struct FavoriteItemInfo *ItemList;	// 子項目のリスト
+		} Folder;
+		// Type == FAVORITE_ITEM_TYPE_CHANNEL の場合
+		struct {
+			DWORD Flags;			// 各種フラグ(FAVORITE_CHANNEL_FLAG_*)
+			int Space;				// チューニング空間
+			int Channel;			// チャンネルインデックス
+			int ChannelNo;			// リモコン番号
+			WORD NetworkID;			// ネットワークID
+			WORD TransportStreamID;	// トランスポートストリームID
+			WORD ServiceID;			// サービスID
+			WORD Reserved;			// 予約(現在は常に0)
+			LPCWSTR pszTuner;		// チューナー名
+		} Channel;
+	};
+};
+
+// お気に入りチャンネルのフラグ
+enum {
+	FAVORITE_CHANNEL_FLAG_FORCETUNERCHANGE	=0x0001U	// チューナー指定を強制
+};
+
+// お気に入りリスト
+struct FavoriteList {
+	DWORD Size;					// 構造体のサイズ
+	DWORD ItemCount;			// お気に入り項目数
+	FavoriteItemInfo *ItemList;	// お気に入り項目のリスト
+};
+
+// お気に入りリストを取得する
+// FavoriteList の Size メンバに構造体のサイズを設定して呼び出します。
+// 取得したリストは MsgFreeFavoriteList で解放します。
+inline bool MsgGetFavoriteList(PluginParam *pParam,FavoriteList *pList) {
+	return (*pParam->Callback)(pParam,MESSAGE_GETFAVORITELIST,(LPARAM)pList,0)!=FALSE;
+}
+
+// お気に入りリストを解放する
+// MsgGetFavoriteList で取得したリストを解放します。
+inline void MsgFreeFavoriteList(PluginParam *pParam,FavoriteList *pList) {
+	(*pParam->Callback)(pParam,MESSAGE_FREEFAVORITELIST,(LPARAM)pList,0);
+}
+
+// ワンセグモードを取得する
+inline bool MsgGet1SegMode(PluginParam *pParam) {
+	return (*pParam->Callback)(pParam,MESSAGE_GET1SEGMODE,0,0)!=FALSE;
+}
+
+// ワンセグモードを設定する
+inline bool MsgSet1SegMode(PluginParam *pParam,bool f1SegMode) {
+	return (*pParam->Callback)(pParam,MESSAGE_SET1SEGMODE,f1SegMode,0)!=FALSE;
 }
 
 #endif	// TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,14)
@@ -2835,6 +3101,11 @@ public:
 	bool AddLog(LPCWSTR pszText) {
 		return MsgAddLog(m_pParam,pszText);
 	}
+#if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,14)
+	bool AddLog(LPCWSTR pszText,int Type) {
+		return MsgAddLog(m_pParam,pszText,Type);
+	}
+#endif
 #endif
 #if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,5)
 	bool ResetStatus() {
@@ -2880,7 +3151,7 @@ public:
 	DWORD GetSetting(LPCWSTR pszName,LPWSTR pszString,DWORD MaxLength) {
 		return MsgGetSetting(m_pParam,pszName,pszString,MaxLength);
 	}
-	bool GetSetting(LPCWSTR pszName,LOGFONT *pFont) {
+	bool GetSetting(LPCWSTR pszName,LOGFONTW *pFont) {
 		return MsgGetSetting(m_pParam,pszName,pFont);
 	}
 	int GetDriverFullPathName(LPWSTR pszPath,int MaxLength) {
@@ -2994,6 +3265,7 @@ public:
 								hbm,SrcX,SrcY,SrcWidth,SrcHeight,Color,Opacity);
 	}
 	bool GetEpgCaptureStatus(EpgCaptureStatusInfo *pInfo) {
+		pInfo->Size=sizeof(EpgCaptureStatusInfo);
 		return MsgGetEpgCaptureStatus(m_pParam,pInfo);
 	}
 	bool GetAppCommandInfo(AppCommandInfo *pInfo) {
@@ -3052,6 +3324,32 @@ public:
 	}
 	bool RegisterTSProcessor(const TSProcessorInfo *pInfo) {
 		return MsgRegisterTSProcessor(m_pParam,pInfo);
+	}
+	bool RegisterPanelItem(const PanelItemInfo *pInfo) {
+		return MsgRegisterPanelItem(m_pParam,pInfo);
+	}
+	bool SetPanelItem(const PanelItemSetInfo *pInfo) {
+		return MsgSetPanelItem(m_pParam,pInfo);
+	}
+	bool GetPanelItemInfo(PanelItemGetInfo *pInfo) {
+		pInfo->Size=sizeof(PanelItemGetInfo);
+		return MsgGetPanelItemInfo(m_pParam,pInfo);
+	}
+	bool SelectChannel(const ChannelSelectInfo *pInfo) {
+		return MsgSelectChannel(m_pParam,pInfo);
+	}
+	bool GetFavoriteList(FavoriteList *pList) {
+		pList->Size=sizeof(FavoriteList);
+		return MsgGetFavoriteList(m_pParam,pList);
+	}
+	void FreeFavoriteList(FavoriteList *pList) {
+		MsgFreeFavoriteList(m_pParam,pList);
+	}
+	bool Get1SegMode() {
+		return MsgGet1SegMode(m_pParam);
+	}
+	bool Set1SegMode(bool f1SegMode) {
+		return MsgSet1SegMode(m_pParam,f1SegMode);
 	}
 #endif
 };
@@ -3225,6 +3523,12 @@ protected:
 	virtual bool OnStatusItemNotify(StatusItemEventInfo *pInfo) { return false; }
 	// ステータス項目のマウスイベント
 	virtual bool OnStatusItemMouseEvent(StatusItemMouseEventInfo *pInfo) { return false; }
+	// パネル項目の通知
+	virtual bool OnPanelItemNotify(PanelItemEventInfo *pInfo) { return false; }
+	// お気に入りチャンネルが変更された
+	virtual void OnFavoritesChanged() {}
+	// ワンセグモードが変わった
+	virtual void On1SegModeChanged(bool f1SegMode) {}
 #endif
 
 public:
@@ -3314,6 +3618,14 @@ public:
 			return OnStatusItemNotify((StatusItemEventInfo*)lParam1);
 		case EVENT_STATUSITEM_MOUSE:
 			return OnStatusItemMouseEvent((StatusItemMouseEventInfo*)lParam1);
+		case EVENT_PANELITEM_NOTIFY:
+			return OnPanelItemNotify((PanelItemEventInfo*)lParam1);
+		case EVENT_FAVORITESCHANGED:
+			OnFavoritesChanged();
+			return 0;
+		case EVENT_1SEGMODECHANGED:
+			On1SegModeChanged(lParam1!=0);
+			return 0;
 #endif
 		}
 		return 0;
