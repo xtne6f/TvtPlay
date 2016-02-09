@@ -2050,6 +2050,7 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
                 pInfo->Action == TVTest::STATUS_ITEM_MOUSE_ACTION_LUP ? CStatusView::MOUSE_ACTION_LUP :
                 pInfo->Action == TVTest::STATUS_ITEM_MOUSE_ACTION_LDOUBLECLICK ? CStatusView::MOUSE_ACTION_LDOUBLECLICK :
                 pInfo->Action == TVTest::STATUS_ITEM_MOUSE_ACTION_RDOWN ? CStatusView::MOUSE_ACTION_RDOWN :
+                pInfo->Action == TVTest::STATUS_ITEM_MOUSE_ACTION_RDOUBLECLICK ? CStatusView::MOUSE_ACTION_RDOWN :
                 pInfo->Action == TVTest::STATUS_ITEM_MOUSE_ACTION_MOVE ? CStatusView::MOUSE_ACTION_MOVE : CStatusView::MOUSE_ACTION_NONE;
             if (action != CStatusView::MOUSE_ACTION_NONE) {
                 if (pThis->m_statusView.OnMouseAction(action, pInfo->hwnd, pInfo->CursorPos, pInfo->ItemRect)) {
