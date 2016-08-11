@@ -122,6 +122,9 @@
 	  ・MESSAGE_FREEFAVORITELIST
 	  ・MESSAGE_GET1SEGMODE
 	  ・MESSAGE_SET1SEGMODE
+	  ・MESSAGE_GETDPI
+	  ・MESSAGE_GETFONT
+	  ・MESSAGE_SHOWDIALOG
 	・以下のイベントを追加した
 	  ・EVENT_FILTERGRAPH_INITIALIZE
 	  ・EVENT_FILTERGRAPH_INITIALIZED
@@ -134,12 +137,6 @@
 	  ・EVENT_PANELITEM_NOTIFY
 	  ・EVENT_FAVORITESCHANGED
 	  ・EVENT_1SEGMODECHANGED
-	・MESSAGE_GETSETTING で取得できる設定に以下を追加した
-	  ・OSDFont
-	  ・PanelFont
-	  ・ProgramGuideFont
-	  ・StatusBarFont
-	  ・DPI
 	・プラグインのフラグに PLUGIN_FLAG_NOENABLEDDISABLED を追加した
 
 	ver.0.0.13 (TVTest ver.0.7.16 or later)
@@ -199,10 +196,7 @@
 	・MESSAGE_RESET にパラメータを追加した
 
 	ver.0.0.8 (TVTest ver.0.6.0 or later)
-	・以下のメッセージを追加した
-	  ・MESSAGE_GETBCASINFO
-	  ・MESSAGE_SENDBCASCOMMAND
-	  ・MESSAGE_GETHOSTINFO
+	・MESSAGE_GETHOSTINFO を追加した
 	・MESSAGE_SETCHANNEL のパラメータにサービスIDを追加した
 
 	ver.0.0.7 (TVTest ver.0.5.45 or later)
@@ -232,7 +226,7 @@
 	ver.0.0.2
 	・MESSAGE_GETAUDIOSTREAM と MESSAGE_SETAUDIOSTREAM を追加した
 	・ServiceInfo 構造体に AudioComponentType と SubtitlePID メンバを追加した
-	・StatusInfo 構造体に DropPacketCount と BcasCardStatus メンバを追加した
+	・StatusInfo 構造体に DropPacketCount と Reserved メンバを追加した
 
 	ver.0.0.1
 	・以下のメッセージを追加した
@@ -392,8 +386,8 @@ enum {
 	MESSAGE_DOCOMMAND,					// コマンドの実行
 #endif
 #if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,8)
-	MESSAGE_GETBCASINFO,				// B-CAS カードの情報を取得
-	MESSAGE_SENDBCASCOMMAND,			// B-CAS カードにコマンドを送信
+	MESSAGE_REMOVED1,					// (機能削除)
+	MESSAGE_REMOVED2,					// (機能削除)
 	MESSAGE_GETHOSTINFO,				// ホストプログラムの情報を取得
 #endif
 #if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,9)
@@ -455,6 +449,9 @@ enum {
 	MESSAGE_FREEFAVORITELIST,			// お気に入りチャンネルを解放
 	MESSAGE_GET1SEGMODE,				// ワンセグモードを取得
 	MESSAGE_SET1SEGMODE,				// ワンセグモードを設定
+	MESSAGE_GETDPI,						// DPIを取得
+	MESSAGE_GETFONT,					// フォントを取得
+	MESSAGE_SHOWDIALOG,					// ダイアログを表示
 #endif
 	MESSAGE_TRAILER
 };
@@ -550,20 +547,18 @@ inline bool MsgQueryMessage(PluginParam *pParam,UINT Message) {
 }
 
 // メモリ再確保
-// 仕様はreallocと同じ
+// pData が NULL で新しい領域を確保
+// Size が0で領域を解放
 inline void *MsgMemoryReAlloc(PluginParam *pParam,void *pData,DWORD Size) {
 	return (void*)(*pParam->Callback)(pParam,MESSAGE_MEMORYALLOC,(LPARAM)pData,Size);
 }
 
 // メモリ確保
-// 仕様はrealloc(NULL,Size)と同じ
 inline void *MsgMemoryAlloc(PluginParam *pParam,DWORD Size) {
 	return (void*)(*pParam->Callback)(pParam,MESSAGE_MEMORYALLOC,(LPARAM)(void*)NULL,Size);
 }
 
 // メモリ開放
-// 仕様はrealloc(pData,0)と同じ
-// (実際にreallocでメモリ開放しているコードは見たこと無いけど...)
 inline void MsgMemoryFree(PluginParam *pParam,void *pData) {
 	(*pParam->Callback)(pParam,MESSAGE_MEMORYALLOC,(LPARAM)pData,0);
 }
@@ -825,17 +820,6 @@ inline bool MsgSetPanScan(PluginParam *pParam,const PanScanInfo *pInfo) {
 	return (*pParam->Callback)(pParam,MESSAGE_SETPANSCAN,(LPARAM)pInfo,0)!=0;
 }
 
-// B-CAS カードの状態
-enum {
-	BCAS_STATUS_OK,				// エラーなし
-	BCAS_STATUS_NOTOPEN,		// 開かれていない(スクランブル解除なし)
-	BCAS_STATUS_NOCARDREADER,	// カードリーダが無い
-	BCAS_STATUS_NOCARD,			// カードがない
-	BCAS_STATUS_OPENERROR,		// オープンエラー
-	BCAS_STATUS_TRANSMITERROR,	// 通信エラー
-	BCAS_STATUS_ESTABLISHERROR	// コンテキスト確立失敗
-};
-
 // ステータス情報
 struct StatusInfo {
 	DWORD Size;							// 構造体のサイズ
@@ -846,8 +830,7 @@ struct StatusInfo {
 	DWORD ScramblePacketCount;			// 復号漏れパケット数
 #if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,2)
 	DWORD DropPacketCount;				// ドロップパケット数
-	DWORD BcasCardStatus;				// B-CAS カードの状態(BCAS_STATUS_???)
-										// ※ B-CAS 関連の機能は削除されました。現在は利用できません。
+	DWORD Reserved;						// 予約
 #endif
 };
 
@@ -1299,64 +1282,6 @@ inline bool MsgDoCommand(PluginParam *pParam,LPCWSTR pszCommand)
 
 #if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,8)
 
-// B-CAS の情報
-struct BCasInfo {
-	DWORD Size;						// 構造体のサイズ
-	WORD CASystemID;				// CA_system_id
-	BYTE CardID[6];					// カードID
-	BYTE CardType;					// カード種別
-	BYTE MessagePartitionLength;	// メッセージ分割長
-	BYTE SystemKey[32];				// システム鍵
-	BYTE InitialCBC[8];				// CBC初期値
-	BYTE CardManufacturerID;		// メーカ識別
-	BYTE CardVersion;				// バージョン
-	WORD CheckCode;					// チェックコード
-	char szFormatCardID[25];		// 可読形式のカードID (4桁の数字x5)
-};
-
-// B-CAS カードの情報を取得する
-// ※ B-CAS 関連の機能は削除されました。現在は利用できません。
-// カードが開かれていない場合は false が返ります。
-inline bool MsgGetBCasInfo(PluginParam *pParam,BCasInfo *pInfo)
-{
-	return (*pParam->Callback)(pParam,MESSAGE_GETBCASINFO,(LPARAM)pInfo,0)!=0;
-}
-
-// B-CAS コマンドの情報
-struct BCasCommandInfo {
-	const BYTE *pSendData;	// 送信データ
-	DWORD SendSize;			// 送信サイズ (バイト単位)
-	BYTE *pReceiveData;		// 受信データ
-	DWORD ReceiveSize;		// 受信サイズ (バイト単位)
-};
-
-// B-CAS カードにコマンドを送信する
-// ※ B-CAS 関連の機能は削除されました。現在は利用できません。
-// BCasCommandInfo の pSendData に送信データへのポインタを指定して、
-// SendSize に送信データのバイト数を設定します。
-// また、pReceiveData に受信データを格納するバッファへのポインタを指定して、
-// ReceiveSize にバッファに格納できる最大サイズを設定します。
-// 送信が成功すると、ReceiveSize に受信したデータのサイズが返されます。
-inline bool MsgSendBCasCommand(PluginParam *pParam,BCasCommandInfo *pInfo)
-{
-	return (*pParam->Callback)(pParam,MESSAGE_SENDBCASCOMMAND,(LPARAM)pInfo,0)!=0;
-}
-
-// B-CAS カードにコマンドを送信する
-// ※ B-CAS 関連の機能は削除されました。現在は利用できません。
-inline bool MsgSendBCasCommand(PluginParam *pParam,const BYTE *pSendData,DWORD SendSize,BYTE *pReceiveData,DWORD *pReceiveSize)
-{
-	BCasCommandInfo Info;
-	Info.pSendData=pSendData;
-	Info.SendSize=SendSize;
-	Info.pReceiveData=pReceiveData;
-	Info.ReceiveSize=*pReceiveSize;
-	if (!MsgSendBCasCommand(pParam,&Info))
-		return false;
-	*pReceiveSize=Info.ReceiveSize;
-	return true;
-}
-
 // ホストプログラムの情報
 struct HostInfo {
 	DWORD Size;						// 構造体のサイズ
@@ -1414,12 +1339,12 @@ enum SettingType {
 	IniFilePath           Ini ファイルのパス                  文字列
 	RecordFolder          録画時の保存先フォルダ              文字列
 
-	* ver.0.0.14 以降
+	* フォント関係の設定の取得は ver.0.0.14 正式版までに削除されます。
+	* 代わりに MsgGetFont を利用します。
 	OSDFont               OSD のフォント                      データ(LOGFONT)
 	PanelFont             パネルのフォント                    データ(LOGFONT)
 	ProgramGuideFont      番組表のフォント                    データ(LOGFONT)
 	StatusBarFont         ステータスバーのフォント            データ(LOGFONT)
-	DPI                   UIのDPI                             int
 */
 
 // 設定を取得する
@@ -2019,10 +1944,11 @@ struct FilterGraphInfo {
 
 // スタイル値の単位
 enum {
-	STYLE_UNIT_UNDEFINED,	// 未定義
-	STYLE_UNIT_PIXEL,		// ピクセル
-	STYLE_UNIT_POINT,		// ポイント
-	STYLE_UNIT_DIP			// dip
+	STYLE_UNIT_UNDEFINED,		// 未定義
+	STYLE_UNIT_LOGICAL_PIXEL,	// 論理ピクセル(96 DPI におけるピクセル単位)
+	STYLE_UNIT_PHYSICAL_PIXEL,	// 物理ピクセル
+	STYLE_UNIT_POINT,			// ポイント(1/72インチ)
+	STYLE_UNIT_DIP				// dip(1/160インチ)
 };
 
 // スタイル値の情報
@@ -2031,22 +1957,25 @@ struct StyleValueInfo {
 	DWORD Flags;		// 各種フラグ(現在は常に0)
 	LPCWSTR pszName;	// スタイル名
 	int Unit;			// 取得する値の単位(STYLE_UNIT_*)
+	int DPI;			// DPI の指定
 	int Value;			// 取得された値
 };
 
 // スタイル値を取得する
+// TVTest.style.ini で設定されたスタイル値を取得します。
 // 通常は下のオーバーロードされた関数を利用する方が簡単です。
 inline bool MsgGetStyleValue(PluginParam *pParam,StyleValueInfo *pInfo) {
 	return (*pParam->Callback)(pParam,MESSAGE_GETSTYLEVALUE,(LPARAM)pInfo,0)!=FALSE;
 }
 
 // 指定された単位のスタイル値を取得する
-inline bool MsgGetStyleValue(PluginParam *pParam,LPCWSTR pszName,int Unit,int *pValue) {
+inline bool MsgGetStyleValue(PluginParam *pParam,LPCWSTR pszName,int Unit,int DPI,int *pValue) {
 	StyleValueInfo Info;
 	Info.Size=sizeof(Info);
 	Info.Flags=0;
 	Info.pszName=pszName;
 	Info.Unit=Unit;
+	Info.DPI=DPI;
 	if (!MsgGetStyleValue(pParam,&Info))
 		return false;
 	*pValue=Info.Value;
@@ -2055,12 +1984,12 @@ inline bool MsgGetStyleValue(PluginParam *pParam,LPCWSTR pszName,int Unit,int *p
 
 // オリジナルの単位のスタイル値を取得する
 inline bool MsgGetStyleValue(PluginParam *pParam,LPCWSTR pszName,int *pValue) {
-	return MsgGetStyleValue(pParam,pszName,STYLE_UNIT_UNDEFINED,pValue);
+	return MsgGetStyleValue(pParam,pszName,STYLE_UNIT_UNDEFINED,0,pValue);
 }
 
-// ピクセル単位のスタイル値を取得する
-inline bool MsgGetStyleValuePixels(PluginParam *pParam,LPCWSTR pszName,int *pValue) {
-	return MsgGetStyleValue(pParam,pszName,STYLE_UNIT_PIXEL,pValue);
+// 物理ピクセル単位のスタイル値を取得する
+inline bool MsgGetStyleValuePixels(PluginParam *pParam,LPCWSTR pszName,int DPI,int *pValue) {
+	return MsgGetStyleValue(pParam,pszName,STYLE_UNIT_PHYSICAL_PIXEL,DPI,pValue);
 }
 
 // テーマの背景描画情報
@@ -2070,6 +1999,7 @@ struct ThemeDrawBackgroundInfo {
 	LPCWSTR pszStyle;	// スタイル名
 	HDC hdc;			// 描画先DC
 	RECT DrawRect;		// 描画領域
+	int DPI;			// DPI の指定(0でメインウィンドウと同じ)
 };
 
 // テーマ描画フラグ
@@ -2084,13 +2014,14 @@ inline bool MsgThemeDrawBackground(PluginParam *pParam,ThemeDrawBackgroundInfo *
 }
 
 // テーマの背景を描画する
-inline bool MsgThemeDrawBackground(PluginParam *pParam,LPCWSTR pszStyle,HDC hdc,const RECT &DrawRect) {
+inline bool MsgThemeDrawBackground(PluginParam *pParam,LPCWSTR pszStyle,HDC hdc,const RECT &DrawRect,int DPI=0) {
 	ThemeDrawBackgroundInfo Info;
 	Info.Size=sizeof(Info);
 	Info.Flags=0;
 	Info.pszStyle=pszStyle;
 	Info.hdc=hdc;
 	Info.DrawRect=DrawRect;
+	Info.DPI=DPI;
 	return MsgThemeDrawBackground(pParam,&Info);
 }
 
@@ -2590,7 +2521,8 @@ enum {
 	STATUS_ITEM_EVENT_ENTER,				// フォーカスが当たった
 	STATUS_ITEM_EVENT_LEAVE,				// フォーカスが離れた
 	STATUS_ITEM_EVENT_SIZECHANGED,			// 項目の大きさが変わった
-	STATUS_ITEM_EVENT_UPDATETIMER			// 更新タイマー
+	STATUS_ITEM_EVENT_UPDATETIMER,			// 更新タイマー
+	STATUS_ITEM_EVENT_STYLECHANGED			// スタイルが変わった(DPI の変更など)
 };
 
 // ステータス項目のマウスイベント情報
@@ -2698,7 +2630,7 @@ enum {
 	PANEL_ITEM_SET_INFO_MASK_STYLE	=0x00000002U	// StyleMask / Style を設定
 };
 
-// ステータス項目を設定する
+// パネル項目を設定する
 // PanelItemSetInfo の Size に構造体のサイズを、Mask に設定したい情報を、
 // ID に設定したい項目の識別子を指定して呼び出します。
 /*
@@ -2758,7 +2690,8 @@ enum {
 	PANEL_ITEM_EVENT_ACTIVATE,		// 項目がアクティブになる
 	PANEL_ITEM_EVENT_DEACTIVATE,	// 項目が非アクティブになる
 	PANEL_ITEM_EVENT_ENABLE,		// 項目が有効になる
-	PANEL_ITEM_EVENT_DISABLE		// 項目が無効になる
+	PANEL_ITEM_EVENT_DISABLE,		// 項目が無効になる
+	PANEL_ITEM_EVENT_STYLECHANGED	// スタイルが変わった(DPI の変更など)
 };
 
 // パネル項目作成イベントの情報
@@ -2859,6 +2792,140 @@ inline bool MsgGet1SegMode(PluginParam *pParam) {
 // ワンセグモードを設定する
 inline bool MsgSet1SegMode(PluginParam *pParam,bool f1SegMode) {
 	return (*pParam->Callback)(pParam,MESSAGE_SET1SEGMODE,f1SegMode,0)!=FALSE;
+}
+
+// 取得する DPI の種類
+enum DPIType {
+	DPI_TYPE_SYSTEM,	// システム
+	DPI_TYPE_WINDOW,	// ウィンドウ
+	DPI_TYPE_RECT,		// 矩形
+	DPI_TYPE_POINT,		// 位置
+	DPI_TYPE_MONITOR	// モニタ
+};
+
+// DPI 取得のフラグ
+enum {
+	DPI_FLAG_FORCED = 0x00000001U	// 強制指定された DPI を取得
+};
+
+// DPI 取得の情報
+struct GetDPIInfo {
+	DPIType Type;			// 取得する DPI の種類(DPI_TYPE_*)
+	DWORD Flags;			// フラグ(DPI_FLAG_*)
+	union {
+		HWND hwnd;			// ウィンドウハンドル(Type == DPI_TYPE_WINDOW)
+		RECT Rect;			// 矩形(Type == DPI_TYPE_RECT)
+		POINT Point;		// 位置(Type == DPI_TYPE_POINT)
+		HMONITOR hMonitor;	// モニタ(Type == DPI_TYPE_MONITOR)
+	};
+};
+
+// DPI を取得する
+// エラー時は0が返ります。
+inline int MsgGetDPI(PluginParam *pParam,GetDPIInfo *pInfo) {
+	return (int)(*pParam->Callback)(pParam,MESSAGE_GETDPI,(LPARAM)pInfo,0);
+}
+inline int MsgGetSystemDPI(PluginParam *pParam) {
+	GetDPIInfo Info;
+	Info.Type=DPI_TYPE_SYSTEM;
+	Info.Flags=0;
+	return (int)(*pParam->Callback)(pParam,MESSAGE_GETDPI,(LPARAM)&Info,0);
+}
+inline int MsgGetDPIFromWindow(PluginParam *pParam,HWND hwnd,DWORD Flags=0) {
+	GetDPIInfo Info;
+	Info.Type=DPI_TYPE_WINDOW;
+	Info.Flags=Flags;
+	Info.hwnd=hwnd;
+	return (int)(*pParam->Callback)(pParam,MESSAGE_GETDPI,(LPARAM)&Info,0);
+}
+inline int MsgGetDPIFromRect(PluginParam *pParam,const RECT &Rect,DWORD Flags=0) {
+	GetDPIInfo Info;
+	Info.Type=DPI_TYPE_RECT;
+	Info.Flags=Flags;
+	Info.Rect=Rect;
+	return (int)(*pParam->Callback)(pParam,MESSAGE_GETDPI,(LPARAM)&Info,0);
+}
+inline int MsgGetDPIFromPoint(PluginParam *pParam,const POINT &Point,DWORD Flags=0) {
+	GetDPIInfo Info;
+	Info.Type=DPI_TYPE_POINT;
+	Info.Flags=Flags;
+	Info.Point=Point;
+	return (int)(*pParam->Callback)(pParam,MESSAGE_GETDPI,(LPARAM)&Info,0);
+}
+inline int MsgGetDPIFromPoint(PluginParam *pParam,LONG x,LONG y,DWORD Flags=0) {
+	POINT pt;
+	pt.x=x;
+	pt.y=y;
+	return MsgGetDPIFromPoint(pParam,pt,Flags);
+}
+inline int MsgGetDPIFromMonitor(PluginParam *pParam,HMONITOR hMonitor,DWORD Flags=0) {
+	GetDPIInfo Info;
+	Info.Type=DPI_TYPE_MONITOR;
+	Info.Flags=Flags;
+	Info.hMonitor=hMonitor;
+	return (int)(*pParam->Callback)(pParam,MESSAGE_GETDPI,(LPARAM)&Info,0);
+}
+
+// フォント取得の情報
+struct GetFontInfo {
+	DWORD Size;			// 構造体のサイズ
+	DWORD Flags;		// フラグ(現在は常に0)
+	LPCWSTR pszName;	// 取得するフォントの指定
+	LOGFONTW LogFont;	// 取得したフォント
+	int DPI;			// DPI の指定(0で指定なし)
+};
+
+// フォントを取得する
+// 以下のフォントが取得できます。
+/*
+	OSDFont           OSD のフォント
+	PanelFont         パネルのフォント
+	ProgramGuideFont  番組表のフォント
+	StatusBarFont     ステータスバーのフォント
+*/
+inline bool MsgGetFont(PluginParam *pParam,GetFontInfo *pInfo) {
+	return (int)(*pParam->Callback)(pParam,MESSAGE_GETFONT,(LPARAM)pInfo,0)!=FALSE;
+}
+inline bool MsgGetFont(PluginParam *pParam,LPCWSTR pszName,LOGFONTW *pLogFont,int DPI=0) {
+	GetFontInfo Info;
+	Info.Size=sizeof(GetFontInfo);
+	Info.Flags=0;
+	Info.pszName=pszName;
+	Info.DPI=DPI;
+	if (!MsgGetFont(pParam,&Info))
+		return false;
+	*pLogFont=Info.LogFont;
+	return true;
+}
+
+// ダイアログのメッセージ処理関数
+typedef INT_PTR (CALLBACK *DialogMessageFunc)(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam,void *pClientData);
+
+// ダイアログ表示の情報
+struct ShowDialogInfo {
+	DWORD Size;						// 構造体のサイズ
+	DWORD Flags;					// フラグ(SHOW_DIALOG_FLAG_*)
+	HINSTANCE hinst;				// ダイアログテンプレートのインスタンス
+	LPCWSTR pszTemplate;			// ダイアログテンプレート
+	DialogMessageFunc pMessageFunc;	// メッセージ処理関数
+	void *pClientData;				// メッセージ処理関数に渡すパラメータ
+	HWND hwndOwner;					// オーナーウィンドウのハンドル
+	POINT Position;					// ダイアログの位置(Flags に SHOW_DIALOG_FLAG_POSITION が指定されている場合に有効)
+};
+
+enum {
+	SHOW_DIALOG_FLAG_MODELESS = 0x00000001U,	// モードレス
+	SHOW_DIALOG_FLAG_POSITION = 0x00000002U		// 位置指定が有効
+};
+
+// ダイアログを表示する
+// DialogBox / CreateDialog などの代わりに MsgShowDialog を利用すると、
+// DPI に応じたスケーリングなどが自動的に行われます。
+// Flags に SHOW_DIALOG_FLAG_MODELESS を指定するとモードレスダイアログが作成され、
+// ダイアログのウィンドウハンドルが返ります。
+// 指定しない場合はモーダルダイアログが作成され、EndDialog で指定された値が返ります。
+inline INT_PTR MsgShowDialog(PluginParam *pParam,ShowDialogInfo *pInfo) {
+	return (*pParam->Callback)(pParam,MESSAGE_SHOWDIALOG,(LPARAM)pInfo,0);
 }
 
 #endif	// TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,14)
@@ -3123,16 +3190,6 @@ public:
 	}
 #endif
 #if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,8)
-	bool GetBCasInfo(BCasInfo *pInfo) {
-		pInfo->Size=sizeof(BCasInfo);
-		return MsgGetBCasInfo(m_pParam,pInfo);
-	}
-	bool SendBCasCommand(BCasCommandInfo *pInfo) {
-		return MsgSendBCasCommand(m_pParam,pInfo);
-	}
-	bool SendBCasCommand(const BYTE *pSendData,DWORD SendSize,BYTE *pReceiveData,DWORD *pReceiveSize) {
-		return MsgSendBCasCommand(m_pParam,pSendData,SendSize,pReceiveData,pReceiveSize);
-	}
 	bool GetHostInfo(HostInfo *pInfo) {
 		pInfo->Size=sizeof(HostInfo);
 		return MsgGetHostInfo(m_pParam,pInfo);
@@ -3229,21 +3286,21 @@ public:
 		pInfo->Size=sizeof(StyleValueInfo);
 		return MsgGetStyleValue(m_pParam,pInfo);
 	}
-	bool GetStyleValue(LPCWSTR pszName,int Unit,int *pValue) {
-		return MsgGetStyleValue(m_pParam,pszName,Unit,pValue);
+	bool GetStyleValue(LPCWSTR pszName,int Unit,int DPI,int *pValue) {
+		return MsgGetStyleValue(m_pParam,pszName,Unit,DPI,pValue);
 	}
 	bool GetStyleValue(LPCWSTR pszName,int *pValue) {
 		return MsgGetStyleValue(m_pParam,pszName,pValue);
 	}
-	bool GetStyleValuePixels(LPCWSTR pszName,int *pValue) {
-		return MsgGetStyleValuePixels(m_pParam,pszName,pValue);
+	bool GetStyleValuePixels(LPCWSTR pszName,int DPI,int *pValue) {
+		return MsgGetStyleValuePixels(m_pParam,pszName,DPI,pValue);
 	}
 	bool ThemeDrawBackground(ThemeDrawBackgroundInfo *pInfo) {
 		pInfo->Size=sizeof(ThemeDrawBackgroundInfo);
 		return MsgThemeDrawBackground(m_pParam,pInfo);
 	}
-	bool ThemeDrawBackground(LPCWSTR pszStyle,HDC hdc,const RECT &DrawRect) {
-		return MsgThemeDrawBackground(m_pParam,pszStyle,hdc,DrawRect);
+	bool ThemeDrawBackground(LPCWSTR pszStyle,HDC hdc,const RECT &DrawRect,int DPI=0) {
+		return MsgThemeDrawBackground(m_pParam,pszStyle,hdc,DrawRect,DPI);
 	}
 	bool ThemeDrawText(ThemeDrawTextInfo *pInfo) {
 		pInfo->Size=sizeof(ThemeDrawTextInfo);
@@ -3350,6 +3407,38 @@ public:
 	}
 	bool Set1SegMode(bool f1SegMode) {
 		return MsgSet1SegMode(m_pParam,f1SegMode);
+	}
+	int GetDPI(GetDPIInfo *pInfo) {
+		return MsgGetDPI(m_pParam,pInfo);
+	}
+	int GetSystemDPI() {
+		return MsgGetSystemDPI(m_pParam);
+	}
+	int GetDPIFromWindow(HWND hwnd,DWORD Flags=0) {
+		return MsgGetDPIFromWindow(m_pParam,hwnd,Flags);
+	}
+	int GetDPIFromRect(const RECT &Rect,DWORD Flags=0) {
+		return MsgGetDPIFromRect(m_pParam,Rect,Flags);
+	}
+	int GetDPIFromPoint(const POINT &Point,DWORD Flags=0) {
+		return MsgGetDPIFromPoint(m_pParam,Point,Flags);
+	}
+	int GetDPIFromPoint(LONG x,LONG y,DWORD Flags=0) {
+		return MsgGetDPIFromPoint(m_pParam,x,y,Flags);
+	}
+	int GetDPIFromMonitor(HMONITOR hMonitor,DWORD Flags=0) {
+		return MsgGetDPIFromMonitor(m_pParam,hMonitor,Flags);
+	}
+	bool GetFont(GetFontInfo *pInfo) {
+		pInfo->Size=sizeof(GetFontInfo);
+		return MsgGetFont(m_pParam,pInfo);
+	}
+	bool GetFont(LPCWSTR pszName,LOGFONTW *pLogFont,int DPI=0) {
+		return MsgGetFont(m_pParam,pszName,pLogFont,DPI);
+	}
+	INT_PTR ShowDialog(ShowDialogInfo *pInfo) {
+		pInfo->Size=sizeof(ShowDialogInfo);
+		return MsgShowDialog(m_pParam,pInfo);
 	}
 #endif
 };
