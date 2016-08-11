@@ -1872,7 +1872,7 @@ void CTvtPlay::SetWidthPositionItem()
             TVTest::StatusItemGetInfo info;
             info.Mask = TVTest::STATUS_ITEM_GET_INFO_MASK_HWND;
             info.ID = 1;
-            if (m_pApp->GetSetting(L"StatusBarFont", &font) && m_pApp->GetStatusItemInfo(&info)) {
+            if (m_pApp->GetFont(L"StatusBarFont", &font) && m_pApp->GetStatusItemInfo(&info)) {
                 pItem->SetWidth(pPosItem->CalcSuitableWidth(info.hwnd, font));
             }
         }
@@ -1997,7 +1997,7 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
                     pThis->m_pApp->ThemeDrawBackground(L"status-bar.item.hot", pInfo->hdc, rc);
                 }
                 LOGFONT font;
-                if (pThis->m_pApp->GetSetting(L"StatusBarFont", &font)) {
+                if (pThis->m_pApp->GetFont(L"StatusBarFont", &font)) {
                     pThis->m_statusView.Draw(pInfo->hdc, pInfo->ItemRect, font,
                                              pThis->m_pApp->GetColor(L"StatusText"), pThis->m_pApp->GetColor(L"StatusBack"),
                                              pThis->m_pApp->GetColor(L"StatusHighlightText"), pThis->m_pApp->GetColor(L"StatusHighlightBack"));
