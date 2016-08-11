@@ -27,7 +27,7 @@
 #include "resource.h"
 #include "TvtPlayUtil.h"
 #define TVTEST_PLUGIN_CLASS_IMPLEMENT
-#define TVTEST_PLUGIN_VERSION TVTEST_PLUGIN_VERSION_(0,0,13)
+#define TVTEST_PLUGIN_VERSION TVTEST_PLUGIN_VERSION_(0,0,14)
 #include "TVTestPlugin.h"
 #include "TvtPlay.h"
 
@@ -510,12 +510,7 @@ void CTvtPlay::LoadTVTestSettings()
     }
     else {
         // 可能ならAPIでフォント設定を取得する
-        TVTest::SettingInfo settingInfo;
-        settingInfo.pszName = TEXT("StatusBarFont");
-        settingInfo.Type = TVTest::SETTING_TYPE_DATA;
-        settingInfo.Value.pData = &logFont;
-        settingInfo.ValueSize = sizeof(logFont);
-        fFontLoaded = m_pApp->GetSetting(&settingInfo);
+        fFontLoaded = m_pApp->GetFont(TEXT("StatusBarFont"), &logFont) || m_pApp->GetSetting(TEXT("StatusBarFont"), &logFont);
     }
     ::GetPrivateProfileString(TEXT("ColorScheme"), TEXT("Name"), TEXT("!"), val, _countof(val), m_szIniFileName);
     if (val[0] != TEXT('!')) {
