@@ -178,16 +178,12 @@ CTsSender::CTsSender()
     , m_initStore(INITIAL_STORE_MSEC)
     , m_fSpecialExtending(false)
     , m_specialExtendInitRate(0)
-    , m_adjState(0)
     , m_adjBaseTick(0)
-    , m_adjHoldTick(0)
-    , m_adjAmount(0)
-    , m_adjDelta(0)
+    , m_adjFreq(0)
+    , m_adjBase(0)
 {
     m_udpAddr[0] = 0;
     m_pipeName[0] = 0;
-    m_liAdjFreq.QuadPart = 0;
-    m_liAdjBase.QuadPart = 0;
 }
 
 
@@ -251,7 +247,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     m_totBase = -1;
 
     // QueryPerformanceCounterによるTickカウント補正をするかどうか
-    m_adjState = fUseQpc ? 1 : 0;
+    m_adjFreq = fUseQpc ? -1 : 0;
 
     // 初期状態はポーズのほうが都合がよいため
     m_fPause = true;
@@ -334,15 +330,16 @@ ERROR_EXIT:
 // Tickカウント補正の初期設定をする
 void CTsSender::SetupQpc()
 {
-    if (m_adjState == 1) {
+    if (m_adjFreq < 0) {
         // msdnの推奨に従って現在スレッドのプロセッサ固定
         ::SetThreadAffinityMask(::GetCurrentThread(), 1);
-        if (::QueryPerformanceFrequency(&m_liAdjFreq) &&
-            ::QueryPerformanceCounter(&m_liAdjBase))
+        LARGE_INTEGER liFreq, liBase;
+        if (::QueryPerformanceFrequency(&liFreq) &&
+            ::QueryPerformanceCounter(&liBase))
         {
-            m_adjBaseTick = m_adjHoldTick = GetAdjTickCount();
-            m_adjAmount = m_adjDelta = 0;
-            m_adjState = 2;
+            m_adjBaseTick = GetAdjTickCount();
+            m_adjFreq = liFreq.QuadPart;
+            m_adjBase = liBase.QuadPart;
         }
     }
 }
@@ -750,34 +747,11 @@ int CTsSender::GetRate() const
 // 補正済みのTickカウントを取得する
 DWORD CTsSender::GetAdjTickCount()
 {
-    DWORD tick = ::GetTickCount();
-    if (m_adjState != 2) return tick;
-
-    if (!m_adjDelta) {
-        if (tick - m_adjHoldTick >= ADJUST_TICK_INTERVAL) {
-            LARGE_INTEGER liNow;
-            if (::QueryPerformanceCounter(&liNow)) {
-                LONGLONG llDiff = (liNow.QuadPart - m_liAdjBase.QuadPart) * 1000 / m_liAdjFreq.QuadPart;
-                m_adjDelta = (static_cast<DWORD>(llDiff) - (tick - m_adjBaseTick)) - m_adjAmount;
-            }
-            m_adjHoldTick = tick;
-        }
+    LARGE_INTEGER liNow;
+    if (m_adjFreq > 0 && ::QueryPerformanceCounter(&liNow)) {
+        return m_adjBaseTick + static_cast<DWORD>((liNow.QuadPart - m_adjBase) * 1000 / m_adjFreq);
     }
-    if (m_adjDelta) {
-        // 巻き戻り防止
-        if (!MSB(tick + m_adjDelta - m_adjHoldTick)) {
-            m_adjAmount += m_adjDelta;
-            m_adjDelta = 0;
-        }
-    }
-    DWORD adjTick = (m_adjDelta ? m_adjHoldTick : tick) + m_adjAmount;
-#if 0
-    static DWORD last;
-    // 2回目以降のOpen()時には必ずしも成立しない
-    ASSERT(!last || !MSB(adjTick - last));
-    last = adjTick;
-#endif
-    return adjTick;
+    return ::GetTickCount();
 }
 
 

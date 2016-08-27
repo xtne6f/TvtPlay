@@ -31,7 +31,6 @@ class CTsSender
     static const int TS_SUPPOSED_RATE = 2 * 1024 * 1024;
     static const int PCR_PIDS_MAX = 8;
     static const int RESYNC_FAILURE_LIMIT = 2;
-    static const int ADJUST_TICK_INTERVAL = 10000;
     static const int RENEW_SIZE_INTERVAL = 3000;
     static const int RENEW_FSR_INTERVAL = 1000;
     static const int INITIAL_STORE_MSEC = 500;
@@ -109,9 +108,8 @@ private:
     bool m_fSpecialExtending;
     int m_specialExtendInitRate;
 
-    int m_adjState;
-    DWORD m_adjBaseTick, m_adjHoldTick, m_adjAmount, m_adjDelta;
-    LARGE_INTEGER m_liAdjFreq, m_liAdjBase;
+    DWORD m_adjBaseTick;
+    __int64 m_adjFreq, m_adjBase;
 };
 
 #endif // INCLUDE_TS_SENDER_H
