@@ -105,10 +105,6 @@ bool CPlaylist::MoveCurrentToNext()
     return false;
 }
 
-struct PLAY_INFO_COMPARE {
-    bool operator()(const CPlaylist::PLAY_INFO *l, const CPlaylist::PLAY_INFO *r) const { return ::lstrcmpi(l->path, r->path) < 0; }
-};
-
 // ソートまたはシャッフルする
 void CPlaylist::Sort(SORT_MODE mode)
 {
@@ -118,7 +114,7 @@ void CPlaylist::Sort(SORT_MODE mode)
         sortList.push_back(&swapList[i]);
     }
     if (mode == SORT_ASC || mode == SORT_DESC) {
-        std::sort(sortList.begin(), sortList.end(), PLAY_INFO_COMPARE());
+        std::sort(sortList.begin(), sortList.end(), [](const PLAY_INFO *a, const PLAY_INFO *b) { return ::lstrcmpi(a->path, b->path) < 0; });
     }
     else if (mode == SORT_SHUFFLE) {
         std::srand(::GetTickCount());

@@ -356,7 +356,7 @@ bool CChapterMap::InsertOgmStyleCommand(LPCTSTR p)
     // CHAPTER02=HH:MM:SS.sss
     // CHAPTER02NAME=another chapter
     m_map.clear();
-    TCHAR idStr[32] = {0};
+    TCHAR idStr[32] = {};
     std::pair<int, CHAPTER> ch;
     std::vector<TCHAR> line;
     while (*p) {

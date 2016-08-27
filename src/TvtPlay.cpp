@@ -821,7 +821,7 @@ bool CTvtPlay::InitializePlugin()
                                     cmdID[0] == ID_COMMAND_STRETCH_POPUP) ? &iconL : &iconS;
         HBITMAP hbmOld = SelectBitmap(hdcMem, pIcon->GetHandle());
 
-        RGBQUAD rgbq[2] = {0};
+        RGBQUAD rgbq[2] = {};
         rgbq[1].rgbBlue = rgbq[1].rgbGreen = rgbq[1].rgbRed = 255;
         ::SetDIBColorTable(hdcMem, 0, 2, rgbq);
 
@@ -1044,7 +1044,7 @@ bool CTvtPlay::OpenWithDialog()
     if (!hwndOwner) hwndOwner = m_pApp->GetAppWindow();
     std::vector<TCHAR> bufFile(32768, TEXT('\0'));
 
-    OPENFILENAME ofn = {0};
+    OPENFILENAME ofn = {};
     ofn.lStructSize = sizeof(OPENFILENAME);
     ofn.hwndOwner   = hwndOwner;
     ofn.lpstrFilter = TEXT("再生可能なメディア(*.ts;*.m2t;*.m2ts;*.m3u;*.tslist)\0*.ts;*.m2t;*.m2ts;*.m3u;*.tslist\0すべてのファイル\0*.*\0");
@@ -1083,10 +1083,6 @@ bool CTvtPlay::OpenWithDialog()
 }
 
 
-struct LPTSTR_COMPARE {
-    bool operator()(LPCTSTR l, LPCTSTR r) const { return ::lstrcmpi(l, r) < 0; }
-};
-
 // ポップアップメニュー選択でファイルを開く
 bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
 {
@@ -1119,7 +1115,7 @@ bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
     // ファイル名を昇順or降順ソート
     std::vector<LPCTSTR> nameList(listSize);
     for (int i = 0; i < listSize; ++i) nameList[i] = findList[i].cFileName;
-    std::sort(nameList.begin(), nameList.end(), LPTSTR_COMPARE());
+    std::sort(nameList.begin(), nameList.end(), [](LPCTSTR a, LPCTSTR b) { return ::lstrcmpi(a, b) < 0; });
     if (m_fPopupDesc) std::reverse(nameList.begin(), nameList.end());
 
     // ポップアップしない部分をとばす
@@ -1612,7 +1608,7 @@ void CTvtPlay::Close()
         ::CloseHandle(m_hThreadEvent);
         m_hThreadEvent = NULL;
 
-        HASH_INFO hashInfo = {0};
+        HASH_INFO hashInfo = {};
         hashInfo.hash = m_tsSender.GetFileHash();
         int pos = m_tsSender.GetPosition();
         // 先頭or終端から5秒の範囲はレジューム情報を記録しない
@@ -2371,7 +2367,7 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             return 0;
         case TIMER_ID_UPDATE_HASH_LIST:
             if (pThis->IsOpen()) {
-                HASH_INFO hashInfo = {0};
+                HASH_INFO hashInfo = {};
                 hashInfo.hash = pThis->m_tsSender.GetFileHash();
                 int pos = pThis->GetPosition();
                 // 先頭or終端から5秒の範囲はレジューム情報を記録しない

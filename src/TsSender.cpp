@@ -1055,7 +1055,7 @@ void CTsSender::SendData(BYTE *pData, int dataSize)
         if (!m_sock) OpenSocket();
         if (m_sock) {
             // UDP転送
-            sockaddr_in addr = {0};
+            sockaddr_in addr = {};
             addr.sin_family = AF_INET;
             addr.sin_port = htons(m_udpPort);
             addr.sin_addr.S_un.S_addr = inet_addr(m_udpAddr);
