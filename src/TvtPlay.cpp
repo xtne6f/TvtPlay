@@ -308,13 +308,13 @@ bool CTvtPlay::Initialize()
     m_pApp->RegisterCommand(COMMAND_LIST, _countof(COMMAND_LIST));
 
     // 設定に応じてコマンド数をふやす
-    TCHAR *pBuf = NewGetPrivateProfileSection(SETTINGS, m_szIniFileName);
+    std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(SETTINGS, m_szIniFileName);
     for (int i = 0; i < COMMAND_S_MAX; ++i) {
         TCHAR key[16], name[16];
         ::wsprintf(key, TEXT("Seek%c"), TEXT('A') + i);
         ::wsprintf(name, TEXT("シーク:%c"), TEXT('A') + i);
         if (!DEFAULT_SEEK_LIST[i]) {
-            if (!GetBufferedProfileInt(pBuf, key, 0)) break;
+            if (!GetBufferedProfileInt(&buf.front(), key, 0)) break;
         }
         m_pApp->RegisterCommand(ID_COMMAND_SEEK_A + i, key, name);
     }
@@ -323,7 +323,7 @@ bool CTvtPlay::Initialize()
         ::wsprintf(key, TEXT("Stretch%c"), TEXT('A') + i);
         ::wsprintf(name, TEXT("倍速:%c"), TEXT('A') + i);
         if (!DEFAULT_STRETCH_LIST[i]) {
-            if (!GetBufferedProfileInt(pBuf, key, 0)) break;
+            if (!GetBufferedProfileInt(&buf.front(), key, 0)) break;
         }
         m_pApp->RegisterCommand(ID_COMMAND_STRETCH_A + i, key, name);
     }
@@ -332,8 +332,7 @@ bool CTvtPlay::Initialize()
     m_pApp->SetEventCallback(EventCallback, this);
 
     TCHAR cmdOption[128];
-    GetBufferedProfileString(pBuf, TEXT("TvtpCmdOption"), TEXT(""), cmdOption, _countof(cmdOption));
-    delete [] pBuf;
+    GetBufferedProfileString(&buf.front(), TEXT("TvtpCmdOption"), TEXT(""), cmdOption, _countof(cmdOption));
 
     // コマンドラインで指定されていなければ設定ファイルの値を適用する
     AnalyzeCommandLine(cmdOption, false);
@@ -365,7 +364,8 @@ void CTvtPlay::LoadSettings()
 
     int iniVer = 0;
     {
-        TCHAR *pBuf = NewGetPrivateProfileSection(SETTINGS, m_szIniFileName);
+        std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(SETTINGS, m_szIniFileName);
+        LPCTSTR pBuf = &buf.front();
         iniVer              = GetBufferedProfileInt(pBuf, TEXT("Version"), 0);
         m_fAllRepeat        = GetBufferedProfileInt(pBuf, TEXT("TsRepeatAll"), 0) != 0;
         m_fSingleRepeat     = GetBufferedProfileInt(pBuf, TEXT("TsRepeatSingle"), 0) != 0;
@@ -445,7 +445,6 @@ void CTvtPlay::LoadSettings()
             GetBufferedProfileString(pBuf, key, DEFAULT_BUTTON_LIST[j] ? DEFAULT_BUTTON_LIST[j++] : TEXT(""),
                                      m_buttonList[i], _countof(m_buttonList[0]));
         }
-        delete [] pBuf;
     }
 
     m_fSettingsLoaded = true;
@@ -658,9 +657,8 @@ bool CTvtPlay::LoadFileInfoSetting(std::list<HASH_INFO> &hashList) const
     hashList.clear();
     if (!m_fSettingsLoaded || m_hashListMax <= 0) return false;
 
-    TCHAR *pBuf = NewGetPrivateProfileSection(TEXT("FileInfo"), m_szIniFileName);
-    if (!GetBufferedProfileInt(pBuf, TEXT("Enabled"), 0)) {
-        delete [] pBuf;
+    std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(TEXT("FileInfo"), m_szIniFileName);
+    if (!GetBufferedProfileInt(&buf.front(), TEXT("Enabled"), 0)) {
         return false;
     }
     for (int i = 0; i < m_hashListMax; ++i) {
@@ -668,15 +666,14 @@ bool CTvtPlay::LoadFileInfoSetting(std::list<HASH_INFO> &hashList) const
         HASH_INFO hashInfo;
         TCHAR key[32], val[64];
         ::wsprintf(key, TEXT("Hash%d"), i);
-        GetBufferedProfileString(pBuf, key, TEXT(""), val, _countof(val));
+        GetBufferedProfileString(&buf.front(), key, TEXT(""), val, _countof(val));
         if (!val[0]) break;
         if (!::StrToInt64Ex(val, STIF_SUPPORT_HEX, &hashInfo.hash)) continue;
 
         ::wsprintf(key, TEXT("Resume%d"), i);
-        hashInfo.resumePos = GetBufferedProfileInt(pBuf, key, 0);
+        hashInfo.resumePos = GetBufferedProfileInt(&buf.front(), key, 0);
         hashList.push_back(hashInfo);
     }
-    delete [] pBuf;
     return true;
 }
 

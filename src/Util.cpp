@@ -30,18 +30,22 @@ BOOL ASFilterSendNotifyMessage(UINT Msg, WPARAM wParam, LPARAM lParam)
 
 
 // 必要なバッファを確保してGetPrivateProfileSection()を呼ぶ
-TCHAR *NewGetPrivateProfileSection(LPCTSTR lpAppName, LPCTSTR lpFileName)
+std::vector<TCHAR> GetPrivateProfileSectionBuffer(LPCTSTR lpAppName, LPCTSTR lpFileName)
 {
-    TCHAR *pBuf = NULL;
-    for (int bufSize = 4096; bufSize < 1024 * 1024; bufSize *= 2) {
-        delete [] pBuf;
-        pBuf = new TCHAR[bufSize];
-        if ((int)::GetPrivateProfileSection(lpAppName, pBuf, bufSize, lpFileName) < bufSize - 2) {
+    std::vector<TCHAR> buf(4096);
+    for (;;) {
+        DWORD len = GetPrivateProfileSection(lpAppName, &buf.front(), static_cast<DWORD>(buf.size()), lpFileName);
+        if (len < buf.size() - 2) {
+            buf.resize(len + 1);
             break;
         }
-        pBuf[0] = 0;
+        if (buf.size() >= 4096 * 1024) {
+            buf.assign(1, TEXT('\0'));
+            break;
+        }
+        buf.resize(buf.size() * 2);
     }
-    return pBuf;
+    return buf;
 }
 
 
@@ -95,96 +99,86 @@ int GetPrivateProfileSignedInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int nDefaul
 
 
 // UTF-16またはUTF-8テキストファイルを文字列として全て読む
-// 成功するとnewされた配列のポインタが返るので、必ずdeleteすること
-WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, bool fNoBomUseAcp)
+std::vector<WCHAR> ReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, bool fNoBomUseAcp)
 {
-    BYTE *pBuf = NULL;
-    WCHAR *pRet = NULL;
-
+    std::vector<BYTE> buf;
     HANDLE hFile = ::CreateFile(fileName, GENERIC_READ, dwShareMode,
                                 NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile == INVALID_HANDLE_VALUE) goto EXIT;
-
-    DWORD fileBytes = ::GetFileSize(hFile, NULL);
-    if (fileBytes == 0xFFFFFFFF || fileBytes >= READ_FILE_MAX_SIZE) goto EXIT;
-
-    pBuf = new BYTE[fileBytes + 2];
-    DWORD readBytes;
-    if (!::ReadFile(hFile, pBuf, fileBytes, &readBytes, NULL)) goto EXIT;
-    pBuf[readBytes] = pBuf[readBytes+1] = 0;
+    if (hFile != INVALID_HANDLE_VALUE) {
+        DWORD size = ::GetFileSize(hFile, NULL);
+        if (size != INVALID_FILE_SIZE && size < READ_FILE_MAX_SIZE) {
+            buf.resize(size + 3);
+            DWORD numRead;
+            if (size == 0 || ::ReadFile(hFile, &buf.front(), size, &numRead, NULL) && numRead == size) {
+                buf[size] = buf[size + 1] = buf[size + 2] = 0;
+            }
+            else {
+                buf.clear();
+            }
+        }
+        ::CloseHandle(hFile);
+    }
+    std::vector<WCHAR> ret;
+    if (buf.empty()) return ret;
 
     // BOM付きUTF-16LE、UTF-16BE、UTF-8、またはBOM無しを判別する
-    int codeType = pBuf[0]==0xFF && pBuf[1]==0xFE ? 1 :
-                   pBuf[0]==0xFE && pBuf[1]==0xFF ? 2 : 0;
-    int bomOffset = codeType ? 2 : pBuf[0]==0xEF && pBuf[1]==0xBB && pBuf[2]==0xBF ? 3 : 0;
-
-    // 出力サイズ算出
-    int retSize;
-    if (codeType) {
-        retSize = ::lstrlenW(reinterpret_cast<LPCWSTR>(pBuf+bomOffset)) + 1;
-    }
-    else {
-        retSize = ::MultiByteToWideChar(fNoBomUseAcp && !bomOffset ? CP_ACP : CP_UTF8, 0,
-                                        reinterpret_cast<LPCSTR>(pBuf+bomOffset), -1, NULL, 0);
-    }
-    if (retSize <= 0) goto EXIT;
+    int codeType = buf[0]==0xFF && buf[1]==0xFE ? 1 :
+                   buf[0]==0xFE && buf[1]==0xFF ? 2 : 0;
+    int bomOffset = codeType ? 2 : buf[0]==0xEF && buf[1]==0xBB && buf[2]==0xBF ? 3 : 0;
 
     // 文字コード変換
-    pRet = new WCHAR[retSize];
-    if (codeType == 1) {
-        ::lstrcpyW(pRet, reinterpret_cast<LPCWSTR>(pBuf+bomOffset));
-    }
-    else if (codeType == 2) {
-        for (int i = 0; i < retSize; ++i) {
-            pRet[i] = (pBuf[bomOffset+i*2] << 8) | pBuf[bomOffset+i*2+1];
+    if (codeType) {
+        for (size_t i = 0; ; ++i) {
+            if (!buf[bomOffset + i * 2] && !buf[bomOffset + i * 2 + 1]) {
+                ret.resize(i + 1);
+                break;
+            }
+        }
+        for (size_t i = 0; i < ret.size(); ++i) {
+            ret[i] = codeType == 1 ? buf[bomOffset + i * 2] | buf[bomOffset + i * 2 + 1] << 8
+                                   : buf[bomOffset + i * 2] << 8 | buf[bomOffset + i * 2 + 1];
         }
     }
     else {
-        if (!::MultiByteToWideChar(fNoBomUseAcp && !bomOffset ? CP_ACP : CP_UTF8, 0,
-                                   reinterpret_cast<LPCSTR>(pBuf+bomOffset), -1, pRet, retSize))
-        {
-            delete [] pRet;
-            pRet = NULL;
-            goto EXIT;
+        int retSize = ::MultiByteToWideChar(fNoBomUseAcp && !bomOffset ? CP_ACP : CP_UTF8, 0,
+                                            reinterpret_cast<LPCSTR>(&buf[bomOffset]), -1, NULL, 0);
+        if (retSize > 0) {
+            ret.resize(retSize);
+            if (!::MultiByteToWideChar(fNoBomUseAcp && !bomOffset ? CP_ACP : CP_UTF8, 0,
+                                       reinterpret_cast<LPCSTR>(&buf[bomOffset]), -1, &ret.front(), retSize))
+            {
+                ret.clear();
+            }
         }
     }
-
-EXIT:
-    if (hFile != INVALID_HANDLE_VALUE) ::CloseHandle(hFile);
-    delete [] pBuf;
-    return pRet;
+    return ret;
 }
 
 
 // 文字列をBOM付きUTF-8テキストファイルとして書き込む
 bool WriteUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, const WCHAR *pStr)
 {
-    BYTE *pBuf = NULL;
-    HANDLE hFile = INVALID_HANDLE_VALUE;
-    bool rv = false;
-
     // 出力サイズ算出
     int bufSize = ::WideCharToMultiByte(CP_UTF8, 0, pStr, -1, NULL, 0, NULL, NULL);
-    if (bufSize <= 0) goto EXIT;
+    if (bufSize <= 0) return false;
 
     // 文字コード変換(NULL文字含む)
-    pBuf = new BYTE[3 + bufSize];
-    pBuf[0] = 0xEF; pBuf[1] = 0xBB; pBuf[2] = 0xBF;
-    bufSize = ::WideCharToMultiByte(CP_UTF8, 0, pStr, -1, reinterpret_cast<LPSTR>(pBuf + 3), bufSize, NULL, NULL);
-    if (bufSize <= 0) goto EXIT;
+    std::vector<BYTE> buf(3 + bufSize);
+    buf[0] = 0xEF; buf[1] = 0xBB; buf[2] = 0xBF;
+    bufSize = ::WideCharToMultiByte(CP_UTF8, 0, pStr, -1, reinterpret_cast<LPSTR>(&buf[3]), bufSize, NULL, NULL);
+    if (bufSize <= 0) return false;
 
-    hFile = ::CreateFile(fileName, GENERIC_WRITE, dwShareMode,
-                         NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile == INVALID_HANDLE_VALUE) goto EXIT;
+    HANDLE hFile = ::CreateFile(fileName, GENERIC_WRITE, dwShareMode,
+                                NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return false;
 
     DWORD written;
-    if (!::WriteFile(hFile, pBuf, bufSize + 3 - 1, &written, NULL)) goto EXIT;
-
-    rv = true;
-EXIT:
-    if (hFile != INVALID_HANDLE_VALUE) ::CloseHandle(hFile);
-    delete [] pBuf;
-    return rv;
+    if (!::WriteFile(hFile, &buf.front(), bufSize + 3 - 1, &written, NULL)) {
+        ::CloseHandle(hFile);
+        return false;
+    }
+    ::CloseHandle(hFile);
+    return true;
 }
 
 

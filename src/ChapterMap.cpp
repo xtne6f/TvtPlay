@@ -87,10 +87,9 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
     if (chReadPath) {
         // 中身がチャプターコマンド仕様に従っている場合のみ書き込み可能(m_fWritable)
         for (int i = 0; i < RETRY_LIMIT; ++i) {
-            TCHAR *pCmd = NewReadUtfFileToEnd(chReadPath, FILE_SHARE_READ);
-            if (pCmd) {
-                m_fWritable = InsertCommand(pCmd);
-                delete [] pCmd;
+            std::vector<WCHAR> cmd = ReadUtfFileToEnd(chReadPath, FILE_SHARE_READ);
+            if (!cmd.empty()) {
+                m_fWritable = InsertCommand(&cmd.front());
                 break;
             }
             ::Sleep(200);
@@ -118,10 +117,9 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
                               ogm2Path[0] && ::PathFileExists(ogm2Path) ? ogm2Path : NULL;
         if (ogmReadPath) {
             // BOMがなければANSIコードページで読む
-            TCHAR *pCmd = NewReadUtfFileToEnd(ogmReadPath, FILE_SHARE_READ, true);
-            if (pCmd) {
-                InsertOgmStyleCommand(pCmd);
-                delete [] pCmd;
+            std::vector<WCHAR> cmd = ReadUtfFileToEnd(ogmReadPath, FILE_SHARE_READ, true);
+            if (!cmd.empty()) {
+                InsertOgmStyleCommand(&cmd.front());
             }
         }
         else {
@@ -217,10 +215,9 @@ bool CChapterMap::Sync()
             m_retryCount = 0;
             return true;
         }
-        TCHAR *pCmd = NewReadUtfFileToEnd(m_path, FILE_SHARE_READ);
-        if (pCmd) {
-            InsertCommand(pCmd);
-            delete [] pCmd;
+        std::vector<WCHAR> cmd = ReadUtfFileToEnd(m_path, FILE_SHARE_READ);
+        if (!cmd.empty()) {
+            InsertCommand(&cmd.front());
             m_retryCount = 0;
             return true;
         }

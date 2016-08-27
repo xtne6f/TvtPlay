@@ -39,14 +39,14 @@ int CPlaylist::PushBackListOrFile(LPCTSTR path, bool fMovePos)
 int CPlaylist::PushBackList(LPCTSTR fullPath)
 {
     int pos = -1;
-    TCHAR *pRet = NewReadUtfFileToEnd(fullPath, FILE_SHARE_READ);
-    if (pRet) {
+    std::vector<WCHAR> ret = ReadUtfFileToEnd(fullPath, FILE_SHARE_READ);
+    if (!ret.empty()) {
         // 相対パスとの結合用
         TCHAR dirName[MAX_PATH];
         ::lstrcpyn(dirName, fullPath, _countof(dirName));
         ::PathRemoveFileSpec(dirName);
 
-        for (TCHAR *p = pRet; *p;) {
+        for (TCHAR *p = &ret.front(); *p;) {
             // 1行取得してpを進める
             TCHAR line[512];
             int len = ::StrCSpn(p, TEXT("\r\n"));
@@ -79,7 +79,6 @@ int CPlaylist::PushBackList(LPCTSTR fullPath)
                 }
             }
         }
-        delete [] pRet;
     }
     return pos;
 }
