@@ -13,7 +13,6 @@
 #include "Settings.h"
 #include "ColorScheme.h"
 #include "StatusView.h"
-#include "AsyncFileReader.h"
 #include "TsSender.h"
 #include "Playlist.h"
 #include "ChapterMap.h"

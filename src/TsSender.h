@@ -1,6 +1,9 @@
 ﻿#ifndef INCLUDE_TS_SENDER_H
 #define INCLUDE_TS_SENDER_H
 
+#include "BufferedFileReader.h"
+#include <memory>
+
 #define BON_PIPE_MESSAGE_MAX  128
 
 class CTsTimestampShifter
@@ -52,7 +55,7 @@ public:
     bool Seek(int msec);
     void Pause(bool fPause, bool fPurge = true);
     void SetSpeed(int num, int den);
-    bool IsOpen() const { return m_file.IsOpen(); }
+    bool IsOpen() const { return m_file != NULL; }
     bool IsPaused() const { return m_fPause; }
     bool IsFixed(bool *pfSpecialExt = NULL) const { if (pfSpecialExt) *pfSpecialExt=m_fSpecialExtending; return m_fFixed; }
     void GetSpeed(int *pNum, int *pDen) const { *pNum=m_speedNum; *pDen=m_speedDen; }
@@ -65,7 +68,7 @@ private:
     DWORD GetAdjTickCount();
     int ReadToPcr(int limit, bool fSend, bool fSyncRead);
     void RotateBuffer(bool fSend, bool fSyncRead);
-    bool Seek(__int64 distanceToMove, DWORD dwMoveMethod);
+    bool Seek(__int64 distanceToMove, IReadOnlyFile::MOVE_METHOD moveMethod);
     bool SeekToBoundary(__int64 predicted, __int64 range, BYTE *pWork, int workSize);
     void OpenSocket();
     void CloseSocket();
@@ -76,7 +79,8 @@ private:
     int TransactMessage(LPCTSTR request, LPTSTR reply = NULL);
     static DWORD DiffPcr(DWORD a, DWORD b) { return ((a-b)&0x80000000) && b-a<PCR_LAP_THRESHOLD ? 0 : a-b; }
 
-    CAsyncFileReader m_file;
+    std::unique_ptr<IReadOnlyFile> m_file;
+    CBufferedFileReader m_reader;
     BYTE *m_curr, *m_head, *m_tail;
     int m_unitSize;
     bool m_fTrimPacket, m_fUnderrunCtrl;

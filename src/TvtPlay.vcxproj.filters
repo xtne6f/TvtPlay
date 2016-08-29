@@ -69,10 +69,13 @@
     <ClInclude Include="TvtPlayUtil.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="AsyncFileReader.h">
+    <ClInclude Include="CaptionAnalyzer.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="CaptionAnalyzer.h">
+    <ClInclude Include="ReadOnlyFile.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="BufferedFileReader.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
   </ItemGroup>
@@ -119,10 +122,13 @@
     <ClCompile Include="TvtPlayUtil.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="AsyncFileReader.cpp">
+    <ClCompile Include="CaptionAnalyzer.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="CaptionAnalyzer.cpp">
+    <ClCompile Include="ReadOnlyFile.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="BufferedFileReader.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
   </ItemGroup>
