@@ -273,7 +273,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
             // ファイル末尾が正常である場合
             m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 1000 * sec;
             m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) +
-                         (int)((long long)TS_SUPPOSED_RATE * sec / GetRate());
+                         (int)((long long)TS_SUPPOSED_RATE * 1000 * sec / GetRate());
             break;
         }
     }
