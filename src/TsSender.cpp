@@ -1,5 +1,7 @@
 ﻿#include <WinSock2.h>
 #include <Windows.h>
+#include <Shlwapi.h>
+#include "ReadOnlyMpeg4File.h"
 #include "Util.h"
 #include "TsSender.h"
 
@@ -196,17 +198,28 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
 {
     Close();
 
-    // まず読み込み共有で開いてみる
-    m_file.reset(new CReadOnlyLocalFile());
-    m_fShareWrite = false;
-    m_fFixed = true;
-    if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL)) {
-        // 録画中かもしれない。書き込み共有で開く
-        m_fShareWrite = true;
-        m_fFixed = false;
-        if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL | IReadOnlyFile::OPEN_FLAG_SHARE_WRITE)) {
+    if (!::lstrcmpi(::PathFindExtension(path), TEXT(".mp4"))) {
+        m_file.reset(new CReadOnlyMpeg4File());
+        m_fShareWrite = false;
+        m_fFixed = true;
+        if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL)) {
             m_file.reset();
             return false;
+        }
+    }
+    if (m_file == NULL) {
+        // まず読み込み共有で開いてみる
+        m_file.reset(new CReadOnlyLocalFile());
+        m_fShareWrite = false;
+        m_fFixed = true;
+        if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL)) {
+            // 録画中かもしれない。書き込み共有で開く
+            m_fShareWrite = true;
+            m_fFixed = false;
+            if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL | IReadOnlyFile::OPEN_FLAG_SHARE_WRITE)) {
+                m_file.reset();
+                return false;
+            }
         }
     }
     m_reader.SetFile(m_file.get(), m_fFixed);
