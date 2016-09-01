@@ -41,9 +41,9 @@ private:
     static size_t CreatePmt(BYTE *data, WORD sid);
     static size_t CreateHeader(BYTE *data, BYTE unitStart, BYTE adaptation, BYTE counter, WORD pid);
     static size_t CreatePcrAdaptation(BYTE *data, DWORD pcr45khz);
-    static size_t CreatePesHeader(BYTE *data, BYTE streamID, WORD packetLength, DWORD pts45khz);
+    static size_t CreatePesHeader(BYTE *data, BYTE streamID, WORD packetLength, DWORD pts45khz, BYTE stuffingSize);
     static size_t CreateAdtsHeader(BYTE *data, int profile, int freq, int ch, int bufferSize);
-    static size_t NalFileToByte(std::vector<BYTE> &data);
+    static size_t NalFileToByte(std::vector<BYTE> &data, bool &fIdr);
     static DWORD CalcCrc32(const BYTE *data, size_t len, DWORD crc = 0xFFFFFFFF);
 
     HANDLE m_hFile;

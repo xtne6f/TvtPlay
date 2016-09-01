@@ -347,8 +347,8 @@ bool CReadOnlyMpeg4File::InitializeBlockList()
             }
             int n = ReadSample(indexV, m_stsoV, m_stszV, NULL);
             if (n > 0) {
-                // SPS + PPS
-                n += static_cast<int>(m_spsPps.size());
+                // (AUD or stuffing) + SPS + PPS
+                n += 6 + static_cast<int>(m_spsPps.size());
                 // PES header
                 n += 14;
             }
@@ -445,13 +445,28 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
         }
         int n = ReadSample(indexV, m_stsoV, m_stszV, &sample);
         if (n > 0) {
-            size_t firstAudTail = NalFileToByte(sample);
+            bool fIdr;
+            size_t firstAudTail = NalFileToByte(sample, fIdr);
             // SPS + PPS
             sample.insert(sample.begin() + firstAudTail, m_spsPps.begin(), m_spsPps.end());
             n += static_cast<int>(m_spsPps.size());
+            BYTE stuffingSize = 6;
+            sample.insert(sample.begin(), stuffingSize, 0xFF);
+            n += stuffingSize;
+            // AUDがないときは付加しておく(規格に厳密ではない)
+            if (firstAudTail == 0) {
+                sample[0] = 0;
+                sample[1] = 0;
+                sample[2] = 0;
+                sample[3] = 1;
+                sample[4] = 0x09;
+                sample[5] = fIdr ? 0x10 : 0x30;
+                // 帳尻合わせ
+                stuffingSize = 0;
+            }
             // PES header
             sample.insert(sample.begin(), 14, 0xFF);
-            CreatePesHeader(&sample.front(), 0xE0, 0, static_cast<DWORD>(45000 * (sampleTime + m_cttsV[indexV]) / m_timeScaleV + 45000));
+            CreatePesHeader(&sample.front(), 0xE0, 0, static_cast<DWORD>(45000 * (sampleTime + m_cttsV[indexV]) / m_timeScaleV + 45000), stuffingSize);
             n += 14;
         }
         for (int i = 0; i < n; ++counterV) {
@@ -486,7 +501,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
             sample[18] |= n >> 3 & 0xFF;
             sample[19] |= n << 5 & 0xFF;
             // PES header
-            CreatePesHeader(&sample.front(), 0xC0, (n + 8) & 0xFFFF, static_cast<DWORD>(45000 * sampleTime / m_timeScaleA + 45000));
+            CreatePesHeader(&sample.front(), 0xC0, (n + 8) & 0xFFFF, static_cast<DWORD>(45000 * sampleTime / m_timeScaleA + 45000), 0);
             n += 14;
         }
         for (int i = 0; i < n; ++counterA) {
@@ -701,7 +716,7 @@ size_t CReadOnlyMpeg4File::CreatePcrAdaptation(BYTE *data, DWORD pcr45khz)
     return 8;
 }
 
-size_t CReadOnlyMpeg4File::CreatePesHeader(BYTE *data, BYTE streamID, WORD packetLength, DWORD pts45khz)
+size_t CReadOnlyMpeg4File::CreatePesHeader(BYTE *data, BYTE streamID, WORD packetLength, DWORD pts45khz, BYTE stuffingSize)
 {
     data[0] = 0;
     data[1] = 0;
@@ -711,7 +726,7 @@ size_t CReadOnlyMpeg4File::CreatePesHeader(BYTE *data, BYTE streamID, WORD packe
     data[5] = LOBYTE(packetLength);
     data[6] = 0x84;
     data[7] = 0x80;
-    data[8] = 5;
+    data[8] = (5 + stuffingSize) & 0xFF;
     data[9] = (pts45khz >> 28 | 0x21) & 0xFF;
     data[10] = pts45khz >> 21 & 0xFF;
     data[11] = (pts45khz >> 13 | 0x01) & 0xFF;
@@ -732,8 +747,9 @@ size_t CReadOnlyMpeg4File::CreateAdtsHeader(BYTE *data, int profile, int freq, i
     return 7;
 }
 
-size_t CReadOnlyMpeg4File::NalFileToByte(std::vector<BYTE> &data)
+size_t CReadOnlyMpeg4File::NalFileToByte(std::vector<BYTE> &data, bool &fIdr)
 {
+    fIdr = false;
     size_t firstAudTail = 0;
     for (size_t i = 0; i + 3 < data.size(); ) {
         DWORD len = ArrayToDWORD(&data[i]);
@@ -744,7 +760,10 @@ size_t CReadOnlyMpeg4File::NalFileToByte(std::vector<BYTE> &data)
         if (len > data.size() - i) {
             break;
         }
-        if (firstAudTail == 0 && len >= 1 && data[i] == 0x09) {
+        if (len >= 1 && (data[i] & 0x1F) == 0x05) {
+            fIdr = true;
+        }
+        if (firstAudTail == 0 && len >= 1 && (data[i] & 0x1F) == 0x09) {
             firstAudTail = i + len;
         }
         i += len;
