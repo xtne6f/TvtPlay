@@ -466,7 +466,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
             }
             // PES header
             sample.insert(sample.begin(), 14, 0xFF);
-            CreatePesHeader(&sample.front(), 0xE0, 0, static_cast<DWORD>(45000 * (sampleTime + m_cttsV[indexV]) / m_timeScaleV + 45000), stuffingSize);
+            CreatePesHeader(&sample.front(), 0xE0, 0, static_cast<DWORD>(45000 * (sampleTime + m_cttsV[indexV]) / m_timeScaleV + 22500), stuffingSize);
             n += 14;
         }
         for (int i = 0; i < n; ++counterV) {
@@ -501,7 +501,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
             sample[18] |= n >> 3 & 0xFF;
             sample[19] |= n << 5 & 0xFF;
             // PES header
-            CreatePesHeader(&sample.front(), 0xC0, (n + 8) & 0xFFFF, static_cast<DWORD>(45000 * sampleTime / m_timeScaleA + 45000), 0);
+            CreatePesHeader(&sample.front(), 0xC0, (n + 8) & 0xFFFF, static_cast<DWORD>(45000 * sampleTime / m_timeScaleA + 22500), 0);
             n += 14;
         }
         for (int i = 0; i < n; ++counterA) {
