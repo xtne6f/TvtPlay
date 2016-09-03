@@ -94,100 +94,133 @@ __int64 CReadOnlyMpeg4File::GetSize() const
 bool CReadOnlyMpeg4File::InitializeTable()
 {
     std::vector<BYTE> buf;
-
-    if (!ReadSampleTable('0', m_stsoV, m_stszV, m_sttsV, &m_cttsV, buf) ||
-        std::find_if(m_stszV.begin(), m_stszV.end(), [](DWORD a) { return a > VIDEO_SAMPLE_MAX; }) != m_stszV.end())
-    {
-        return false;
-    }
-    m_timeScaleV = 0;
-    if (ReadBox("/moov0/trak0/mdia0/mdhd0", buf) && buf.size() == 24) {
-        if (ArrayToDWORD(&buf[0]) == 0) {
-            m_timeScaleV = ArrayToDWORD(&buf[12]);
+    bool fVideo = false;
+    bool fAudio = false;
+    char path[] = "/moov0/trak0/mdia0/mdhd0";
+    for (char i = '0'; i <= '9' && (!fVideo || !fAudio); ++i, ++path[11]) {
+        DWORD timeScale = 0;
+        if (ReadBox(path, buf) && buf.size() == 24) {
+            if (ArrayToDWORD(&buf[0]) == 0) {
+                timeScale = ArrayToDWORD(&buf[12]);
+            }
         }
-    }
-    m_spsPps.clear();
-    if (ReadBox("/moov0/trak0/mdia0/minf0/stbl0/stsd0", buf) && buf.size() >= 110) {
-        if (ArrayToDWORD(&buf[0]) == 0 &&
-            ArrayToDWORD(&buf[4]) == 1 &&
-            ArrayToDWORD(&buf[8]) >= 102 && // Sample description size
-            ArrayToDWORD(&buf[12]) == 0x61766331 && // Data format == "avc1"
-            ArrayToDWORD(&buf[98]) == 0x61766343 && // Type == "avcC" (TODO: Atomとしてパースすべき)
-            ArrayToDWORD(&buf[94]) >= 16 &&
-            (buf[107] & 0x1F) == 1)
-        {
-            size_t spsLen = MAKEWORD(buf[109], buf[108]);
-            if (112 + spsLen < buf.size() && buf[110 + spsLen] == 1) {
-                size_t ppsLen = MAKEWORD(buf[112 + spsLen], buf[111 + spsLen]);
-                if (112 + spsLen + ppsLen < buf.size()) {
-                    m_spsPps.insert(m_spsPps.end(), 3, 0);
-                    m_spsPps.push_back(1);
-                    m_spsPps.insert(m_spsPps.end(), buf.begin() + 110, buf.begin() + 110 + spsLen);
-                    m_spsPps.insert(m_spsPps.end(), 3, 0);
-                    m_spsPps.push_back(1);
-                    m_spsPps.insert(m_spsPps.end(), buf.begin() + 113 + spsLen, buf.begin() + 113 + spsLen + ppsLen);
-                }
+        if (timeScale != 0) {
+            if (!fVideo && ReadVideoSampleDesc(i, m_spsPps, buf)) {
+                m_timeScaleV = timeScale;
+                fVideo = ReadSampleTable(i, m_stsoV, m_stszV, m_sttsV, &m_cttsV, buf) &&
+                         std::find_if(m_stszV.begin(), m_stszV.end(), [](DWORD a) { return a > VIDEO_SAMPLE_MAX; }) == m_stszV.end();
+            }
+            else if (!fAudio && ReadAudioSampleDesc(i, m_adtsHeader, buf)) {
+                m_timeScaleA = timeScale;
+                fAudio = ReadSampleTable(i, m_stsoA, m_stszA, m_sttsA, NULL, buf) &&
+                         std::find_if(m_stszA.begin(), m_stszA.end(), [](DWORD a) { return a > AUDIO_SAMPLE_MAX; }) == m_stszA.end();
             }
         }
     }
-    if (m_timeScaleV == 0 || m_spsPps.empty()) {
-        return false;
-    }
+    return fVideo && fAudio && InitializeBlockList();
+}
 
-    if (!ReadSampleTable('1', m_stsoA, m_stszA, m_sttsA, NULL, buf) ||
-        std::find_if(m_stszA.begin(), m_stszA.end(), [](DWORD a) { return a > AUDIO_SAMPLE_MAX; }) != m_stszA.end())
-    {
-        return false;
-    }
-    m_timeScaleA = 0;
-    if (ReadBox("/moov0/trak1/mdia0/mdhd0", buf) && buf.size() == 24) {
-        if (ArrayToDWORD(&buf[0]) == 0) {
-            m_timeScaleA = ArrayToDWORD(&buf[12]);
-        }
-    }
-    bool fAdtsHeader = false;
-    if (ReadBox("/moov0/trak1/mdia0/minf0/stbl0/stsd0", buf) && buf.size() >= 58) {
+bool CReadOnlyMpeg4File::ReadVideoSampleDesc(char index, std::vector<BYTE> &spsPps, std::vector<BYTE> &buf) const
+{
+    char path[] = "/moov0/trak?/mdia0/minf0/stbl0/stsd0";
+    path[11] = index;
+    if (ReadBox(path, buf) && buf.size() >= 16) {
+        size_t boxLen = ArrayToDWORD(&buf[8]);
         if (ArrayToDWORD(&buf[0]) == 0 &&
             ArrayToDWORD(&buf[4]) == 1 &&
-            ArrayToDWORD(&buf[8]) >= 50 && // Sample description size
-            ArrayToDWORD(&buf[12]) == 0x6D703461 && // Data format == "mp4a"
-            ArrayToDWORD(&buf[48]) == 0x65736473 && // Type == "esds" (TODO: Atomとしてパースすべき)
-            ArrayToDWORD(&buf[44]) >= 14)
+            ArrayToDWORD(&buf[12]) == 0x61766331 && // Data format == "avc1"
+            boxLen >= 86 && // Sample description size
+            boxLen <= buf.size() - 8)
         {
-            // 番兵
-            buf.push_back(0);
-            size_t i = 56;
-            if (buf[i] == 0x03) {
-                // ES (TODO: 仕様未確認なので想像)
-                i += !(buf[i + 1] & 0x80) ? 2 : !(buf[i + 2] & 0x80) ? 3 : !(buf[i + 3] & 0x80) ? 4 : 5;
-                i += 3;
-                if (i + 1 < buf.size() && buf[i] == 0x04) {
-                    // DecoderConfig
-                    i += !(buf[i + 1] & 0x80) ? 2 : !(buf[i + 2] & 0x80) ? 3 : !(buf[i + 3] & 0x80) ? 4 : 5;
-                    if (i + 4 < buf.size() - 1) {
-                        int bufferSize = MAKEWORD(buf[i + 4], buf[i + 3]);
-                        i += 13;
-                        if (i + 1 < buf.size() && buf[i] == 0x05) {
-                            // DecoderSpecificInfo
-                            i += !(buf[i + 1] & 0x80) ? 2 : !(buf[i + 2] & 0x80) ? 3 : !(buf[i + 3] & 0x80) ? 4 : 5;
-                            if (i + 1 < buf.size() - 1) {
-                                int profile = buf[i] >> 3 & 0x03;
-                                int freq = (buf[i] << 1 | buf[i + 1] >> 7) & 0x0F;
-                                int ch = buf[i + 1] >> 3 & 0x0F;
-                                CreateAdtsHeader(m_adtsHeader, profile, freq, ch, bufferSize);
-                                fAdtsHeader = true;
+            buf.resize(boxLen + 8);
+            buf.erase(buf.begin(), buf.begin() + 94);
+            for (; buf.size() >= 8; buf.erase(buf.begin(), buf.begin() + boxLen)) {
+                boxLen = ArrayToDWORD(&buf[0]);
+                if (boxLen < 8 || boxLen > buf.size()) {
+                    break;
+                }
+                // TODO: PAR情報は無視
+                // Type == "avcC"
+                if (ArrayToDWORD(&buf[4]) == 0x61766343) {
+                    buf.resize(boxLen);
+                    if (15 < buf.size() && (buf[13] & 0x1F) == 1) {
+                        size_t spsLen = MAKEWORD(buf[15], buf[14]);
+                        if (18 + spsLen < buf.size() && buf[16 + spsLen] == 1) {
+                            size_t ppsLen = MAKEWORD(buf[18 + spsLen], buf[17 + spsLen]);
+                            if (18 + spsLen + ppsLen < buf.size()) {
+                                spsPps.assign(3, 0);
+                                spsPps.push_back(1);
+                                spsPps.insert(m_spsPps.end(), buf.begin() + 16, buf.begin() + 16 + spsLen);
+                                spsPps.insert(m_spsPps.end(), 3, 0);
+                                spsPps.push_back(1);
+                                spsPps.insert(m_spsPps.end(), buf.begin() + 19 + spsLen, buf.begin() + 19 + spsLen + ppsLen);
+                                return true;
                             }
                         }
                     }
+                    break;
                 }
             }
         }
     }
-    if (m_timeScaleA == 0 || !fAdtsHeader) {
-        return false;
-    }
+    return false;
+}
 
-    return InitializeBlockList();
+bool CReadOnlyMpeg4File::ReadAudioSampleDesc(char index, BYTE *adtsHeader, std::vector<BYTE> &buf) const
+{
+    char path[] = "/moov0/trak?/mdia0/minf0/stbl0/stsd0";
+    path[11] = index;
+    if (ReadBox(path, buf) && buf.size() >= 16) {
+        size_t boxLen = ArrayToDWORD(&buf[8]);
+        if (ArrayToDWORD(&buf[0]) == 0 &&
+            ArrayToDWORD(&buf[4]) == 1 &&
+            ArrayToDWORD(&buf[12]) == 0x6D703461 && // Data format == "mp4a"
+            boxLen >= 36 && // Sample description size
+            boxLen <= buf.size() - 8)
+        {
+            buf.resize(boxLen + 8);
+            buf.erase(buf.begin(), buf.begin() + 44);
+            for (; buf.size() >= 8; buf.erase(buf.begin(), buf.begin() + boxLen)) {
+                boxLen = ArrayToDWORD(&buf[0]);
+                if (boxLen < 8 || boxLen > buf.size()) {
+                    break;
+                }
+                // Type == "esds"
+                if (ArrayToDWORD(&buf[4]) == 0x65736473) {
+                    buf.resize(boxLen);
+                    // 番兵
+                    buf.push_back(0);
+                    size_t i = 12;
+                    if (i + 1 < buf.size() && buf[i] == 0x03) {
+                        // ES (TODO: 仕様未確認なので想像)
+                        i += !(buf[i + 1] & 0x80) ? 2 : !(buf[i + 2] & 0x80) ? 3 : !(buf[i + 3] & 0x80) ? 4 : 5;
+                        i += 3;
+                        if (i + 1 < buf.size() && buf[i] == 0x04) {
+                            // DecoderConfig
+                            i += !(buf[i + 1] & 0x80) ? 2 : !(buf[i + 2] & 0x80) ? 3 : !(buf[i + 3] & 0x80) ? 4 : 5;
+                            if (i + 4 < buf.size() - 1) {
+                                int bufferSize = MAKEWORD(buf[i + 4], buf[i + 3]);
+                                i += 13;
+                                if (i + 1 < buf.size() && buf[i] == 0x05) {
+                                    // DecoderSpecificInfo
+                                    i += !(buf[i + 1] & 0x80) ? 2 : !(buf[i + 2] & 0x80) ? 3 : !(buf[i + 3] & 0x80) ? 4 : 5;
+                                    if (i + 1 < buf.size() - 1) {
+                                        int profile = buf[i] >> 3 & 0x03;
+                                        int freq = (buf[i] << 1 | buf[i + 1] >> 7) & 0x0F;
+                                        int ch = buf[i + 1] >> 3 & 0x0F;
+                                        CreateAdtsHeader(adtsHeader, profile, freq, ch, bufferSize);
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso, std::vector<DWORD> &stsz,

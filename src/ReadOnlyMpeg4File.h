@@ -29,6 +29,8 @@ private:
         return MAKEWORD(data[3], data[2]) | static_cast<DWORD>(MAKEWORD(data[1], data[0])) << 16;
     }
     bool InitializeTable();
+    bool ReadVideoSampleDesc(char index, std::vector<BYTE> &spsPps, std::vector<BYTE> &buf) const;
+    bool ReadAudioSampleDesc(char index, BYTE *adtsHeader, std::vector<BYTE> &buf) const;
     bool ReadSampleTable(char index, std::vector<__int64> &stso, std::vector<DWORD> &stsz,
                          std::vector<__int64> &stts, std::vector<DWORD> *ctts, std::vector<BYTE> &buf) const;
     bool InitializeBlockList();
