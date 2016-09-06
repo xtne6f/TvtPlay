@@ -39,6 +39,7 @@ private:
     int ReadSample(size_t index, const std::vector<__int64> &stso, const std::vector<DWORD> &stsz, std::vector<BYTE> *data) const;
     static size_t CreatePat(BYTE *data, WORD tsid, WORD sid);
     static size_t CreateNit(BYTE *data, WORD nid);
+    static size_t CreateSdt(BYTE *data, WORD nid, WORD tsid, WORD sid);
     static size_t CreateTot(BYTE *data, SYSTEMTIME st);
     static size_t CreatePmt(BYTE *data, WORD sid);
     static size_t CreateHeader(BYTE *data, BYTE unitStart, BYTE adaptation, BYTE counter, WORD pid);

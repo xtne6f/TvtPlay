@@ -367,8 +367,8 @@ bool CReadOnlyMpeg4File::InitializeBlockList()
         if (indexV >= m_stsoV.size() && indexA >= m_stsoA.size()) {
             break;
         }
-        // PAT + NIT + PMT + PCR
-        __int64 size = 4;
+        // PAT + NIT + SDT + PMT + PCR
+        __int64 size = 5;
         if ((m_blockList.size() - 1) % 20 == 0) {
             // TOT
             ++size;
@@ -441,6 +441,13 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
     CreateHeader(packet, 1, 1, blockIndex & 0x0F, 0x0010);
     packet[4] = 0;
     CreateNit(packet + 5, m_nid);
+
+    // SDT
+    m_blockCache.insert(m_blockCache.end(), 188, 0xFF);
+    packet = & m_blockCache.back() - 187;
+    CreateHeader(packet, 1, 1, blockIndex & 0x0F, 0x0011);
+    packet[4] = 0;
+    CreateSdt(packet + 5, m_nid, m_tsid, m_sid);
 
     // PMT
     m_blockCache.insert(m_blockCache.end(), 188, 0xFF);
@@ -650,22 +657,59 @@ size_t CReadOnlyMpeg4File::CreateNit(BYTE *data, WORD nid)
 {
     data[0] = 0x40;
     data[1] = 0xF0;
-    data[2] = 13;
+    data[2] = 17;
     data[3] = HIBYTE(nid);
     data[4] = LOBYTE(nid);
     data[5] = 0xC1;
     data[6] = 0;
     data[7] = 0;
     data[8] = 0xF0;
-    data[9] = 0;
-    data[10] = 0xF0;
-    data[11] = 0;
-    DWORD crc = CalcCrc32(data, 12);
-    data[12] = HIBYTE(HIWORD(crc));
-    data[13] = LOBYTE(HIWORD(crc));
-    data[14] = HIBYTE(crc);
-    data[15] = LOBYTE(crc);
-    return 16;
+    data[9] = 4;
+    data[10] = 0x40;
+    data[11] = 2;
+    data[12] = 0x0E;
+    data[13] = 0x4E; // ネットワーク名"N"
+    data[14] = 0xF0;
+    data[15] = 0;
+    DWORD crc = CalcCrc32(data, 16);
+    data[16] = HIBYTE(HIWORD(crc));
+    data[17] = LOBYTE(HIWORD(crc));
+    data[18] = HIBYTE(crc);
+    data[19] = LOBYTE(crc);
+    return 20;
+}
+
+size_t CReadOnlyMpeg4File::CreateSdt(BYTE *data, WORD nid, WORD tsid, WORD sid)
+{
+    data[0] = 0x42;
+    data[1] = 0xF0;
+    data[2] = 24;
+    data[3] = HIBYTE(tsid);
+    data[4] = LOBYTE(tsid);
+    data[5] = 0xC1;
+    data[6] = 0;
+    data[7] = 0;
+    data[8] = HIBYTE(nid);
+    data[9] = LOBYTE(nid);
+    data[10] = 0xFF;
+    data[11] = HIBYTE(sid);
+    data[12] = LOBYTE(sid);
+    data[13] = 0xFF;
+    data[14] = 0x00;
+    data[15] = 7;
+    data[16] = 0x48;
+    data[17] = 5;
+    data[18] = 0x01;
+    data[19] = 0;
+    data[20] = 2;
+    data[21] = 0x0E;
+    data[22] = 0x53; // サービス名"S"
+    DWORD crc = CalcCrc32(data, 23);
+    data[23] = HIBYTE(HIWORD(crc));
+    data[24] = LOBYTE(HIWORD(crc));
+    data[25] = HIBYTE(crc);
+    data[26] = LOBYTE(crc);
+    return 27;
 }
 
 size_t CReadOnlyMpeg4File::CreateTot(BYTE *data, SYSTEMTIME st)
