@@ -453,7 +453,7 @@ void CTvtPlay::LoadSettings()
         SaveSettings(true);
     }
     // もしなければFileInfoの有効/無効キーをつくる
-    if (GetPrivateProfileSignedInt(TEXT("FileInfo"), TEXT("Enabled"), -1, m_szIniFileName) < 0) {
+    if (::GetPrivateProfileInt(TEXT("FileInfo"), TEXT("Enabled"), 2, m_szIniFileName) > 1) {
         WritePrivateProfileInt(TEXT("FileInfo"), TEXT("Enabled"), 1, m_szIniFileName);
     }
 
@@ -463,8 +463,9 @@ void CTvtPlay::LoadSettings()
 
 static void LoadFontSetting(LOGFONT *pFont, LPCTSTR iniFileName)
 {
+    std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(TEXT("Status"), iniFileName);
     TCHAR szFont[LF_FACESIZE];
-    ::GetPrivateProfileString(TEXT("Status"), TEXT("FontName"), TEXT(""), szFont, _countof(szFont), iniFileName);
+    GetBufferedProfileString(&buf.front(), TEXT("FontName"), TEXT(""), szFont, _countof(szFont));
     if (szFont[0]) {
         ::lstrcpy(pFont->lfFaceName, szFont);
         pFont->lfEscapement     = 0;
@@ -478,14 +479,14 @@ static void LoadFontSetting(LOGFONT *pFont, LPCTSTR iniFileName)
         pFont->lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE;
     }
 
-    int val = GetPrivateProfileSignedInt(TEXT("Status"), TEXT("FontSize"), INT_MAX, iniFileName);
+    int val = GetBufferedProfileInt(&buf.front(), TEXT("FontSize"), INT_MAX);
     if (val != INT_MAX) {
         pFont->lfHeight = val;
         pFont->lfWidth  = 0;
     }
-    val = GetPrivateProfileSignedInt(TEXT("Status"), TEXT("FontWeight"), INT_MAX, iniFileName);
+    val = GetBufferedProfileInt(&buf.front(), TEXT("FontWeight"), INT_MAX);
     if (val != INT_MAX) pFont->lfWeight = val;
-    val = GetPrivateProfileSignedInt(TEXT("Status"), TEXT("FontItalic"), INT_MAX, iniFileName);
+    val = GetBufferedProfileInt(&buf.front(), TEXT("FontItalic"), INT_MAX);
     if (val != INT_MAX) pFont->lfItalic = static_cast<BYTE>(val);
 }
 

@@ -87,17 +87,6 @@ int GetBufferedProfileInt(LPCTSTR lpBuff, LPCTSTR lpKeyName, int nDefault)
 }
 
 
-// GetPrivateProfileInt()の負値対応版
-// 実際にはGetPrivateProfileInt()も負値を返すが、仕様ではない
-int GetPrivateProfileSignedInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int nDefault, LPCTSTR lpFileName)
-{
-    TCHAR szVal[32];
-    GetPrivateProfileString(lpAppName, lpKeyName, TEXT(""), szVal, _countof(szVal), lpFileName);
-    int nRet;
-    return ::StrToIntEx(szVal, STIF_DEFAULT, &nRet) ? nRet : nDefault;
-}
-
-
 // UTF-16またはUTF-8テキストファイルを文字列として全て読む
 std::vector<WCHAR> ReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, bool fNoBomUseAcp)
 {
