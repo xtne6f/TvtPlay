@@ -124,7 +124,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>SoundTouchD(x64).lib;winmm.lib;strmbasd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SoundTouchD_x64.lib;winmm.lib;strmbasd.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ModuleDefinitionFile>TvtAudioStretchFilter.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent />
@@ -167,7 +167,7 @@
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>SoundTouch(x64).lib;winmm.lib;strmbase.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SoundTouch_x64.lib;winmm.lib;strmbase.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ModuleDefinitionFile>TvtAudioStretchFilter.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent />

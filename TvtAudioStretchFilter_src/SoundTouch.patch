@@ -1,12 +1,12 @@
-# Patch for SoundTouch v1.8.0 (http://www.surina.net/soundtouch/) contains:
+# Patch for SoundTouch v1.9.2 (http://www.surina.net/soundtouch/) contains:
 # 1.SSE2 optimizations for SOUNDTOUCH_INTEGER_SAMPLES written by http://toro.2ch.net/test/read.cgi/avi/1348364114/774 (2ch a Japanese textboard)
 # This modification should be licensed under LGPL terms according to its rules.
 
 diff --git a/include/STTypes.h b/include/STTypes.h
-index cbe7190..e48c677 100644
+index 268d84e..10704c5 100644
 --- a/include/STTypes.h
 +++ b/include/STTypes.h
-@@ -112,8 +112,8 @@ namespace soundtouch
+@@ -98,8 +98,8 @@ namespace soundtouch
          ///   However, if you still prefer to select the sample format here 
          ///   also in GNU environment, then please #undef the INTEGER_SAMPLE
          ///   and FLOAT_SAMPLE defines first as in comments above.
@@ -17,7 +17,7 @@ index cbe7190..e48c677 100644
       
      #endif
  
-@@ -157,8 +157,12 @@ namespace soundtouch
+@@ -143,8 +143,12 @@ namespace soundtouch
          #endif // SOUNDTOUCH_FLOAT_SAMPLES
  
          #ifdef SOUNDTOUCH_ALLOW_X86_OPTIMIZATIONS
@@ -33,10 +33,10 @@ index cbe7190..e48c677 100644
  
      #else
 diff --git a/source/SoundTouch/FIRFilter.cpp b/source/SoundTouch/FIRFilter.cpp
-index 11ba652..b8e6902 100644
+index e56969b..21e3926 100644
 --- a/source/SoundTouch/FIRFilter.cpp
 +++ b/source/SoundTouch/FIRFilter.cpp
-@@ -297,6 +297,15 @@ FIRFilter * FIRFilter::newInstance()
+@@ -303,6 +303,15 @@ FIRFilter * FIRFilter::newInstance()
  
      // Check if MMX/SSE instruction set extensions supported by CPU
  
@@ -53,7 +53,7 @@ index 11ba652..b8e6902 100644
      // MMX routines available only with integer sample types
      if (uExtensions & SUPPORT_MMX)
 diff --git a/source/SoundTouch/FIRFilter.h b/source/SoundTouch/FIRFilter.h
-index b86c519..984dc8e 100644
+index 6b14238..d10c554 100644
 --- a/source/SoundTouch/FIRFilter.h
 +++ b/source/SoundTouch/FIRFilter.h
 @@ -141,6 +141,25 @@ public:
@@ -83,10 +83,10 @@ index b86c519..984dc8e 100644
  
  #endif  // FIRFilter_H
 diff --git a/source/SoundTouch/TDStretch.cpp b/source/SoundTouch/TDStretch.cpp
-index fb67fc9..45a2e46 100644
+index bb473a9..e31f0ca 100644
 --- a/source/SoundTouch/TDStretch.cpp
 +++ b/source/SoundTouch/TDStretch.cpp
-@@ -630,6 +630,15 @@ TDStretch * TDStretch::newInstance()
+@@ -748,6 +748,15 @@ TDStretch * TDStretch::newInstance()
  
      // Check if MMX/SSE instruction set extensions supported by CPU
  
@@ -103,10 +103,10 @@ index fb67fc9..45a2e46 100644
      // MMX routines available only with integer sample types
      if (uExtensions & SUPPORT_MMX)
 diff --git a/source/SoundTouch/TDStretch.h b/source/SoundTouch/TDStretch.h
-index f0d9513..2c1ea6e 100644
+index 213304c..1de9208 100644
 --- a/source/SoundTouch/TDStretch.h
 +++ b/source/SoundTouch/TDStretch.h
-@@ -268,5 +268,18 @@ public:
+@@ -277,5 +277,18 @@ public:
  
  #endif /// SOUNDTOUCH_ALLOW_SSE
  
@@ -116,8 +116,8 @@ index f0d9513..2c1ea6e 100644
 +    class TDStretchSSE2 : public TDStretch
 +    {
 +    protected:
-+        double calcCrossCorr(const short *mixingPos, const short *compare, double &norm) const;
-+        double calcCrossCorrAccumulate(const short *mixingPos, const short *compare, double &norm) const;
++        double calcCrossCorr(const short *mixingPos, const short *compare, double &norm);
++        double calcCrossCorrAccumulate(const short *mixingPos, const short *compare, double &norm);
 +        virtual void overlapStereo(short *output, const short *input) const;
 +    };
 +
@@ -126,10 +126,10 @@ index f0d9513..2c1ea6e 100644
  }
  #endif  /// TDStretch_H
 diff --git a/source/SoundTouch/sse_optimized.cpp b/source/SoundTouch/sse_optimized.cpp
-index ea2a988..7481831 100644
+index 490d0d2..1e4ca43 100644
 --- a/source/SoundTouch/sse_optimized.cpp
 +++ b/source/SoundTouch/sse_optimized.cpp
-@@ -368,3 +368,247 @@ uint FIRFilterSSE::evaluateFilterStereo(float *dest, const float *source, uint n
+@@ -370,3 +370,257 @@ uint FIRFilterSSE::evaluateFilterStereo(float *dest, const float *source, uint n
  }
  
  #endif  // SOUNDTOUCH_ALLOW_SSE
@@ -150,11 +150,11 @@ index ea2a988..7481831 100644
 +#include <math.h>
 +
 +// Calculates cross correlation of two buffers
-+double TDStretchSSE2::calcCrossCorr(const short *pV1, const short *pV2, double &dnorm) const
++double TDStretchSSE2::calcCrossCorr(const short *pV1, const short *pV2, double &dnorm)
 +{
 +    const   __m128i *pVec1      = (__m128i*)pV1;    // not 16byte aligned
 +    const   __m128i *pVec2      = (__m128i*)pV2;    // 16byte aligned
-+            __m128i shifter     = _mm_cvtsi32_si128(overlapDividerBits);
++            __m128i shifter     = _mm_cvtsi32_si128(overlapDividerBitsNorm);
 +            __m128i accu;
 +            __m128i normaccu;
 +    int corr, norm;
@@ -186,6 +186,11 @@ index ea2a988..7481831 100644
 +    corr = _mm_cvtsi128_si32(accu);
 +    norm = _mm_cvtsi128_si32(normaccu);
 +
++    if (norm > (int)maxnorm)
++    {
++        maxnorm = norm;
++    }
++
 +    dnorm = (double)norm;
 +
 +    return (double)corr / sqrt(dnorm < 1e-9 ? 1.0 : dnorm);
@@ -193,11 +198,11 @@ index ea2a988..7481831 100644
 +
 +
 +/// Update cross-correlation by accumulating "norm" coefficient by previously calculated value
-+double TDStretchSSE2::calcCrossCorrAccumulate(const short *pV1, const short *pV2, double &dnorm) const
++double TDStretchSSE2::calcCrossCorrAccumulate(const short *pV1, const short *pV2, double &dnorm)
 +{
 +    const   __m128i *pVec1      = (__m128i*)pV1;    // not 16byte aligned
 +    const   __m128i *pVec2      = (__m128i*)pV2;    // 16byte aligned
-+            __m128i shifter     = _mm_cvtsi32_si128(overlapDividerBits);
++            __m128i shifter     = _mm_cvtsi32_si128(overlapDividerBitsNorm);
 +            __m128i accu;
 +    int corr, lnorm;
 +    int i;
@@ -206,7 +211,7 @@ index ea2a988..7481831 100644
 +    lnorm = 0;
 +    for (i = 1; i <= channels; i ++)
 +    {
-+        lnorm -= (pV1[-i] * pV1[-i]) >> overlapDividerBits;
++        lnorm -= (pV1[-i] * pV1[-i]) >> overlapDividerBitsNorm;
 +    }
 +
 +    accu = _mm_setzero_si128();
@@ -232,9 +237,14 @@ index ea2a988..7481831 100644
 +    pV1 = (short *)pVec1;
 +    for (int j = 1; j <= channels; j ++)
 +    {
-+        lnorm += (pV1[-j] * pV1[-j]) >> overlapDividerBits;
++        lnorm += (pV1[-j] * pV1[-j]) >> overlapDividerBitsNorm;
 +    }
 +    dnorm += (double)lnorm;
++
++    if (lnorm > (int)maxnorm)
++    {
++        maxnorm = lnorm;
++    }
 +
 +    return (double)corr / sqrt(dnorm < 1e-9 ? 1.0 : dnorm);
 +}
@@ -252,7 +262,7 @@ index ea2a988..7481831 100644
 +                                      (unsigned short)overlapLength,
 +                                      (unsigned short)overlapLength);
 +            __m128i mix2        = _mm_add_epi16(mix1, adder);
-+            __m128i shifter     = _mm_cvtsi32_si128(overlapDividerBits + 1);
++            __m128i shifter     = _mm_cvtsi32_si128(overlapDividerBitsPure + 1);
 +            __m128i *pVdest     = (__m128i*)output;
 +    int i;
 +
