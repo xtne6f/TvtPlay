@@ -28,6 +28,7 @@ private:
     static inline DWORD ArrayToDWORD(const BYTE *data) {
         return MAKEWORD(data[3], data[2]) | static_cast<DWORD>(MAKEWORD(data[1], data[0])) << 16;
     }
+    void InitializeMetaInfo(LPCTSTR path);
     bool InitializeTable();
     bool ReadVideoSampleDesc(char index, std::vector<BYTE> &spsPps, std::vector<BYTE> &buf) const;
     bool ReadAudioSampleDesc(char index, BYTE *adtsHeader, std::vector<BYTE> &buf) const;
