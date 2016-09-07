@@ -343,29 +343,18 @@ static void extract_psi(PSI *psi, const unsigned char *payload, int payload_size
 }
 
 
-void reset_pat(PAT *pat)
-{
-    while (pat->pid_count > 0) {
-        delete pat->pmt[--pat->pid_count];
-    }
-    ::memset(pat, 0, sizeof(PAT));
-}
-
-
 // 参考: ITU-T H.222.0 Sec.2.4.4.3 および ARIB TR-B14 第一分冊第二編8.2
 void extract_pat(PAT *pat, const unsigned char *payload, int payload_size, int unit_start, int counter)
 {
     int program_number;
-    int found;
-    int pos, i, j, n;
-    int pmt_exists[PAT_PID_MAX];
-    unsigned short pid;
+    int pos;
+    size_t pmt_pos, i;
+    int pid;
     const unsigned char *table;
 
     extract_psi(&pat->psi, payload, payload_size, unit_start, counter);
 
     if (pat->psi.version_number &&
-        pat->psi.version_number != pat->version_number &&
         pat->psi.current_next_indicator &&
         pat->psi.table_id == 0 &&
         pat->psi.section_length >= 5)
@@ -376,40 +365,32 @@ void extract_pat(PAT *pat, const unsigned char *payload, int payload_size, int u
         pat->version_number = pat->psi.version_number;
 
         // 受信済みPMTを調べ、必要ならば新規に生成する
-        memset(pmt_exists, 0, sizeof(pmt_exists));
+        pmt_pos = 0;
         pos = 3 + 5;
         while (pos + 3 < 3 + pat->psi.section_length - 4/*CRC32*/) {
             program_number = (table[pos]<<8) | (table[pos+1]);
             if (program_number != 0) {
                 pid = ((table[pos+2]&0x1f)<<8) | table[pos+3];
-                for (found=0, i=0; i < pat->pid_count; ++i) {
-                    if (pat->pid[i] == pid) {
-                        pmt_exists[i] = found = 1;
+                for (i = pmt_pos; i < pat->pmt.size(); ++i) {
+                    if (pat->pmt[i].pmt_pid == pid) {
+                        if (i != pmt_pos) {
+                            PMT sw = pat->pmt[i];
+                            pat->pmt[i] = pat->pmt[pmt_pos];
+                            pat->pmt[pmt_pos] = sw;
+                        }
+                        ++pmt_pos;
                         break;
                     }
                 }
-                if (!found && pat->pid_count < PAT_PID_MAX) {
-                    //pat->program_number[pat->pid_count] = program_number;
-                    pat->pid[pat->pid_count] = pid;
-                    pat->pmt[pat->pid_count] = new PMT;
-                    memset(pat->pmt[pat->pid_count], 0, sizeof(PMT));
-                    pmt_exists[pat->pid_count++] = 1;
+                if (i == pat->pmt.size()) {
+                    pat->pmt.insert(pat->pmt.begin() + pmt_pos, PMT());
+                    pat->pmt[pmt_pos++].pmt_pid = pid;
                 }
             }
             pos += 4;
         }
         // PATから消えたPMTを破棄する
-        n = pat->pid_count;
-        for (i=0, j=0; i < n; ++i) {
-            if (!pmt_exists[i]) {
-                delete pat->pmt[i];
-                --pat->pid_count;
-            }
-            else {
-                pat->pid[j] = pat->pid[i];
-                pat->pmt[j++] = pat->pmt[i];
-            }
-        }
+        pat->pmt.resize(pmt_pos);
     }
 }
 
@@ -438,7 +419,6 @@ void extract_pmt(PMT *pmt, const unsigned char *payload, int payload_size, int u
     extract_psi(&pmt->psi, payload, payload_size, unit_start, counter);
 
     if (pmt->psi.version_number &&
-        pmt->psi.version_number != pmt->version_number &&
         pmt->psi.current_next_indicator &&
         pmt->psi.table_id == 2 &&
         pmt->psi.section_length >= 9)

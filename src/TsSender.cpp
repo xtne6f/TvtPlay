@@ -19,14 +19,9 @@ static DWORD g_dwMagic;
 
 CTsTimestampShifter::CTsTimestampShifter()
     : m_shift45khz(0)
+    , m_pat()
     , m_fEnabled(false)
 {
-    memset(&m_pat, 0, sizeof(m_pat));
-}
-
-CTsTimestampShifter::~CTsTimestampShifter()
-{
-    Reset();
 }
 
 void CTsTimestampShifter::SetInitialPcr(DWORD pcr45khz)
@@ -37,7 +32,7 @@ void CTsTimestampShifter::SetInitialPcr(DWORD pcr45khz)
 
 void CTsTimestampShifter::Reset()
 {
-    reset_pat(&m_pat);
+    m_pat = PAT();
 }
 
 static void PcrToArray(BYTE *pDest, DWORD clk45khz)
@@ -71,8 +66,8 @@ void CTsTimestampShifter::Transform_(BYTE *pPacket)
         extract_adaptation_field(&adapt, pPacket + 4);
         if (adapt.pcr_flag && header.pid != 0) {
             // PMTで指定されたPCRのみ変更
-            for (int i = 0; i < m_pat.pid_count; ++i) {
-                if (header.pid == m_pat.pmt[i]->pcr_pid) {
+            for (size_t i = 0; i < m_pat.pmt.size(); ++i) {
+                if (header.pid == m_pat.pmt[i].pcr_pid) {
                     // PCRをシフト
                     PcrToArray(pPacket + 6, (DWORD)adapt.pcr_45khz + m_shift45khz);
                     break;
@@ -103,9 +98,9 @@ void CTsTimestampShifter::Transform_(BYTE *pPacket)
         return;
     }
     // PATリストにあるPMT監視
-    for (int i = 0; i < m_pat.pid_count; ++i) {
-        if (header.pid == m_pat.pid[i]/* && header.pid != 0*/) {
-            extract_pmt(m_pat.pmt[i], pPayload, payloadSize,
+    for (size_t i = 0; i < m_pat.pmt.size(); ++i) {
+        if (header.pid == m_pat.pmt[i].pmt_pid/* && header.pid != 0*/) {
+            extract_pmt(&m_pat.pmt[i], pPayload, payloadSize,
                         header.payload_unit_start_indicator,
                         header.continuity_counter);
             return;
@@ -114,8 +109,8 @@ void CTsTimestampShifter::Transform_(BYTE *pPacket)
     if (header.payload_unit_start_indicator) {
         // ここに来る頻度はそれほど高くないので最適化していない
         // 全てのPMTリストにあるPES監視
-        for (int i = 0; i < m_pat.pid_count; ++i) {
-            PMT *pPmt = m_pat.pmt[i];
+        for (size_t i = 0; i < m_pat.pmt.size(); ++i) {
+            const PMT *pPmt = &m_pat.pmt[i];
             for (int j = 0; j < pPmt->pid_count; ++j) {
                 if (header.pid == pPmt->pid[j]) {
                     PES_HEADER pesHeader;

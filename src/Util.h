@@ -68,6 +68,7 @@ typedef struct {
 } PSI;
 
 typedef struct {
+    int             pmt_pid;
     int             program_number;
     int             version_number;
     int             pcr_pid;
@@ -77,15 +78,10 @@ typedef struct {
     PSI             psi;
 } PMT;
 
-#define PAT_PID_MAX 64
-
 typedef struct {
     int             transport_stream_id;
     int             version_number;
-    int             pid_count;
-    //unsigned short  program_number[PAT_PID_MAX];
-    unsigned short  pid[PAT_PID_MAX]; // NITを除く
-    PMT             *pmt[PAT_PID_MAX];
+    std::vector<PMT> pmt;
     PSI             psi;
 } PAT;
 
@@ -98,7 +94,6 @@ typedef struct {
     unsigned int  dts_45khz;
 } PES_HEADER; // (partial)
 
-void reset_pat(PAT *pat);
 void extract_pat(PAT *pat, const unsigned char *payload, int payload_size, int unit_start, int counter);
 void extract_pmt(PMT *pmt, const unsigned char *payload, int payload_size, int unit_start, int counter);
 void extract_pes_header(PES_HEADER *dst, const unsigned char *payload, int payload_size/*, int stream_type*/);

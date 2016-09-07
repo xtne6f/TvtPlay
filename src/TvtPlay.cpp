@@ -208,6 +208,7 @@ CTvtPlay::CTvtPlay()
     , m_swcShowLate(0)
     , m_swcClearEarly(0)
     , m_pcr(0)
+    , m_pat()
     , m_captionPid(-1)
 #endif
 {
@@ -218,7 +219,6 @@ CTvtPlay::CTvtPlay()
     m_szChaptersDirName[0] = 0;
 #ifdef EN_SWC
     m_szCaptionDllPath[0] = 0;
-    ::memset(&m_pat, 0, sizeof(m_pat));
 #endif
     m_lastCurPos.x = m_lastCurPos.y = 0;
     m_idleCurPos.x = m_idleCurPos.y = 0;
@@ -227,9 +227,6 @@ CTvtPlay::CTvtPlay()
 
 CTvtPlay::~CTvtPlay()
 {
-#ifdef EN_SWC
-    reset_pat(&m_pat);
-#endif
 }
 
 bool CTvtPlay::GetPluginInfo(TVTest::PluginInfo *pInfo)
@@ -2801,7 +2798,7 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
         CBlockLock lock(&t.m_streamLock);
         t.m_tsShifter.Reset();
 #ifdef EN_SWC
-        reset_pat(&t.m_pat);
+        t.m_pat = PAT();
         t.m_captionAnalyzer.ClearShowState();
 #endif
         t.m_fResetPat = false;
@@ -2825,8 +2822,8 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
         if (adapt.pcr_flag) {
             // 字幕のPCR参照PIDを取得する
             int pcrPid = -1;
-            for (int i = 0; i < t.m_pat.pid_count; ++i) {
-                PMT *pPmt = t.m_pat.pmt[i];
+            for (size_t i = 0; i < t.m_pat.pmt.size(); ++i) {
+                const PMT *pPmt = &t.m_pat.pmt[i];
                 for (int j = 0; j < pPmt->pid_count; ++j) {
                     if (pPmt->pid[j] == t.m_captionPid) {
                         pcrPid = pPmt->pcr_pid;
@@ -2876,9 +2873,9 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
             return TRUE;
         }
         // PATリストにあるPMT監視
-        for (int i = 0; i < t.m_pat.pid_count; ++i) {
-            if (header.pid == t.m_pat.pid[i]/* && header.pid != 0*/) {
-                extract_pmt(t.m_pat.pmt[i], pPayload, payloadSize,
+        for (size_t i = 0; i < t.m_pat.pmt.size(); ++i) {
+            if (header.pid == t.m_pat.pmt[i].pmt_pid/* && header.pid != 0*/) {
+                extract_pmt(&t.m_pat.pmt[i], pPayload, payloadSize,
                             header.payload_unit_start_indicator,
                             header.continuity_counter);
                 return TRUE;

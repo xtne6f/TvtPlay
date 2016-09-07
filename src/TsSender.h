@@ -11,7 +11,6 @@ class CTsTimestampShifter
     static const int PCR_INITIAL_MARGIN = 600 * 1000 * PCR_PER_MSEC;
 public:
     CTsTimestampShifter();
-    ~CTsTimestampShifter();
     void SetInitialPcr(DWORD pcr45khz);
     void Reset();
     void Transform(BYTE *pPacket) { if (m_fEnabled) Transform_(pPacket); }
