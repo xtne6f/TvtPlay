@@ -164,9 +164,9 @@ bool CReadOnlyMpeg4File::InitializeTable()
     char path[] = "/moov0/trak0/mdia0/mdhd0";
     for (char i = '0'; i <= '9' && (!fVideo || !fAudio); ++i, ++path[11]) {
         DWORD timeScale = 0;
-        if (ReadBox(path, buf) && buf.size() == 24) {
-            if (ArrayToDWORD(&buf[0]) == 0) {
-                timeScale = ArrayToDWORD(&buf[12]);
+        if (ReadBox(path, buf) && buf.size() >= 24) {
+            if ((ArrayToDWORD(&buf[0]) & 0xFEFFFFFF) == 0) {
+                timeScale = ArrayToDWORD(&buf[buf[0] ? 20 : 12]);
             }
         }
         if (timeScale != 0) {
@@ -319,20 +319,6 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
             }
         }
     }
-    std::vector<std::pair<DWORD, DWORD>> stsc;
-    ::memcpy(&path[31], "stsc", 4);
-    if (ReadBox(path, buf) && buf.size() >= 8) {
-        size_t n = ArrayToDWORD(&buf[4]);
-        if (ArrayToDWORD(&buf[0]) == 0 && n == (buf.size() - 8) / 12) {
-            stsc.reserve(n);
-            for (size_t i = 0; i < n; ++i) {
-                stsc.push_back(std::make_pair(ArrayToDWORD(&buf[8 + 12 * i]) - 1, ArrayToDWORD(&buf[12 + 12 * i])));
-                if (i == 0 && stsc[i].first != 0 || i != 0 && stsc[i].first <= stsc[i - 1].first || stsc[i].second == 0) {
-                    return false;
-                }
-            }
-        }
-    }
     stsz.clear();
     ::memcpy(&path[31], "stsz", 4);
     if (ReadBox(path, buf) && buf.size() >= 12) {
@@ -344,20 +330,33 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
             }
         }
     }
-    if (stco.empty() || stsc.empty() || stsz.empty()) {
+    if (stco.empty() || stsz.empty()) {
         return false;
     }
 
     // 各サンプルのファイル位置を計算
     stso.clear();
     stso.reserve(stsz.size());
-    for (size_t i = 0, j = 0; i < stco.size() && stso.size() < stsz.size(); ++i) {
-        if (j + 1 < stsc.size() && i >= stsc[j + 1].first) {
-            ++j;
+    ::memcpy(&path[31], "stsc", 4);
+    if (!ReadBox(path, buf) || buf.size() < 8) {
+        return false;
+    }
+    size_t stscNum = ArrayToDWORD(&buf[4]);
+    if (ArrayToDWORD(&buf[0]) != 0 || stscNum != (buf.size() - 8) / 12) {
+        return false;
+    }
+    for (size_t i = 0; i < stscNum; ++i) {
+        DWORD currChunk = ArrayToDWORD(&buf[8 + 12 * i]) - 1;
+        DWORD sampleNum = ArrayToDWORD(&buf[12 + 12 * i]);
+        DWORD nextChunk = i + 1 < stscNum ? ArrayToDWORD(&buf[8 + 12 * (i + 1)]) - 1 : MAXDWORD;
+        if (nextChunk <= currChunk || sampleNum == 0) {
+            return false;
         }
-        stso.push_back(stco[i]);
-        for (size_t k = 1; k < stsc[j].second && stso.size() < stsz.size(); ++k) {
-            stso.push_back(stso.back() + stsz[stso.size() - 1]);
+        for (size_t j = currChunk; j < nextChunk && j < stco.size() && stso.size() < stsz.size(); ++j) {
+            stso.push_back(stco[j]);
+            for (size_t k = 1; k < sampleNum && stso.size() < stsz.size(); ++k) {
+                stso.push_back(stso.back() + stsz[stso.size() - 1]);
+            }
         }
     }
     LARGE_INTEGER fileSize;
@@ -403,12 +402,20 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
         ctts->clear();
         ctts->reserve(stsz.size());
         ::memcpy(&path[31], "ctts", 4);
-        if (ReadBox(path, buf) && buf.size() >= 8) {
+        if (!ReadBox(path, buf)) {
+            // out-of-orderなし
+            ctts->resize(stsz.size(), 0);
+        }
+        else if (buf.size() >= 8) {
             size_t n = ArrayToDWORD(&buf[4]);
             if (ArrayToDWORD(&buf[0]) == 0 && n == (buf.size() - 8) / 8) {
                 for (size_t i = 0; i < n; ++i) {
                     for (DWORD j = 0; j < ArrayToDWORD(&buf[8 + 8 * i]) && ctts->size() < stsz.size(); ++j) {
                         ctts->push_back(ArrayToDWORD(&buf[12 + 8 * i]));
+                        if (ctts->back() >= 0x80000000) {
+                            // TODO: 負のオフセット
+                            return false;
+                        }
                     }
                 }
             }
