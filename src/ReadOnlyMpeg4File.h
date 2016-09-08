@@ -23,7 +23,7 @@ private:
     struct BLOCK_100MSEC {
         DWORD pos;
         BYTE counterV;
-        BYTE counterA;
+        BYTE counterA[2];
     };
     static inline DWORD ArrayToDWORD(const BYTE *data) {
         return MAKEWORD(data[3], data[2]) | static_cast<DWORD>(MAKEWORD(data[1], data[0])) << 16;
@@ -42,7 +42,7 @@ private:
     static size_t CreateNit(BYTE *data, WORD nid);
     static size_t CreateSdt(BYTE *data, WORD nid, WORD tsid, WORD sid);
     static size_t CreateTot(BYTE *data, SYSTEMTIME st);
-    static size_t CreatePmt(BYTE *data, WORD sid);
+    static size_t CreatePmt(BYTE *data, WORD sid, bool fAudio2);
     static size_t CreateHeader(BYTE *data, BYTE unitStart, BYTE adaptation, BYTE counter, WORD pid);
     static size_t CreatePcrAdaptation(BYTE *data, DWORD pcr45khz);
     static size_t CreatePesHeader(BYTE *data, BYTE streamID, WORD packetLength, DWORD pts45khz, BYTE stuffingSize);
@@ -53,13 +53,13 @@ private:
     HANDLE m_hFile;
     WORD m_nid, m_tsid, m_sid;
     LARGE_INTEGER m_totStart;
-    std::vector<__int64> m_stsoV, m_stsoA;
-    std::vector<DWORD> m_stszV, m_stszA;
-    std::vector<__int64> m_sttsV, m_sttsA;
+    std::vector<__int64> m_stsoV, m_stsoA[2];
+    std::vector<DWORD> m_stszV, m_stszA[2];
+    std::vector<__int64> m_sttsV, m_sttsA[2];
     std::vector<DWORD> m_cttsV;
-    DWORD m_timeScaleV, m_timeScaleA;
+    DWORD m_timeScaleV, m_timeScaleA[2];
     std::vector<BYTE> m_spsPps;
-    BYTE m_adtsHeader[7];
+    BYTE m_adtsHeader[2][7];
     std::vector<BLOCK_100MSEC> m_blockList;
     std::vector<BLOCK_100MSEC>::const_iterator m_blockInfo;
     std::vector<BYTE> m_blockCache;
