@@ -9,14 +9,19 @@ extern HINSTANCE g_hinstDLL;
 bool CReadOnlyMpeg4File::Open(LPCTSTR path, int flags)
 {
     Close();
-    if ((flags & OPEN_FLAG_NORMAL) && !(flags & OPEN_FLAG_SHARE_WRITE)) {
+    TCHAR iniPath[MAX_PATH];
+    if ((flags & OPEN_FLAG_NORMAL) && !(flags & OPEN_FLAG_SHARE_WRITE) &&
+        ::GetModuleFileName(g_hinstDLL, iniPath, _countof(iniPath)) &&
+        ::PathRenameExtension(iniPath, TEXT(".ini")) &&
+        ::GetPrivateProfileInt(TEXT("MP4"), TEXT("Enabled"), 1, iniPath))
+    {
         m_hFile = ::CreateFile(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE,
                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
         if (m_hFile == INVALID_HANDLE_VALUE || !InitializeTable()) {
             Close();
         }
         else {
-            InitializeMetaInfo(path);
+            InitializeMetaInfo(path, iniPath);
             m_blockInfo = m_blockList.begin();
             m_blockCache.clear();
             m_pointer = 0;
@@ -85,72 +90,68 @@ __int64 CReadOnlyMpeg4File::GetSize() const
     return -1;
 }
 
-void CReadOnlyMpeg4File::InitializeMetaInfo(LPCTSTR path)
+void CReadOnlyMpeg4File::InitializeMetaInfo(LPCTSTR path, LPCTSTR iniPath)
 {
-    TCHAR iniPath[MAX_PATH];
-    if (::GetModuleFileName(g_hinstDLL, iniPath, _countof(iniPath)) &&
-        ::PathRenameExtension(iniPath, TEXT(".ini")))
+    // プラグイン設定の[MP4]セクション
+    std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(TEXT("MP4"), iniPath);
+    if (!buf[0]) {
+        WritePrivateProfileInt(TEXT("MP4"), TEXT("Enabled"), 1, iniPath);
+        ::WritePrivateProfileString(TEXT("MP4"), TEXT("Meta"), TEXT("metadata.ini"), iniPath);
+        ::WritePrivateProfileString(TEXT("MP4"), TEXT("BroadcastID"), TEXT("0x000100020003"), iniPath);
+        ::WritePrivateProfileString(TEXT("MP4"), TEXT("Time"), TEXT(""), iniPath);
+    }
+    TCHAR metaName[MAX_PATH];
+    GetBufferedProfileString(&buf.front(), TEXT("Meta"), TEXT("metadata.ini"), metaName, _countof(metaName));
+    TCHAR szBroadcastID[15];
+    GetBufferedProfileString(&buf.front(), TEXT("BroadcastID"), TEXT("0x000100020003"), szBroadcastID, _countof(szBroadcastID));
+    TCHAR szTime[20];
+    GetBufferedProfileString(&buf.front(), TEXT("Time"), TEXT(""), szTime, _countof(szTime));
+    if (metaName[0] && ::lstrlen(path) < MAX_PATH) {
+        TCHAR metaPath[MAX_PATH];
+        ::lstrcpy(metaPath, path);
+        if (::PathRemoveFileSpec(metaPath) && ::PathAppend(metaPath, metaName)) {
+            // "Meta"設定の[*]セクションで上書き
+            buf = GetPrivateProfileSectionBuffer(TEXT("*"), metaPath);
+            TCHAR szBroadcastID_[15];
+            GetBufferedProfileString(&buf.front(), TEXT("BroadcastID"), szBroadcastID, szBroadcastID_, _countof(szBroadcastID_));
+            TCHAR szTime_[20];
+            GetBufferedProfileString(&buf.front(), TEXT("Time"), szTime, szTime_, _countof(szTime_));
+            // "Meta"設定の[ファイル名]セクションで上書き
+            buf = GetPrivateProfileSectionBuffer(::PathFindFileName(path), metaPath);
+            GetBufferedProfileString(&buf.front(), TEXT("BroadcastID"), szBroadcastID_, szBroadcastID, _countof(szBroadcastID));
+            GetBufferedProfileString(&buf.front(), TEXT("Time"), szTime_, szTime, _countof(szTime));
+        }
+    }
+    LARGE_INTEGER broadcastID = {};
+    ::StrToInt64Ex(szBroadcastID, STIF_SUPPORT_HEX, &broadcastID.QuadPart);
+    m_nid = max(LOWORD(broadcastID.HighPart), 1);
+    m_tsid = max(HIWORD(broadcastID.LowPart), 1);
+    m_sid = max(LOWORD(broadcastID.LowPart), 1);
+    m_totStart.QuadPart = 125911908000000000LL; // 2000-01-01T09:00:00
+    if (!szTime[0]) {
+        // ファイルの更新日時をTOTとする
+        FILETIME ft;
+        if (::GetFileTime(m_hFile, NULL, NULL, &ft)) {
+            m_totStart.LowPart = ft.dwLowDateTime;
+            m_totStart.HighPart = ft.dwHighDateTime;
+            m_totStart.QuadPart += 9 * 36000000000LL;
+        }
+    }
+    else if (::lstrlen(szTime) == 19 &&
+             szTime[4] == TEXT('-') && szTime[7] == TEXT('-') &&
+             szTime[10] == TEXT('T') && szTime[13] == TEXT(':') && szTime[16] == TEXT(':'))
     {
-        // プラグイン設定の[MP4]セクション
-        std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(TEXT("MP4"), iniPath);
-        if (!buf[0]) {
-            WritePrivateProfileString(TEXT("MP4"), TEXT("Meta"), TEXT("metadata.ini"), iniPath);
-            WritePrivateProfileString(TEXT("MP4"), TEXT("BroadcastID"), TEXT("0x000100020003"), iniPath);
-            WritePrivateProfileString(TEXT("MP4"), TEXT("Time"), TEXT(""), iniPath);
-        }
-        TCHAR metaName[MAX_PATH];
-        GetBufferedProfileString(&buf.front(), TEXT("Meta"), TEXT("metadata.ini"), metaName, _countof(metaName));
-        TCHAR szBroadcastID[15];
-        GetBufferedProfileString(&buf.front(), TEXT("BroadcastID"), TEXT("0x000100020003"), szBroadcastID, _countof(szBroadcastID));
-        TCHAR szTime[20];
-        GetBufferedProfileString(&buf.front(), TEXT("Time"), TEXT(""), szTime, _countof(szTime));
-        if (metaName[0] && ::lstrlen(path) < MAX_PATH) {
-            TCHAR metaPath[MAX_PATH];
-            ::lstrcpy(metaPath, path);
-            if (::PathRemoveFileSpec(metaPath) && ::PathAppend(metaPath, metaName)) {
-                // "Meta"設定の[*]セクションで上書き
-                buf = GetPrivateProfileSectionBuffer(TEXT("*"), metaPath);
-                TCHAR szBroadcastID_[15];
-                GetBufferedProfileString(&buf.front(), TEXT("BroadcastID"), szBroadcastID, szBroadcastID_, _countof(szBroadcastID_));
-                TCHAR szTime_[20];
-                GetBufferedProfileString(&buf.front(), TEXT("Time"), szTime, szTime_, _countof(szTime_));
-                // "Meta"設定の[ファイル名]セクションで上書き
-                buf = GetPrivateProfileSectionBuffer(::PathFindFileName(path), metaPath);
-                GetBufferedProfileString(&buf.front(), TEXT("BroadcastID"), szBroadcastID_, szBroadcastID, _countof(szBroadcastID));
-                GetBufferedProfileString(&buf.front(), TEXT("Time"), szTime_, szTime, _countof(szTime));
-            }
-        }
-        LARGE_INTEGER broadcastID = {};
-        ::StrToInt64Ex(szBroadcastID, STIF_SUPPORT_HEX, &broadcastID.QuadPart);
-        m_nid = max(LOWORD(broadcastID.HighPart), 1);
-        m_tsid = max(HIWORD(broadcastID.LowPart), 1);
-        m_sid = max(LOWORD(broadcastID.LowPart), 1);
-        m_totStart.QuadPart = 125911908000000000LL; // 2000-01-01T09:00:00
-        if (!szTime[0]) {
-            // ファイルの更新日時をTOTとする
-            FILETIME ft;
-            if (::GetFileTime(m_hFile, NULL, NULL, &ft)) {
-                m_totStart.LowPart = ft.dwLowDateTime;
-                m_totStart.HighPart = ft.dwHighDateTime;
-                m_totStart.QuadPart += 9 * 36000000000LL;
-            }
-        }
-        else if (::lstrlen(szTime) == 19 &&
-                 szTime[4] == TEXT('-') && szTime[7] == TEXT('-') &&
-                 szTime[10] == TEXT('T') && szTime[13] == TEXT(':') && szTime[16] == TEXT(':'))
-        {
-            SYSTEMTIME st = {};
-            st.wYear = LOWORD(::StrToInt(&szTime[0]));
-            st.wMonth = LOWORD(::StrToInt(&szTime[5]));
-            st.wDay = LOWORD(::StrToInt(&szTime[8]));
-            st.wHour = LOWORD(::StrToInt(&szTime[11]));
-            st.wMinute = LOWORD(::StrToInt(&szTime[14]));
-            st.wSecond = LOWORD(::StrToInt(&szTime[17]));
-            FILETIME ft;
-            if (::SystemTimeToFileTime(&st, &ft)) {
-                m_totStart.LowPart = ft.dwLowDateTime;
-                m_totStart.HighPart = ft.dwHighDateTime;
-            }
+        SYSTEMTIME st = {};
+        st.wYear = LOWORD(::StrToInt(&szTime[0]));
+        st.wMonth = LOWORD(::StrToInt(&szTime[5]));
+        st.wDay = LOWORD(::StrToInt(&szTime[8]));
+        st.wHour = LOWORD(::StrToInt(&szTime[11]));
+        st.wMinute = LOWORD(::StrToInt(&szTime[14]));
+        st.wSecond = LOWORD(::StrToInt(&szTime[17]));
+        FILETIME ft;
+        if (::SystemTimeToFileTime(&st, &ft)) {
+            m_totStart.LowPart = ft.dwLowDateTime;
+            m_totStart.HighPart = ft.dwHighDateTime;
         }
     }
 }
