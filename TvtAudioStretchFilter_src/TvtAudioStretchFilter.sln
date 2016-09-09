@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual C++ Express 2010
+# Visual Studio 2010
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TvtAudioStretchFilter", "TvtAudioStretchFilter.vcxproj", "{55A92858-CD46-4B05-9F73-29BF09732439}"
 EndProject
 Global

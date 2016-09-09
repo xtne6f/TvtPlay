@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2016-02-09
+// 最終更新: 2016-09-09
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -11,7 +11,6 @@
 #include <process.h>
 #include "Util.h"
 #include "StatusView.h"
-#include "AsyncFileReader.h"
 #include "TsSender.h"
 #include "Playlist.h"
 #include "ChapterMap.h"
@@ -32,7 +31,7 @@
 #define INFO_DESCRIPTION_SUFFIX L"+)"
 
 static const WCHAR INFO_PLUGIN_NAME[] = L"TvtPlay";
-static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.2.3" INFO_DESCRIPTION_SUFFIX;
+static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.2.4" INFO_DESCRIPTION_SUFFIX;
 static const int INFO_VERSION = 23;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
@@ -197,6 +196,7 @@ CTvtPlay::CTvtPlay()
     , m_swcShowLate(0)
     , m_swcClearEarly(0)
     , m_pcr(0)
+    , m_pat()
     , m_captionPid(-1)
 #endif
 {
@@ -207,15 +207,11 @@ CTvtPlay::CTvtPlay()
     m_szChaptersDirName[0] = 0;
 #ifdef EN_SWC
     m_szCaptionDllPath[0] = 0;
-    ::memset(&m_pat, 0, sizeof(m_pat));
 #endif
 }
 
 CTvtPlay::~CTvtPlay()
 {
-#ifdef EN_SWC
-    reset_pat(&m_pat);
-#endif
 }
 
 bool CTvtPlay::GetPluginInfo(TVTest::PluginInfo *pInfo)
@@ -293,13 +289,13 @@ bool CTvtPlay::Initialize()
     m_pApp->RegisterCommand(COMMAND_LIST, _countof(COMMAND_LIST));
 
     // 設定に応じてコマンド数をふやす
-    TCHAR *pBuf = NewGetPrivateProfileSection(SETTINGS, m_szIniFileName);
+    std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(SETTINGS, m_szIniFileName);
     for (int i = 0; i < COMMAND_S_MAX; ++i) {
         TCHAR key[16], name[16];
         ::wsprintf(key, TEXT("Seek%c"), TEXT('A') + i);
         ::wsprintf(name, TEXT("シーク:%c"), TEXT('A') + i);
         if (!DEFAULT_SEEK_LIST[i]) {
-            if (!GetBufferedProfileInt(pBuf, key, 0)) break;
+            if (!GetBufferedProfileInt(&buf.front(), key, 0)) break;
         }
         m_pApp->RegisterCommand(ID_COMMAND_SEEK_A + i, key, name);
     }
@@ -308,7 +304,7 @@ bool CTvtPlay::Initialize()
         ::wsprintf(key, TEXT("Stretch%c"), TEXT('A') + i);
         ::wsprintf(name, TEXT("倍速:%c"), TEXT('A') + i);
         if (!DEFAULT_STRETCH_LIST[i]) {
-            if (!GetBufferedProfileInt(pBuf, key, 0)) break;
+            if (!GetBufferedProfileInt(&buf.front(), key, 0)) break;
         }
         m_pApp->RegisterCommand(ID_COMMAND_STRETCH_A + i, key, name);
     }
@@ -317,8 +313,7 @@ bool CTvtPlay::Initialize()
     m_pApp->SetEventCallback(EventCallback, this);
 
     TCHAR cmdOption[128];
-    GetBufferedProfileString(pBuf, TEXT("TvtpCmdOption"), TEXT(""), cmdOption, _countof(cmdOption));
-    delete [] pBuf;
+    GetBufferedProfileString(&buf.front(), TEXT("TvtpCmdOption"), TEXT(""), cmdOption, _countof(cmdOption));
 
     // コマンドラインで指定されていなければ設定ファイルの値を適用する
     AnalyzeCommandLine(cmdOption, false);
@@ -363,7 +358,8 @@ void CTvtPlay::LoadSettings()
 
     int iniVer = 0;
     {
-        TCHAR *pBuf = NewGetPrivateProfileSection(SETTINGS, m_szIniFileName);
+        std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(SETTINGS, m_szIniFileName);
+        LPCTSTR pBuf = &buf.front();
         iniVer              = GetBufferedProfileInt(pBuf, TEXT("Version"), 0);
         m_fAllRepeat        = GetBufferedProfileInt(pBuf, TEXT("TsRepeatAll"), 0) != 0;
         m_fSingleRepeat     = GetBufferedProfileInt(pBuf, TEXT("TsRepeatSingle"), 0) != 0;
@@ -438,7 +434,6 @@ void CTvtPlay::LoadSettings()
             GetBufferedProfileString(pBuf, key, DEFAULT_BUTTON_LIST[j] ? DEFAULT_BUTTON_LIST[j++] : TEXT(""),
                                      m_buttonList[i], _countof(m_buttonList[0]));
         }
-        delete [] pBuf;
     }
 
     m_fSettingsLoaded = true;
@@ -448,7 +443,7 @@ void CTvtPlay::LoadSettings()
         SaveSettings(true);
     }
     // もしなければFileInfoの有効/無効キーをつくる
-    if (GetPrivateProfileSignedInt(TEXT("FileInfo"), TEXT("Enabled"), -1, m_szIniFileName) < 0) {
+    if (::GetPrivateProfileInt(TEXT("FileInfo"), TEXT("Enabled"), 2, m_szIniFileName) > 1) {
         WritePrivateProfileInt(TEXT("FileInfo"), TEXT("Enabled"), 1, m_szIniFileName);
     }
 }
@@ -543,9 +538,8 @@ bool CTvtPlay::LoadFileInfoSetting(std::list<HASH_INFO> &hashList) const
     hashList.clear();
     if (!m_fSettingsLoaded || m_hashListMax <= 0) return false;
 
-    TCHAR *pBuf = NewGetPrivateProfileSection(TEXT("FileInfo"), m_szIniFileName);
-    if (!GetBufferedProfileInt(pBuf, TEXT("Enabled"), 0)) {
-        delete [] pBuf;
+    std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(TEXT("FileInfo"), m_szIniFileName);
+    if (!GetBufferedProfileInt(&buf.front(), TEXT("Enabled"), 0)) {
         return false;
     }
     for (int i = 0; i < m_hashListMax; ++i) {
@@ -553,15 +547,14 @@ bool CTvtPlay::LoadFileInfoSetting(std::list<HASH_INFO> &hashList) const
         HASH_INFO hashInfo;
         TCHAR key[32], val[64];
         ::wsprintf(key, TEXT("Hash%d"), i);
-        GetBufferedProfileString(pBuf, key, TEXT(""), val, _countof(val));
+        GetBufferedProfileString(&buf.front(), key, TEXT(""), val, _countof(val));
         if (!val[0]) break;
         if (!::StrToInt64Ex(val, STIF_SUPPORT_HEX, &hashInfo.hash)) continue;
 
         ::wsprintf(key, TEXT("Resume%d"), i);
-        hashInfo.resumePos = GetBufferedProfileInt(pBuf, key, 0);
+        hashInfo.resumePos = GetBufferedProfileInt(&buf.front(), key, 0);
         hashList.push_back(hashInfo);
     }
-    delete [] pBuf;
     return true;
 }
 
@@ -702,7 +695,7 @@ bool CTvtPlay::InitializePlugin()
                                     cmdID[0] == ID_COMMAND_STRETCH_POPUP) ? &iconL : &iconS;
         HBITMAP hbmOld = SelectBitmap(hdcMem, pIcon->GetHandle());
 
-        RGBQUAD rgbq[2] = {0};
+        RGBQUAD rgbq[2] = {};
         rgbq[1].rgbBlue = rgbq[1].rgbGreen = rgbq[1].rgbRed = 255;
         ::SetDIBColorTable(hdcMem, 0, 2, rgbq);
 
@@ -905,10 +898,10 @@ bool CTvtPlay::OpenWithDialog()
     if (!hwndOwner) hwndOwner = m_pApp->GetAppWindow();
     std::vector<TCHAR> bufFile(32768, TEXT('\0'));
 
-    OPENFILENAME ofn = {0};
+    OPENFILENAME ofn = {};
     ofn.lStructSize = sizeof(OPENFILENAME);
     ofn.hwndOwner   = hwndOwner;
-    ofn.lpstrFilter = TEXT("再生可能なメディア(*.ts;*.m2t;*.m2ts;*.m3u;*.tslist)\0*.ts;*.m2t;*.m2ts;*.m3u;*.tslist\0すべてのファイル\0*.*\0");
+    ofn.lpstrFilter = TEXT("再生可能なメディア(*.ts;*.m2t;*.m2ts;*.mp4;*.m3u;*.tslist)\0*.ts;*.m2t;*.m2ts;*.mp4;*.m3u;*.tslist\0すべてのファイル\0*.*\0");
     ofn.lpstrTitle  = TEXT("ファイルを開く");
     // MSDN記述と違いOFN_NOCHANGEDIRはGetOpenFileName()にも効果がある模様
     ofn.Flags       = OFN_HIDEREADONLY | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR |
@@ -944,10 +937,6 @@ bool CTvtPlay::OpenWithDialog()
 }
 
 
-struct LPTSTR_COMPARE {
-    bool operator()(LPCTSTR l, LPCTSTR r) const { return ::lstrcmpi(l, r) < 0; }
-};
-
 // ポップアップメニュー選択でファイルを開く
 bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
 {
@@ -980,7 +969,7 @@ bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
     // ファイル名を昇順or降順ソート
     std::vector<LPCTSTR> nameList(listSize);
     for (int i = 0; i < listSize; ++i) nameList[i] = findList[i].cFileName;
-    std::sort(nameList.begin(), nameList.end(), LPTSTR_COMPARE());
+    std::sort(nameList.begin(), nameList.end(), [](LPCTSTR a, LPCTSTR b) { return ::lstrcmpi(a, b) < 0; });
     if (m_fPopupDesc) std::reverse(nameList.begin(), nameList.end());
 
     // ポップアップしない部分をとばす
@@ -1474,7 +1463,7 @@ void CTvtPlay::Close()
         ::CloseHandle(m_hThreadEvent);
         m_hThreadEvent = NULL;
 
-        HASH_INFO hashInfo = {0};
+        HASH_INFO hashInfo = {};
         hashInfo.hash = m_tsSender.GetFileHash();
         int pos = m_tsSender.GetPosition();
         // 先頭or終端から5秒の範囲はレジューム情報を記録しない
@@ -2131,7 +2120,7 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             return 0;
         case TIMER_ID_UPDATE_HASH_LIST:
             if (pThis->IsOpen()) {
-                HASH_INFO hashInfo = {0};
+                HASH_INFO hashInfo = {};
                 hashInfo.hash = pThis->m_tsSender.GetFileHash();
                 int pos = pThis->GetPosition();
                 // 先頭or終端から5秒の範囲はレジューム情報を記録しない
@@ -2555,7 +2544,7 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
         CBlockLock lock(&t.m_streamLock);
         t.m_tsShifter.Reset();
 #ifdef EN_SWC
-        reset_pat(&t.m_pat);
+        t.m_pat = PAT();
         t.m_captionAnalyzer.ClearShowState();
 #endif
         t.m_fResetPat = false;
@@ -2579,8 +2568,8 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
         if (adapt.pcr_flag) {
             // 字幕のPCR参照PIDを取得する
             int pcrPid = -1;
-            for (int i = 0; i < t.m_pat.pid_count; ++i) {
-                PMT *pPmt = t.m_pat.pmt[i];
+            for (size_t i = 0; i < t.m_pat.pmt.size(); ++i) {
+                const PMT *pPmt = &t.m_pat.pmt[i];
                 for (int j = 0; j < pPmt->pid_count; ++j) {
                     if (pPmt->pid[j] == t.m_captionPid) {
                         pcrPid = pPmt->pcr_pid;
@@ -2630,9 +2619,9 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
             return TRUE;
         }
         // PATリストにあるPMT監視
-        for (int i = 0; i < t.m_pat.pid_count; ++i) {
-            if (header.pid == t.m_pat.pid[i]/* && header.pid != 0*/) {
-                extract_pmt(t.m_pat.pmt[i], pPayload, payloadSize,
+        for (size_t i = 0; i < t.m_pat.pmt.size(); ++i) {
+            if (header.pid == t.m_pat.pmt[i].pmt_pid/* && header.pid != 0*/) {
+                extract_pmt(&t.m_pat.pmt[i], pPayload, payloadSize,
                             header.payload_unit_start_indicator,
                             header.continuity_counter);
                 return TRUE;

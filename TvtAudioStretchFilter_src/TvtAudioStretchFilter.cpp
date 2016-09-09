@@ -1,7 +1,7 @@
 ﻿#include <streams.h>
 #include <SoundTouch.h>
 
-// このソースのビルドにはSoundTouch(http://www.surina.net/soundtouch/) v1.8.0以降が必要。
+// このソースのビルドにはSoundTouch(http://www.surina.net/soundtouch/) v1.9.2以降が必要。
 // SoundTouchのソースを入手し、同梱の"SoundTouch.patch"を適用してこのプロジェクトにリンクする。
 // さらに、Platform SDKのDirectShow BaseClassesも必要。適当にググってビルドし、
 // strmbase.libとwinmm.libとを、このプロジェクトにリンクする。
@@ -50,8 +50,8 @@ static HINSTANCE g_hinstDLL;
 #define WM_ASFLT_STRETCH    (WM_APP + 1)
 #define WM_ASFLT_PAUSE      (WM_APP + 2)
 
-#define RATE_MIN 0.24f
-#define RATE_MAX 8.01f
+#define RATE_MIN 0.24
+#define RATE_MAX 8.01
 
 
 class CTvtAudioStretchFilter : public CTransformFilter
@@ -76,7 +76,7 @@ private:
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
     ATOM m_atom;
     HWND m_hwnd;
-    float m_rate;
+    double m_rate;
     bool m_fMute;
     bool m_fAcceptConv;
     bool m_fOutputFormatChanged;
@@ -90,7 +90,7 @@ CTvtAudioStretchFilter::CTvtAudioStretchFilter(LPUNKNOWN punk, HRESULT *phr)
     : CTransformFilter(NAME(FILTER_NAME), punk, CLSID_TvtAudioStretchFilter)
     , m_atom(0)
     , m_hwnd(NULL)
-    , m_rate(1.0f)
+    , m_rate(1.0)
     , m_fMute(false)
     , m_fAcceptConv(false)
     , m_fOutputFormatChanged(false)
@@ -483,7 +483,7 @@ HRESULT CTvtAudioStretchFilter::Transform(IMediaSample *pIn, IMediaSample *pOut)
     int destLen = pOut->GetSize();
     ASSERT(srcLen <= destLen);
 
-    if (!m_fAcceptConv || m_rate == 1.0f) {
+    if (!m_fAcceptConv || m_rate == 1.0) {
         destLen = min(srcLen, destLen);
         ::CopyMemory(pbDest, pbSrc, destLen);
     }
@@ -511,10 +511,10 @@ LRESULT CALLBACK CTvtAudioStretchFilter::WndProc(HWND hwnd, UINT uMsg, WPARAM wP
             ::SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pThis));
 
             CAutoLock lock(&pThis->m_csReceive);
-            pThis->m_stouch.setRate(1.0f);
-            pThis->m_stouch.setPitch(1.0f);
-            pThis->m_stouch.setTempo(1.0f);
-            pThis->m_rate = 1.0f;
+            pThis->m_stouch.setRate(1.0);
+            pThis->m_stouch.setPitch(1.0);
+            pThis->m_stouch.setTempo(1.0);
+            pThis->m_rate = 1.0;
             pThis->m_fMute = false;
         }
         break;
@@ -530,20 +530,20 @@ LRESULT CALLBACK CTvtAudioStretchFilter::WndProc(HWND hwnd, UINT uMsg, WPARAM wP
             int num = LOWORD(lParam);
             int den = HIWORD(lParam);
             if (den == 0) return FALSE;
-            float rate = num==den ? 1.0f : (float)((double)num / den);
+            double rate = num==den ? 1.0 : (double)num / den;
             if (rate < RATE_MIN || RATE_MAX < rate) return FALSE;
 
             // 変換の種類をwParamで受ける
-            pThis->m_stouch.setRate((wParam&0x3) == 1 ? rate : 1.0f);
-            pThis->m_stouch.setPitch((wParam&0x3) == 2 ? rate : 1.0f);
-            pThis->m_stouch.setTempo((wParam&0x3) == 3 ? rate : 1.0f);
+            pThis->m_stouch.setRate((wParam&0x3) == 1 ? rate : 1.0);
+            pThis->m_stouch.setPitch((wParam&0x3) == 2 ? rate : 1.0);
+            pThis->m_stouch.setTempo((wParam&0x3) == 3 ? rate : 1.0);
             pThis->m_fMute = (wParam&0x4) != 0;
 
             // テンポ変換中はアンチエイリアスフィルタを切る(意味ないので)
             pThis->m_stouch.setSetting(SETTING_USE_AA_FILTER, (wParam&0x3) == 3 ? 0 : 1);
 
             // ノイズ防止
-            if (pThis->m_rate != 1.0f && rate == 1.0f) pThis->m_stouch.clear();
+            if (pThis->m_rate != 1.0 && rate == 1.0) pThis->m_stouch.clear();
             pThis->m_rate = rate;
         }
         return TRUE;

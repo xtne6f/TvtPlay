@@ -1,0 +1,53 @@
+﻿#include <Windows.h>
+#include "ReadOnlyFile.h"
+
+bool CReadOnlyLocalFile::Open(LPCTSTR path, int flags)
+{
+    Close();
+    if (flags & OPEN_FLAG_NORMAL) {
+        m_hFile = ::CreateFile(path, GENERIC_READ,
+                               FILE_SHARE_READ | FILE_SHARE_DELETE | (flags & OPEN_FLAG_SHARE_WRITE ? FILE_SHARE_WRITE : 0),
+                               NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+    }
+    return m_hFile != INVALID_HANDLE_VALUE;
+}
+
+void CReadOnlyLocalFile::Close()
+{
+    if (m_hFile != INVALID_HANDLE_VALUE) {
+        ::CloseHandle(m_hFile);
+        m_hFile = INVALID_HANDLE_VALUE;
+    }
+}
+
+int CReadOnlyLocalFile::Read(BYTE *pBuf, int numToRead)
+{
+    DWORD numRead;
+    if (m_hFile != INVALID_HANDLE_VALUE && numToRead > 0 &&
+        ::ReadFile(m_hFile, pBuf, numToRead, &numRead, NULL)) {
+        return numRead;
+    }
+    return -1;
+}
+
+__int64 CReadOnlyLocalFile::SetPointer(__int64 distanceToMove, MOVE_METHOD moveMethod)
+{
+    LARGE_INTEGER liMove;
+    liMove.QuadPart = distanceToMove;
+    if (m_hFile != INVALID_HANDLE_VALUE &&
+        ::SetFilePointerEx(m_hFile, liMove, &liMove,
+                           moveMethod == MOVE_METHOD_CURRENT ? FILE_CURRENT :
+                           moveMethod == MOVE_METHOD_END ? FILE_END : FILE_BEGIN)) {
+        return liMove.QuadPart;
+    }
+    return -1;
+}
+
+__int64 CReadOnlyLocalFile::GetSize() const
+{
+    LARGE_INTEGER liSize;
+    if (m_hFile != INVALID_HANDLE_VALUE && ::GetFileSizeEx(m_hFile, &liSize)) {
+        return liSize.QuadPart;
+    }
+    return -1;
+}

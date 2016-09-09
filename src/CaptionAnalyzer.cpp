@@ -69,12 +69,12 @@ bool CCaptionAnalyzer::Initialize(LPCTSTR captionDllPath, LPCTSTR blacklistPath,
             m_pfnGetCaptionDataCP &&
             pfnInitializeUNICODE() == TRUE)
         {
-            TCHAR *pPatterns = NewReadUtfFileToEnd(blacklistPath, FILE_SHARE_READ);
-            if (pPatterns) {
+            std::vector<WCHAR> patterns = ReadUtfFileToEnd(blacklistPath, FILE_SHARE_READ);
+            if (!patterns.empty()) {
                 // コンパイルブロックのリストを作成しておく
                 const std::basic_regex<TCHAR> rePattern(TEXT("m?(.)(.+?)\\1s"));
                 std::match_results<LPCTSTR> m;
-                for (const TCHAR *p = pPatterns; *p;) {
+                for (const TCHAR *p = &patterns.front(); *p;) {
                     int len = ::StrCSpn(p, TEXT("\r\n"));
                     if (std::regex_match(p, &p[len], m, rePattern)) {
                         std::basic_regex<TCHAR> re;
@@ -93,7 +93,6 @@ bool CCaptionAnalyzer::Initialize(LPCTSTR captionDllPath, LPCTSTR blacklistPath,
                     if (*p == TEXT('\r') && *(p+1) == TEXT('\n')) ++p;
                     if (*p) ++p;
                 }
-                delete [] pPatterns;
             }
             m_showLate = showLateMsec * PCR_PER_MSEC;
             m_clearEarly = clearEarlyMsec * PCR_PER_MSEC;

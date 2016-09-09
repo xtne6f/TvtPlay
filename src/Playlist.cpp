@@ -39,14 +39,14 @@ int CPlaylist::PushBackListOrFile(LPCTSTR path, bool fMovePos)
 int CPlaylist::PushBackList(LPCTSTR fullPath)
 {
     int pos = -1;
-    TCHAR *pRet = NewReadUtfFileToEnd(fullPath, FILE_SHARE_READ);
-    if (pRet) {
+    std::vector<WCHAR> ret = ReadUtfFileToEnd(fullPath, FILE_SHARE_READ);
+    if (!ret.empty()) {
         // 相対パスとの結合用
         TCHAR dirName[MAX_PATH];
         ::lstrcpyn(dirName, fullPath, _countof(dirName));
         ::PathRemoveFileSpec(dirName);
 
-        for (TCHAR *p = pRet; *p;) {
+        for (TCHAR *p = &ret.front(); *p;) {
             // 1行取得してpを進める
             TCHAR line[512];
             int len = ::StrCSpn(p, TEXT("\r\n"));
@@ -79,7 +79,6 @@ int CPlaylist::PushBackList(LPCTSTR fullPath)
                 }
             }
         }
-        delete [] pRet;
     }
     return pos;
 }
@@ -106,10 +105,6 @@ bool CPlaylist::MoveCurrentToNext()
     return false;
 }
 
-struct PLAY_INFO_COMPARE {
-    bool operator()(const CPlaylist::PLAY_INFO *l, const CPlaylist::PLAY_INFO *r) const { return ::lstrcmpi(l->path, r->path) < 0; }
-};
-
 // ソートまたはシャッフルする
 void CPlaylist::Sort(SORT_MODE mode)
 {
@@ -119,7 +114,7 @@ void CPlaylist::Sort(SORT_MODE mode)
         sortList.push_back(&swapList[i]);
     }
     if (mode == SORT_ASC || mode == SORT_DESC) {
-        std::sort(sortList.begin(), sortList.end(), PLAY_INFO_COMPARE());
+        std::sort(sortList.begin(), sortList.end(), [](const PLAY_INFO *a, const PLAY_INFO *b) { return ::lstrcmpi(a->path, b->path) < 0; });
     }
     else if (mode == SORT_SHUFFLE) {
         std::srand(::GetTickCount());
@@ -222,5 +217,5 @@ bool CPlaylist::IsPlayListFile(LPCTSTR path)
 bool CPlaylist::IsMediaFile(LPCTSTR path)
 {
     LPCTSTR ext = ::PathFindExtension(path);
-    return !::lstrcmpi(ext, TEXT(".ts")) || !::lstrcmpi(ext, TEXT(".m2t")) || !::lstrcmpi(ext, TEXT(".m2ts"));
+    return !::lstrcmpi(ext, TEXT(".ts")) || !::lstrcmpi(ext, TEXT(".m2t")) || !::lstrcmpi(ext, TEXT(".m2ts")) || !::lstrcmpi(ext, TEXT(".mp4"));
 }

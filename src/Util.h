@@ -1,6 +1,8 @@
 ﻿#ifndef INCLUDE_UTIL_H
 #define INCLUDE_UTIL_H
 
+#include <vector>
+
 // 高速鑑賞機能("字幕でゆっくり")をつけるときコメントをはずす
 //#define EN_SWC
 
@@ -19,11 +21,10 @@ BOOL ASFilterSendNotifyMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 #define READ_FILE_MAX_SIZE (4096 * 1024)
 #define ICON_SIZE 16
 
-TCHAR *NewGetPrivateProfileSection(LPCTSTR lpAppName, LPCTSTR lpFileName);
+std::vector<TCHAR> GetPrivateProfileSectionBuffer(LPCTSTR lpAppName, LPCTSTR lpFileName);
 void GetBufferedProfileString(LPCTSTR lpBuff, LPCTSTR lpKeyName, LPCTSTR lpDefault, LPTSTR lpReturnedString, DWORD nSize);
 int GetBufferedProfileInt(LPCTSTR lpBuff, LPCTSTR lpKeyName, int nDefault);
-int GetPrivateProfileSignedInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int nDefault, LPCTSTR lpFileName);
-WCHAR *NewReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, bool fNoBomUseAcp = false);
+std::vector<WCHAR> ReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, bool fNoBomUseAcp = false);
 bool WriteUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, const WCHAR *pStr);
 bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTSTR pIdxList);
 BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPCTSTR lpFileName);
@@ -67,6 +68,7 @@ typedef struct {
 } PSI;
 
 typedef struct {
+    int             pmt_pid;
     int             program_number;
     int             version_number;
     int             pcr_pid;
@@ -76,15 +78,10 @@ typedef struct {
     PSI             psi;
 } PMT;
 
-#define PAT_PID_MAX 64
-
 typedef struct {
     int             transport_stream_id;
     int             version_number;
-    int             pid_count;
-    //unsigned short  program_number[PAT_PID_MAX];
-    unsigned short  pid[PAT_PID_MAX]; // NITを除く
-    PMT             *pmt[PAT_PID_MAX];
+    std::vector<PMT> pmt;
     PSI             psi;
 } PAT;
 
@@ -97,7 +94,6 @@ typedef struct {
     unsigned int  dts_45khz;
 } PES_HEADER; // (partial)
 
-void reset_pat(PAT *pat);
 void extract_pat(PAT *pat, const unsigned char *payload, int payload_size, int unit_start, int counter);
 void extract_pmt(PMT *pmt, const unsigned char *payload, int payload_size, int unit_start, int counter);
 void extract_pes_header(PES_HEADER *dst, const unsigned char *payload, int payload_size/*, int stream_type*/);

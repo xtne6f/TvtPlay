@@ -1,7 +1,8 @@
 ﻿#include <WinSock2.h>
 #include <Windows.h>
+#include <Shlwapi.h>
+#include "ReadOnlyMpeg4File.h"
 #include "Util.h"
-#include "AsyncFileReader.h"
 #include "TsSender.h"
 
 #ifndef ASSERT
@@ -20,14 +21,9 @@ static DWORD g_dwMagic;
 
 CTsTimestampShifter::CTsTimestampShifter()
     : m_shift45khz(0)
+    , m_pat()
     , m_fEnabled(false)
 {
-    memset(&m_pat, 0, sizeof(m_pat));
-}
-
-CTsTimestampShifter::~CTsTimestampShifter()
-{
-    Reset();
 }
 
 void CTsTimestampShifter::SetInitialPcr(DWORD pcr45khz)
@@ -38,7 +34,7 @@ void CTsTimestampShifter::SetInitialPcr(DWORD pcr45khz)
 
 void CTsTimestampShifter::Reset()
 {
-    reset_pat(&m_pat);
+    m_pat = PAT();
 }
 
 static void PcrToArray(BYTE *pDest, DWORD clk45khz)
@@ -72,8 +68,8 @@ void CTsTimestampShifter::Transform_(BYTE *pPacket)
         extract_adaptation_field(&adapt, pPacket + 4);
         if (adapt.pcr_flag && header.pid != 0) {
             // PMTで指定されたPCRのみ変更
-            for (int i = 0; i < m_pat.pid_count; ++i) {
-                if (header.pid == m_pat.pmt[i]->pcr_pid) {
+            for (size_t i = 0; i < m_pat.pmt.size(); ++i) {
+                if (header.pid == m_pat.pmt[i].pcr_pid) {
                     // PCRをシフト
                     PcrToArray(pPacket + 6, (DWORD)adapt.pcr_45khz + m_shift45khz);
                     break;
@@ -104,9 +100,9 @@ void CTsTimestampShifter::Transform_(BYTE *pPacket)
         return;
     }
     // PATリストにあるPMT監視
-    for (int i = 0; i < m_pat.pid_count; ++i) {
-        if (header.pid == m_pat.pid[i]/* && header.pid != 0*/) {
-            extract_pmt(m_pat.pmt[i], pPayload, payloadSize,
+    for (size_t i = 0; i < m_pat.pmt.size(); ++i) {
+        if (header.pid == m_pat.pmt[i].pmt_pid/* && header.pid != 0*/) {
+            extract_pmt(&m_pat.pmt[i], pPayload, payloadSize,
                         header.payload_unit_start_indicator,
                         header.continuity_counter);
             return;
@@ -115,8 +111,8 @@ void CTsTimestampShifter::Transform_(BYTE *pPacket)
     if (header.payload_unit_start_indicator) {
         // ここに来る頻度はそれほど高くないので最適化していない
         // 全てのPMTリストにあるPES監視
-        for (int i = 0; i < m_pat.pid_count; ++i) {
-            PMT *pPmt = m_pat.pmt[i];
+        for (size_t i = 0; i < m_pat.pmt.size(); ++i) {
+            const PMT *pPmt = &m_pat.pmt[i];
             for (int j = 0; j < pPmt->pid_count; ++j) {
                 if (header.pid == pPmt->pid[j]) {
                     PES_HEADER pesHeader;
@@ -178,16 +174,12 @@ CTsSender::CTsSender()
     , m_initStore(INITIAL_STORE_MSEC)
     , m_fSpecialExtending(false)
     , m_specialExtendInitRate(0)
-    , m_adjState(0)
     , m_adjBaseTick(0)
-    , m_adjHoldTick(0)
-    , m_adjAmount(0)
-    , m_adjDelta(0)
+    , m_adjFreq(0)
+    , m_adjBase(0)
 {
     m_udpAddr[0] = 0;
     m_pipeName[0] = 0;
-    m_liAdjFreq.QuadPart = 0;
-    m_liAdjBase.QuadPart = 0;
 }
 
 
@@ -201,21 +193,35 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
 {
     Close();
 
-    // まず読み込み共有で開いてみる
-    m_fShareWrite = false;
-    m_fFixed = true;
-    if (!m_file.Open(path, FILE_SHARE_READ | FILE_SHARE_DELETE, FILE_FLAG_SEQUENTIAL_SCAN)) {
-        // 録画中かもしれない。書き込み共有で開く
-        m_fShareWrite = true;
-        m_fFixed = false;
-        if (!m_file.Open(path, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAG_SEQUENTIAL_SCAN)) {
+    if (!::lstrcmpi(::PathFindExtension(path), TEXT(".mp4"))) {
+        m_file.reset(new CReadOnlyMpeg4File());
+        m_fShareWrite = false;
+        m_fFixed = true;
+        if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL)) {
+            m_file.reset();
             return false;
         }
     }
+    if (m_file == NULL) {
+        // まず読み込み共有で開いてみる
+        m_file.reset(new CReadOnlyLocalFile());
+        m_fShareWrite = false;
+        m_fFixed = true;
+        if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL)) {
+            // 録画中かもしれない。書き込み共有で開く
+            m_fShareWrite = true;
+            m_fFixed = false;
+            if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL | IReadOnlyFile::OPEN_FLAG_SHARE_WRITE)) {
+                m_file.reset();
+                return false;
+            }
+        }
+    }
+    m_reader.SetFile(m_file.get(), m_fFixed);
 
     // TSパケットの単位を決定
     BYTE buf[8192];
-    int readBytes = m_file.SyncRead(buf, sizeof(buf));
+    int readBytes = m_file->Read(buf, sizeof(buf));
     if (readBytes < 0) goto ERROR_EXIT;
     m_unitSize = select_unit_size(buf, buf + readBytes);
     if (m_unitSize < 188 || 320 < m_unitSize) goto ERROR_EXIT;
@@ -238,8 +244,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
 
     // バッファ確保
     int bufNum = max(bufSize / (m_unitSize*BUFFER_LEN), 1);
-    int olReqUnit = min(max(bufNum / 2, 2), 10);
-    if (!m_file.SetupBuffer(m_unitSize*BUFFER_LEN, m_unitSize, bufNum, olReqUnit)) {
+    if (!m_reader.SetupBuffer(m_unitSize*BUFFER_LEN, m_unitSize, bufNum)) {
         goto ERROR_EXIT;
     }
 
@@ -251,14 +256,14 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     m_totBase = -1;
 
     // QueryPerformanceCounterによるTickカウント補正をするかどうか
-    m_adjState = fUseQpc ? 1 : 0;
+    m_adjFreq = fUseQpc ? -1 : 0;
 
     // 初期状態はポーズのほうが都合がよいため
     m_fPause = true;
     m_fPurged = true;
     SetSpeed(100, 100);
 
-    __int64 fileSize = m_file.GetSize();
+    __int64 fileSize = m_reader.GetFileSize();
     if (fileSize < 0) goto ERROR_EXIT;
 
     // ファイル先頭のPCRを取得
@@ -273,11 +278,11 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     m_duration = 0;
     // 最大で標準的なTSの末尾8秒間を調べる
     for (int sec = 2; sec <= 8; sec *= 2) {
-        if (Seek(-TS_SUPPOSED_RATE * sec, FILE_END)) {
+        if (Seek(-TS_SUPPOSED_RATE * sec, IReadOnlyFile::MOVE_METHOD_END)) {
             // ファイル末尾が正常である場合
             m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 1000 * sec;
             m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) +
-                         (int)((long long)TS_SUPPOSED_RATE * sec / GetRate());
+                         (int)((long long)TS_SUPPOSED_RATE * 1000 * sec / GetRate());
             break;
         }
     }
@@ -285,10 +290,10 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
         SeekToBoundary(fileSize / 2, fileSize, buf, sizeof(buf) / 2))
     {
         // 書き込み共有かつファイル末尾が正常でない場合
-        __int64 filePos = m_file.GetPosition();
+        __int64 filePos = m_reader.GetFilePosition();
         for (int sec = 2; sec <= 8; sec *= 2) {
-            if (Seek(filePos - TS_SUPPOSED_RATE * sec, FILE_BEGIN)) {
-                filePos = m_file.GetPosition();
+            if (Seek(filePos - TS_SUPPOSED_RATE * sec, IReadOnlyFile::MOVE_METHOD_BEGIN)) {
+                filePos = m_reader.GetFilePosition();
                 m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 1000 * sec;
                 // ファイルサイズからレートを計算できないため
                 m_specialExtendInitRate = filePos < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
@@ -305,7 +310,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
 
     // 再生レートが極端に小さい場合(ワンセグ等)はバッファを縮める
     if (GetRate() < m_unitSize*BUFFER_LEN) {
-        if (!m_file.SetupBuffer(GetRate() / m_unitSize * m_unitSize, m_unitSize, bufNum, olReqUnit)) {
+        if (!m_reader.SetupBuffer(GetRate() / m_unitSize * m_unitSize, m_unitSize, bufNum)) {
             goto ERROR_EXIT;
         }
     }
@@ -334,15 +339,16 @@ ERROR_EXIT:
 // Tickカウント補正の初期設定をする
 void CTsSender::SetupQpc()
 {
-    if (m_adjState == 1) {
+    if (m_adjFreq < 0) {
         // msdnの推奨に従って現在スレッドのプロセッサ固定
         ::SetThreadAffinityMask(::GetCurrentThread(), 1);
-        if (::QueryPerformanceFrequency(&m_liAdjFreq) &&
-            ::QueryPerformanceCounter(&m_liAdjBase))
+        LARGE_INTEGER liFreq, liBase;
+        if (::QueryPerformanceFrequency(&liFreq) &&
+            ::QueryPerformanceCounter(&liBase))
         {
-            m_adjBaseTick = m_adjHoldTick = GetAdjTickCount();
-            m_adjAmount = m_adjDelta = 0;
-            m_adjState = 2;
+            m_adjBaseTick = GetAdjTickCount();
+            m_adjFreq = liFreq.QuadPart;
+            m_adjBase = liBase.QuadPart;
         }
     }
 }
@@ -383,7 +389,8 @@ void CTsSender::SetModTimestamp(bool fModTimestamp)
 void CTsSender::Close()
 {
     if (m_fPause) Pause(true, true);
-    m_file.Close();
+    m_reader.SetFile(NULL);
+    m_file.reset();
     CloseSocket();
     ClosePipe();
     m_udpAddr[0] = 0;
@@ -426,7 +433,7 @@ int CTsSender::Send()
     if (m_fShareWrite) {
         // 動画の長さ情報を更新
         if (tick - m_renewSizeTick >= RENEW_SIZE_INTERVAL) {
-            __int64 fileSize = m_file.GetSize();
+            __int64 fileSize = m_reader.GetFileSize();
             if (fileSize >= 0) {
                 if (m_fSpecialExtending && fileSize < m_fileSize) {
                     // 容量確保領域が録画終了によって削除されたと仮定する
@@ -452,11 +459,11 @@ int CTsSender::Send()
         // (追っかけ時のファイル末尾はデータの有無が不安定なため)
         if (tick - m_renewFsrTick >= RENEW_FSR_INTERVAL) {
             if (!m_fFixed) {
-                int bufSize = m_file.GetBufferSize();
+                int bufSize = m_reader.GetBufferSize();
                 int rate = GetRate();
                 if (!m_fSpecialExtending) {
                     // 追っかけ時の末尾付近では先読みしない
-                    __int64 fileRemain = m_file.GetSize() - m_file.GetPosition();
+                    __int64 fileRemain = m_reader.GetFileSize() - m_reader.GetFilePosition();
                     if (!m_fForceSyncRead && fileRemain < bufSize + rate*3) {
                         m_fForceSyncRead = true;
                         DEBUG_OUT(TEXT("CTsSender::Send(): ForceSyncRead On\n"));
@@ -560,7 +567,7 @@ bool CTsSender::SeekToBegin()
     if (!m_fPause) TransactMessage(TEXT("PURGE"));
     else Pause(true, true);
 
-    return Seek(0, FILE_BEGIN);
+    return Seek(0, IReadOnlyFile::MOVE_METHOD_BEGIN);
 }
 
 
@@ -573,7 +580,8 @@ bool CTsSender::SeekToEnd()
     if (!m_fPause) TransactMessage(TEXT("PURGE"));
     else Pause(true, true);
 
-    return Seek(-GetRate()*2, FILE_END);
+    m_reader.Flush();
+    return Seek(-GetRate()*2, IReadOnlyFile::MOVE_METHOD_END);
 }
 
 
@@ -589,8 +597,9 @@ bool CTsSender::Seek(int msec)
     if (!m_fPause) TransactMessage(TEXT("PURGE"));
     else Pause(true, true);
 
+    m_reader.Flush();
     __int64 rate = GetRate();
-    __int64 size = m_file.GetSize();
+    __int64 size = m_reader.GetFileSize();
     __int64 pos;
 
     if (size < 0) return false;
@@ -598,7 +607,7 @@ bool CTsSender::Seek(int msec)
     // -5000<=msec<=5000になるまで動画レートから概算シーク
     // 5ループまでに収束しなければ失敗
     for (int i = 0; i < 5 && (msec < -5000 || 5000 < msec); i++) {
-        if ((pos = m_file.GetPosition()) < 0) return false;
+        if ((pos = m_reader.GetFilePosition()) < 0) return false;
 
         // 前方or後方にこれ以上シークできない場合
         if (msec < 0 && pos <= rate ||
@@ -609,7 +618,7 @@ bool CTsSender::Seek(int msec)
         if (approx < 0) approx = 0;
 
         DWORD prevPcr = m_pcr;
-        if (!Seek(approx, FILE_BEGIN)) return false;
+        if (!Seek(approx, IReadOnlyFile::MOVE_METHOD_BEGIN)) return false;
 
         // 移動分を差し引く
         msec += MSB(m_pcr-prevPcr) ? (int)(prevPcr-m_pcr) / PCR_PER_MSEC :
@@ -622,11 +631,11 @@ bool CTsSender::Seek(int msec)
         // 10ループまでに収束しなければ失敗
         int mul = 1;
         for (int i = 0; i < 10 && msec < -500; i++) {
-            if ((pos = m_file.GetPosition()) < 0) return false;
+            if ((pos = m_reader.GetFilePosition()) < 0) return false;
             if (pos <= rate) return true;
 
             DWORD prevPcr = m_pcr;
-            if (!Seek(-rate * mul, FILE_CURRENT) || MSB(prevPcr-m_pcr)) return false;
+            if (!Seek(-rate * mul, IReadOnlyFile::MOVE_METHOD_CURRENT) || MSB(prevPcr-m_pcr)) return false;
             msec += (int)(prevPcr-m_pcr) / PCR_PER_MSEC;
             // 動画レートが極端に小さいとき動かない可能性があるため
             if (m_pcr == prevPcr) ++mul;
@@ -637,11 +646,11 @@ bool CTsSender::Seek(int msec)
         // 約1秒ずつ後方シーク
         // 10ループまでに収束しなければ失敗
         for (int i = 0; i < 10 && msec > 500; i++) {
-            if ((pos = m_file.GetPosition()) < 0) return false;
+            if ((pos = m_reader.GetFilePosition()) < 0) return false;
             if (pos >= size - rate*2) return true;
 
             DWORD prevPcr = m_pcr;
-            if (!Seek(rate, FILE_CURRENT) || MSB(m_pcr-prevPcr)) return false;
+            if (!Seek(rate, IReadOnlyFile::MOVE_METHOD_CURRENT) || MSB(m_pcr-prevPcr)) return false;
             msec -= (int)(m_pcr-prevPcr) / PCR_PER_MSEC;
         }
         if (msec > 500) return false;
@@ -739,7 +748,7 @@ int CTsSender::GetRate() const
         rate = m_specialExtendInitRate;
     }
     else {
-        __int64 fileSize = m_file.GetSize();
+        __int64 fileSize = m_reader.GetFileSize();
         rate = fileSize < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
                static_cast<int>(fileSize * 1000 / m_duration);
     }
@@ -750,34 +759,11 @@ int CTsSender::GetRate() const
 // 補正済みのTickカウントを取得する
 DWORD CTsSender::GetAdjTickCount()
 {
-    DWORD tick = ::GetTickCount();
-    if (m_adjState != 2) return tick;
-
-    if (!m_adjDelta) {
-        if (tick - m_adjHoldTick >= ADJUST_TICK_INTERVAL) {
-            LARGE_INTEGER liNow;
-            if (::QueryPerformanceCounter(&liNow)) {
-                LONGLONG llDiff = (liNow.QuadPart - m_liAdjBase.QuadPart) * 1000 / m_liAdjFreq.QuadPart;
-                m_adjDelta = (static_cast<DWORD>(llDiff) - (tick - m_adjBaseTick)) - m_adjAmount;
-            }
-            m_adjHoldTick = tick;
-        }
+    LARGE_INTEGER liNow;
+    if (m_adjFreq > 0 && ::QueryPerformanceCounter(&liNow)) {
+        return m_adjBaseTick + static_cast<DWORD>((liNow.QuadPart - m_adjBase) * 1000 / m_adjFreq);
     }
-    if (m_adjDelta) {
-        // 巻き戻り防止
-        if (!MSB(tick + m_adjDelta - m_adjHoldTick)) {
-            m_adjAmount += m_adjDelta;
-            m_adjDelta = 0;
-        }
-    }
-    DWORD adjTick = (m_adjDelta ? m_adjHoldTick : tick) + m_adjAmount;
-#if 0
-    static DWORD last;
-    // 2回目以降のOpen()時には必ずしも成立しない
-    ASSERT(!last || !MSB(adjTick - last));
-    last = adjTick;
-#endif
-    return adjTick;
+    return ::GetTickCount();
 }
 
 
@@ -921,7 +907,7 @@ void CTsSender::RotateBuffer(bool fSend, bool fSyncRead)
         if (carrySize > 0) memcpy(carry, m_curr, carrySize);
 
         BYTE *pBuf;
-        int readBytes = fSyncRead ? m_file.SyncRead(&pBuf) : m_file.Read(&pBuf);
+        int readBytes = fSyncRead ? m_reader.SyncRead(&pBuf) : m_reader.Read(&pBuf);
         if (readBytes < 0) {
             m_curr = m_head = m_tail = NULL;
         }
@@ -936,18 +922,19 @@ void CTsSender::RotateBuffer(bool fSend, bool fSyncRead)
 
 // シークする
 // シーク後、最初のPCRの位置まで読むことができればtrueを返す
-bool CTsSender::Seek(__int64 distanceToMove, DWORD dwMoveMethod)
+bool CTsSender::Seek(__int64 distanceToMove, IReadOnlyFile::MOVE_METHOD moveMethod)
 {
-    __int64 lastPos = m_file.GetPosition();
+    m_reader.Flush();
+    __int64 lastPos = m_reader.GetFilePosition();
     if (lastPos < 0) return false;
 
-    if (!m_file.SetPointer(distanceToMove, dwMoveMethod)) return false;
+    if (m_file->SetPointer(distanceToMove, moveMethod) < 0) return false;
 
     m_curr = m_head = m_tail = NULL;
     m_fEnPcr = false;
     if (ReadToPcr(120000, false, true) != 2) {
         // なるべく呼び出し前の状態に回復させるが、完全とは限らない
-        if (m_file.SetPointer(lastPos, FILE_BEGIN)) {
+        if (m_file->SetPointer(lastPos, IReadOnlyFile::MOVE_METHOD_BEGIN) >= 0) {
             m_curr = m_head = m_tail = NULL;
             m_fEnPcr = false;
             if (ReadToPcr(120000, false, true) == 2) m_prevPcr = m_pcr;
@@ -963,11 +950,12 @@ bool CTsSender::Seek(__int64 distanceToMove, DWORD dwMoveMethod)
 // log2(ファイルサイズ/TS_SUPPOSED_RATE)回ぐらい再帰する
 bool CTsSender::SeekToBoundary(__int64 predicted, __int64 range, BYTE *pWork, int workSize)
 {
-    if (!m_file.SetPointer(predicted, FILE_BEGIN)) return false;
+    m_reader.Flush();
+    if (m_file->SetPointer(predicted, IReadOnlyFile::MOVE_METHOD_BEGIN) < 0) return false;
 
     if (range < TS_SUPPOSED_RATE) return true;
 
-    int readBytes = m_file.SyncRead(pWork, workSize);
+    int readBytes = m_file->Read(pWork, workSize);
     if (readBytes < 0) return false;
     int unitSize = select_unit_size(pWork, pWork + readBytes);
 
@@ -1055,7 +1043,7 @@ void CTsSender::SendData(BYTE *pData, int dataSize)
         if (!m_sock) OpenSocket();
         if (m_sock) {
             // UDP転送
-            sockaddr_in addr = {0};
+            sockaddr_in addr = {};
             addr.sin_family = AF_INET;
             addr.sin_port = htons(m_udpPort);
             addr.sin_addr.S_un.S_addr = inet_addr(m_udpAddr);
