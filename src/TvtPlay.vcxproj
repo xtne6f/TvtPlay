@@ -170,6 +170,7 @@
     <ClInclude Include="DrawUtil.h" />
     <ClInclude Include="Playlist.h" />
     <ClInclude Include="ReadOnlyFile.h" />
+    <ClInclude Include="ReadOnlyMpeg4File.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="Settings.h" />
     <ClInclude Include="TvtPlayUtil.h" />
@@ -191,6 +192,7 @@
     <ClCompile Include="DrawUtil.cpp" />
     <ClCompile Include="Playlist.cpp" />
     <ClCompile Include="ReadOnlyFile.cpp" />
+    <ClCompile Include="ReadOnlyMpeg4File.cpp" />
     <ClCompile Include="Settings.cpp" />
     <ClCompile Include="TvtPlayUtil.cpp" />
     <ClCompile Include="StatusView.cpp" />
