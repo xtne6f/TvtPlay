@@ -165,7 +165,7 @@ bool CReadOnlyMpeg4File::InitializeTable()
     char path[] = "/moov0/trak0/mdia0/mdhd0";
     for (char i = '0'; i <= '9'; ++i, ++path[11]) {
         DWORD timeScale = 0;
-        if (ReadBox(path, buf) && buf.size() >= 24) {
+        if (ReadBox(path, buf) >= 24) {
             if ((ArrayToDWORD(&buf[0]) & 0xFEFFFFFF) == 0) {
                 timeScale = ArrayToDWORD(&buf[buf[0] ? 20 : 12]);
             }
@@ -202,7 +202,7 @@ bool CReadOnlyMpeg4File::ReadVideoSampleDesc(char index, std::vector<BYTE> &spsP
 {
     char path[] = "/moov0/trak?/mdia0/minf0/stbl0/stsd0";
     path[11] = index;
-    if (ReadBox(path, buf) && buf.size() >= 16) {
+    if (ReadBox(path, buf) >= 16) {
         size_t boxLen = ArrayToDWORD(&buf[8]);
         if (ArrayToDWORD(&buf[0]) == 0 &&
             ArrayToDWORD(&buf[4]) == 1 &&
@@ -248,7 +248,7 @@ bool CReadOnlyMpeg4File::ReadAudioSampleDesc(char index, BYTE *adtsHeader, std::
 {
     char path[] = "/moov0/trak?/mdia0/minf0/stbl0/stsd0";
     path[11] = index;
-    if (ReadBox(path, buf) && buf.size() >= 16) {
+    if (ReadBox(path, buf) >= 16) {
         size_t boxLen = ArrayToDWORD(&buf[8]);
         if (ArrayToDWORD(&buf[0]) == 0 &&
             ArrayToDWORD(&buf[4]) == 1 &&
@@ -309,7 +309,7 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
 
     std::vector<__int64> stco;
     ::memcpy(&path[31], "co64", 4);
-    if (ReadBox(path, buf)) {
+    if (ReadBox(path, buf) >= 0) {
         if (buf.size() >= 8) {
             size_t n = ArrayToDWORD(&buf[4]);
             if (ArrayToDWORD(&buf[0]) == 0 && n == (buf.size() - 8) / 8) {
@@ -322,7 +322,7 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
     }
     else {
         ::memcpy(&path[31], "stco", 4);
-        if (ReadBox(path, buf) && buf.size() >= 8) {
+        if (ReadBox(path, buf) >= 8) {
             size_t n = ArrayToDWORD(&buf[4]);
             if (ArrayToDWORD(&buf[0]) == 0 && n == (buf.size() - 8) / 4) {
                 stco.reserve(n);
@@ -334,7 +334,7 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
     }
     stsz.clear();
     ::memcpy(&path[31], "stsz", 4);
-    if (ReadBox(path, buf) && buf.size() >= 12) {
+    if (ReadBox(path, buf) >= 12) {
         size_t n = ArrayToDWORD(&buf[8]);
         if (ArrayToDWORD(&buf[0]) == 0 && ArrayToDWORD(&buf[4]) == 0 && n == (buf.size() - 12) / 4) {
             stsz.reserve(n);
@@ -351,7 +351,7 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
     stso.clear();
     stso.reserve(stsz.size());
     ::memcpy(&path[31], "stsc", 4);
-    if (!ReadBox(path, buf) || buf.size() < 8) {
+    if (ReadBox(path, buf) < 8) {
         return false;
     }
     size_t stscNum = ArrayToDWORD(&buf[4]);
@@ -388,7 +388,7 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
     stts.clear();
     stts.reserve(stsz.size());
     ::memcpy(&path[31], "stts", 4);
-    if (ReadBox(path, buf) && buf.size() >= 8) {
+    if (ReadBox(path, buf) >= 8) {
         size_t n = ArrayToDWORD(&buf[4]);
         if (ArrayToDWORD(&buf[0]) == 0 && n == (buf.size() - 8) / 8) {
             if (n == 1 || n == 2 && ArrayToDWORD(&buf[16]) == 1) {
@@ -415,7 +415,7 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
         ctts->clear();
         ctts->reserve(stsz.size());
         ::memcpy(&path[31], "ctts", 4);
-        if (!ReadBox(path, buf)) {
+        if (ReadBox(path, buf) < 0) {
             // out-of-orderなし
             ctts->resize(stsz.size(), 0);
         }
@@ -661,12 +661,12 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
     return true;
 }
 
-bool CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<BYTE> &data) const
+int CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<BYTE> &data) const
 {
     if (path[0] == '/') {
         LARGE_INTEGER toMove = {};
         if (!::SetFilePointerEx(m_hFile, toMove, NULL, FILE_BEGIN)) {
-            return false;
+            return -1;
         }
         ++path;
     }
@@ -683,7 +683,7 @@ bool CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<BYTE> &data) const
                 if (boxSize - 8 <= READ_BOX_SIZE_MAX) {
                     data.resize(boxSize - 8);
                     if (boxSize <= 8 || ::ReadFile(m_hFile, &data.front(), boxSize - 8, &numRead, NULL) && numRead == boxSize - 8) {
-                        return true;
+                        return boxSize - 8;
                     }
                 }
                 break;
@@ -696,7 +696,7 @@ bool CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<BYTE> &data) const
             break;
         }
     }
-    return false;
+    return -1;
 }
 
 int CReadOnlyMpeg4File::ReadSample(size_t index, const std::vector<__int64> &stso, const std::vector<DWORD> &stsz, std::vector<BYTE> *data) const

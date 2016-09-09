@@ -36,7 +36,7 @@ private:
                          std::vector<__int64> &stts, std::vector<DWORD> *ctts, std::vector<BYTE> &buf) const;
     bool InitializeBlockList();
     bool ReadCurrentBlock();
-    bool ReadBox(LPCSTR path, std::vector<BYTE> &data) const;
+    int ReadBox(LPCSTR path, std::vector<BYTE> &data) const;
     int ReadSample(size_t index, const std::vector<__int64> &stso, const std::vector<DWORD> &stsz, std::vector<BYTE> *data) const;
     static size_t CreatePat(BYTE *data, WORD tsid, WORD sid);
     static size_t CreateNit(BYTE *data, WORD nid);
