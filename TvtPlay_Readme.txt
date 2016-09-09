@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.2.3 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.2.4 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -7,7 +7,7 @@ TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってロー�
 ■動作環境
 ・Windows XP以降
 ・TVTest/TVH264 ver.0.7.16 以降。ver.0.8.1 以降を推奨
-・Visual Studio 2015 Update 1 の Visual C++ 再頒布可能パッケージ (x86/x64)
+・Microsoft Visual C++ 2015 再頒布可能パッケージ Update 3 (x86/x64)
 
 ■初期導入FAQ
 ○このReadme長いんだけど？
@@ -46,9 +46,9 @@ TvtPlay.tvtp_x64はx64版のTVTest利用者向けです。
 "plus"フォルダにあるTvtPlay.tvtpはTVTest0.9.0以降専用です。TVTest0.9.0は未リリー
 スのため今後の仕様変更により使えなくなる可能性もあります。
 
-TVTest起動オプションの最後に拡張子.ts .m2t .m2ts .m3u .tslist いずれかのファイル
-パスを付加するとプラグインは有効になり、起動時にそのファイルを開きます。起動オプ
-ションについては後述の「TVTest起動オプションについて」も参照してください。
+TVTest起動オプションの最後に拡張子.ts .m2t .m2ts .mp4 .m3u .tslist いずれかのフ
+ァイルパスを付加するとプラグインは有効になり、起動時にそのファイルを開きます。起
+動オプションについては後述の「TVTest起動オプションについて」も参照してください。
 例:
   TVTest.exe /d BonDriver_UDP.dll foo.ts
   # TVTestのデフォルトのBonDriverに"BonDriver_UDP.dll"を指定している場合、
@@ -340,6 +340,33 @@ Button[00-17]
     # 元のTSファイルがなければ、どのようなファイルを開いたかを特定されることはあ
     # りません。
 
+[MP4]セクション【ver.2.4～】
+Enabled
+    MP4再生機能(後述)を有効にする[=1]かどうか
+BroadcastID
+    ファイルの放送IDを指定
+    # NetworkID=0x0001,TransportStreamID=0x0002,ServiceID=0x0003としたいときは
+    # [=0x000100020003]のように指定します。
+Time
+    ファイルの放送時刻を指定
+    # [=2000-01-01T09:00:00]のように指定します。空文字のときはファイルの更新時刻
+    # を放送時刻とします。
+Meta
+    メタ情報を指定する設定ファイルの名前
+    # デフォルトは[=metadata.ini]です。空文字のときは常に[MP4]セクションの指定に
+    # 従います。MP4ファイルのあるフォルダにこの設定ファイルがあれば、BroadcastID
+    # とTimeの指定を上書きします。設定ファイルの内容は[*](全てのファイルに適用)
+    # か[ファイル名]をセクションとして以下のように記述します:
+    #   [*]
+    #   BroadcastID=0x111122223333
+    #   [foo.mp4]
+    #   Time=2011-11-11T11:11:11
+    #   [bar.mp4]
+    #   BroadcastID=0x444455556666
+    #   Time=2012-12-12T12:12:12
+    #   ※foo.mp4はBroadcastID=0x111122223333,Time=2011-11-11T11:11:11
+    #     bar.mp4はBroadcastID=0x444455556666,Time=2012-12-12T12:12:12になる
+
 [ColorScheme]および[Style]セクション【ver.0.9～】
     セクションがあれば、デザインをプラグインで個別に設定する
     # TvtPlayは、起動時に"TVTest.ini"からこれらのセクションを読みこんでコントロ
@@ -350,6 +377,15 @@ Button[00-17]
     セクションがあれば、フォントをプラグインで個別に設定する
     # 前述と同様に仕様変更への保険を目的としています。以下4つのキーを使います:
     # FontName / FontSize / FontWeight / FontItalic
+
+■MP4再生機能について【ver.2.4～】
+MP4ファイルをトランスポートストリームに変換してTVTestに送ることができます。H.264
+に対応したTVTest(おそらく0.9.0以降に限定)はこれを再生できます。今のところ以下の
+制限があります:
+・形式は1映像(H.264)+1～2音声(AAC)のみ
+・PAR情報は無視
+ほか、特殊な(一般的でない)構造のMP4は再生できないかもしれません。また、キーフレ
+ームの少ない映像はシーク後の乱れが長く続きます。
 
 ■ドロップカウントについて
 シークを行うとTVTestステータスバーのドロップカウントは増加します。これはTSパケッ
@@ -445,7 +481,7 @@ TSファイルの同期・解析のために、tsselect-0.1.8(
 http://www.marumo.ne.jp/junk/tsselect-0.1.8.lzh)よりソースコードを改変利用してい
 ます。
 TvtAudioStretchFilterフィルタは、再生レート制御のために、SoundTouchライブラリver
-.1.8.0(http://www.surina.net/soundtouch/)を利用し、TvtPlayスレ2>>774のSSE2最適化
+.1.9.2(http://www.surina.net/soundtouch/)を利用し、TvtPlayスレ2>>774のSSE2最適化
 パッチ(http://toro.2ch.net/test/read.cgi/avi/1348364114/774 )を少し補正したもの
 を適用しています。
 デフォルトのアイコン画像"Buttons.bmp"は、「HDUS関係ファイル置き場」(
