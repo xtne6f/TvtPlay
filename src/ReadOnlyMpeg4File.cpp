@@ -454,6 +454,10 @@ bool CReadOnlyMpeg4File::InitializeBlockList()
         }
         // PAT + NIT + SDT + PMT + PCR
         __int64 size = 5;
+        if ((m_blockList.size() - 1) % 10 == 9) {
+            // EIT
+            ++size;
+        }
         if ((m_blockList.size() - 1) % 20 == 0) {
             // TOT
             ++size;
@@ -551,6 +555,15 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
     packet = &m_blockCache.back() - 187;
     CreateHeader(packet, 0, 2, 0, 0x01FF);
     CreatePcrAdaptation(packet + 4, static_cast<DWORD>(blockIndex) * 4500);
+
+    if (blockIndex % 10 == 9) {
+        // EIT
+        m_blockCache.insert(m_blockCache.end(), 188, 0xFF);
+        packet = &m_blockCache.back() - 187;
+        CreateHeader(packet, 1, 1, (blockIndex / 10) & 0x0F, 0x0012);
+        packet[4] = 0;
+        CreateEmptyEitPf(packet + 5, m_nid, m_tsid, m_sid);
+    }
 
     if (blockIndex % 20 == 0) {
         // TOT
@@ -802,6 +815,30 @@ size_t CReadOnlyMpeg4File::CreateSdt(BYTE *data, WORD nid, WORD tsid, WORD sid)
     data[25] = HIBYTE(crc);
     data[26] = LOBYTE(crc);
     return 27;
+}
+
+size_t CReadOnlyMpeg4File::CreateEmptyEitPf(BYTE *data, WORD nid, WORD tsid, WORD sid)
+{
+    data[0] = 0x4E;
+    data[1] = 0xF0;
+    data[2] = 15;
+    data[3] = HIBYTE(sid);
+    data[4] = LOBYTE(sid);
+    data[5] = 0xC1;
+    data[6] = 0;
+    data[7] = 0;
+    data[8] = HIBYTE(tsid);
+    data[9] = LOBYTE(tsid);
+    data[10] = HIBYTE(nid);
+    data[11] = LOBYTE(nid);
+    data[12] = 0;
+    data[13] = 0x4E;
+    DWORD crc = CalcCrc32(data, 14);
+    data[14] = HIBYTE(HIWORD(crc));
+    data[15] = LOBYTE(HIWORD(crc));
+    data[16] = HIBYTE(crc);
+    data[17] = LOBYTE(crc);
+    return 18;
 }
 
 size_t CReadOnlyMpeg4File::CreateTot(BYTE *data, SYSTEMTIME st)

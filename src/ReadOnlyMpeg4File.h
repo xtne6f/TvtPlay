@@ -41,6 +41,7 @@ private:
     static size_t CreatePat(BYTE *data, WORD tsid, WORD sid);
     static size_t CreateNit(BYTE *data, WORD nid);
     static size_t CreateSdt(BYTE *data, WORD nid, WORD tsid, WORD sid);
+    static size_t CreateEmptyEitPf(BYTE *data, WORD nid, WORD tsid, WORD sid);
     static size_t CreateTot(BYTE *data, SYSTEMTIME st);
     static size_t CreatePmt(BYTE *data, WORD sid, bool fAudio2);
     static size_t CreateHeader(BYTE *data, BYTE unitStart, BYTE adaptation, BYTE counter, WORD pid);
