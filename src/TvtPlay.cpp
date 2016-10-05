@@ -324,6 +324,19 @@ bool CTvtPlay::Initialize()
         m_pApp->RegisterCommand(ID_COMMAND_STRETCH_A + i, key, name);
     }
 
+    // TVTestの変数登録を初期化
+    TVTest::RegisterVariableInfo rvi;
+    rvi.Flags = 0;
+    rvi.pszKeyword = L"playback-filename";
+    rvi.pszDescription = L"再生ファイル名";
+    rvi.pszValue = L"";
+    m_pApp->RegisterVariable(&rvi);
+    rvi.Flags = 0;
+    rvi.pszKeyword = L"playback-nts-filename";
+    rvi.pszDescription = L"再生ファイル名(非TS時のみ)";
+    rvi.pszValue = L"";
+    m_pApp->RegisterVariable(&rvi);
+
     // イベントコールバック関数を登録
     m_pApp->SetEventCallback(EventCallback, this);
 
@@ -1587,6 +1600,21 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset, int stretchID)
     if (stretchID >= 0) m_initialStretchID = stretchID;
     if (m_initialStretchID >= 0) Stretch(m_initialStretchID);
 
+    // TVTestに変数登録
+    TVTest::RegisterVariableInfo rvi;
+    rvi.Flags = 0;
+    rvi.pszKeyword = L"playback-filename";
+    rvi.pszDescription = L"再生ファイル名";
+    rvi.pszValue = ::PathFindFileName(fileName);
+    m_pApp->RegisterVariable(&rvi);
+    if (!::lstrcmpi(::PathFindExtension(fileName), TEXT(".mp4"))) {
+        rvi.Flags = 0;
+        rvi.pszKeyword = L"playback-nts-filename";
+        rvi.pszDescription = L"再生ファイル名(非TS時のみ)";
+        rvi.pszValue = ::PathFindFileName(fileName);
+        m_pApp->RegisterVariable(&rvi);
+    }
+
     // 再生初期化が完了したことを知らせる
     ::PostThreadMessage(m_threadID, WM_TS_INIT_DONE, 0, 0);
 
@@ -1626,6 +1654,19 @@ void CTvtPlay::Close()
 
         // 閉じる直前の再生速度を保存
         m_initialStretchID = GetStretchID();
+
+        // TVTestの変数登録を初期化
+        TVTest::RegisterVariableInfo rvi;
+        rvi.Flags = 0;
+        rvi.pszKeyword = L"playback-filename";
+        rvi.pszDescription = L"再生ファイル名";
+        rvi.pszValue = L"";
+        m_pApp->RegisterVariable(&rvi);
+        rvi.Flags = 0;
+        rvi.pszKeyword = L"playback-nts-filename";
+        rvi.pszDescription = L"再生ファイル名(非TS時のみ)";
+        rvi.pszValue = L"";
+        m_pApp->RegisterVariable(&rvi);
 
         // 再生情報を初期化する
         UpdateInfos();
