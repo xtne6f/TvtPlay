@@ -684,19 +684,29 @@ int CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<BYTE> &data) const
         ++path;
     }
     int index = path[4] - '0';
-    BYTE head[8];
+    BYTE head[16];
     DWORD numRead;
     while (::ReadFile(m_hFile, head, 8, &numRead, NULL) && numRead == 8) {
-        DWORD boxSize = ArrayToDWORD(head);
-        if (boxSize < 8) {
+        LARGE_INTEGER boxSize;
+        boxSize.QuadPart = ArrayToDWORD(head);
+        if (boxSize.QuadPart == 1) {
+            // 64bit形式
+            if (!::ReadFile(m_hFile, head + 8, 8, &numRead, NULL) || numRead != 8) {
+                break;
+            }
+            numRead = 16;
+            boxSize.HighPart = ArrayToDWORD(head + 8);
+            boxSize.LowPart = ArrayToDWORD(head + 12);
+        }
+        if (boxSize.QuadPart < numRead) {
             break;
         }
         if (::memcmp(path, head + 4, 4) == 0 && --index < 0) {
             if (path[5] == '\0') {
-                if (boxSize - 8 <= READ_BOX_SIZE_MAX) {
-                    data.resize(boxSize - 8);
-                    if (boxSize <= 8 || ::ReadFile(m_hFile, &data.front(), boxSize - 8, &numRead, NULL) && numRead == boxSize - 8) {
-                        return boxSize - 8;
+                if (boxSize.QuadPart - numRead <= READ_BOX_SIZE_MAX) {
+                    data.resize(static_cast<size_t>(boxSize.QuadPart - numRead));
+                    if (data.empty() || ::ReadFile(m_hFile, &data.front(), static_cast<DWORD>(data.size()), &numRead, NULL) && numRead == data.size()) {
+                        return static_cast<int>(data.size());
                     }
                 }
                 break;
@@ -704,7 +714,7 @@ int CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<BYTE> &data) const
             return ReadBox(path + 6, data);
         }
         LARGE_INTEGER toMove;
-        toMove.QuadPart = boxSize - 8;
+        toMove.QuadPart = boxSize.QuadPart - numRead;
         if (!::SetFilePointerEx(m_hFile, toMove, NULL, FILE_CURRENT)) {
             break;
         }
