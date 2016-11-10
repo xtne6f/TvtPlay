@@ -21,9 +21,9 @@ static DWORD g_dwMagic;
 
 CTsTimestampShifter::CTsTimestampShifter()
     : m_shift45khz(0)
-    , m_pat()
     , m_fEnabled(false)
 {
+    Reset();
 }
 
 void CTsTimestampShifter::SetInitialPcr(DWORD pcr45khz)
@@ -34,7 +34,8 @@ void CTsTimestampShifter::SetInitialPcr(DWORD pcr45khz)
 
 void CTsTimestampShifter::Reset()
 {
-    m_pat = PAT();
+    PAT zeroPat = {};
+    m_pat = zeroPat;
 }
 
 static void PcrToArray(BYTE *pDest, DWORD clk45khz)

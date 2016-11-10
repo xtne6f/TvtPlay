@@ -208,7 +208,6 @@ CTvtPlay::CTvtPlay()
     , m_swcShowLate(0)
     , m_swcClearEarly(0)
     , m_pcr(0)
-    , m_pat()
     , m_captionPid(-1)
 #endif
 {
@@ -219,6 +218,8 @@ CTvtPlay::CTvtPlay()
     m_szChaptersDirName[0] = 0;
 #ifdef EN_SWC
     m_szCaptionDllPath[0] = 0;
+    PAT zeroPat = {};
+    m_pat = zeroPat;
 #endif
     m_lastCurPos.x = m_lastCurPos.y = 0;
     m_idleCurPos.x = m_idleCurPos.y = 0;
@@ -2839,7 +2840,8 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
         CBlockLock lock(&t.m_streamLock);
         t.m_tsShifter.Reset();
 #ifdef EN_SWC
-        t.m_pat = PAT();
+        PAT zeroPat = {};
+        t.m_pat = zeroPat;
         t.m_captionAnalyzer.ClearShowState();
 #endif
         t.m_fResetPat = false;
