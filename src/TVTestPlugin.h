@@ -125,6 +125,12 @@
 	  ・MESSAGE_GETDPI
 	  ・MESSAGE_GETFONT
 	  ・MESSAGE_SHOWDIALOG
+	  ・MESSAGE_CONVERTTIME
+	  ・MESSAGE_SETVIDEOSTREAMCALLBACK
+	  ・MESSAGE_GETVARSTRINGCONTEXT
+	  ・MESSAGE_FREEVARSTRINGCONTEXT
+	  ・MESSAGE_FORMATVARSTRING
+	  ・MESSAGE_REGISTERVARIABLE
 	・以下のイベントを追加した
 	  ・EVENT_FILTERGRAPH_INITIALIZE
 	  ・EVENT_FILTERGRAPH_INITIALIZED
@@ -138,6 +144,12 @@
 	  ・EVENT_FAVORITESCHANGED
 	  ・EVENT_1SEGMODECHANGED
 	・プラグインのフラグに PLUGIN_FLAG_NOENABLEDDISABLED を追加した
+	・録画情報のフラグに RECORD_FLAG_UTC を追加した。
+	・MESSAGE_GETRECORDSTATUS にフラグの指定を追加した。
+	・MESSAGE_GETSETTING で取得できる設定に以下を追加した。
+	  ・RecordFileName
+	  ・CaptureFolder
+	  ・CaptureFileName
 
 	ver.0.0.13 (TVTest ver.0.7.16 or later)
 	・以下のメッセージを追加した
@@ -452,6 +464,12 @@ enum {
 	MESSAGE_GETDPI,						// DPIを取得
 	MESSAGE_GETFONT,					// フォントを取得
 	MESSAGE_SHOWDIALOG,					// ダイアログを表示
+	MESSAGE_CONVERTTIME,				// 日時を変換
+	MESSAGE_SETVIDEOSTREAMCALLBACK,		// 映像ストリームのコールバック関数を設定
+	MESSAGE_GETVARSTRINGCONTEXT,		// 変数文字列のコンテキストを取得
+	MESSAGE_FREEVARSTRINGCONTEXT,		// 変数文字列のコンテキストを解放
+	MESSAGE_FORMATVARSTRING,			// 変数文字列を使って文字列をフォーマット
+	MESSAGE_REGISTERVARIABLE,			// 変数を登録
 #endif
 	MESSAGE_TRAILER
 };
@@ -521,6 +539,7 @@ enum {
 	EVENT_PANELITEM_NOTIFY,						// パネル項目の通知
 	EVENT_FAVORITESCHANGED,						// お気に入りチャンネルが変更された
 	EVENT_1SEGMODECHANGED,						// ワンセグモードが変わった
+	EVENT_GETVARIABLE,							// 変数の取得
 #endif
 	EVENT_TRAILER
 };
@@ -561,6 +580,17 @@ inline void *MsgMemoryAlloc(PluginParam *pParam,DWORD Size) {
 // メモリ開放
 inline void MsgMemoryFree(PluginParam *pParam,void *pData) {
 	(*pParam->Callback)(pParam,MESSAGE_MEMORYALLOC,(LPARAM)pData,0);
+}
+
+// 文字列複製
+inline LPWSTR MsgStringDuplicate(PluginParam *pParam,LPCWSTR pszString) {
+	if (pszString==NULL)
+		return NULL;
+	DWORD Size=(::lstrlenW(pszString)+1)*sizeof(WCHAR);
+	LPWSTR pszDup=(LPWSTR)MsgMemoryAlloc(pParam,Size);
+	if (pszDup!=NULL)
+		::CopyMemory(pszDup,pszString,Size);
+	return pszDup;
 }
 
 // イベントハンドル用コールバックの設定
@@ -714,6 +744,9 @@ enum {
 // 録画フラグ
 enum {
 	RECORD_FLAG_CANCEL		=0x10000000UL	// キャンセル
+#if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,14)
+	, RECORD_FLAG_UTC		=0x00000001UL	// UTC 日時
+#endif
 };
 
 // 録画開始時間の指定方法
@@ -739,17 +772,18 @@ struct RecordInfo {
 							// %～% で囲まれた置換キーワードを使用できます
 	int MaxFileName;		// ファイル名の最大長(MESSAGE_GETRECORDのみで使用)
 	FILETIME ReserveTime;	// 録画予約された時刻(MESSAGE_GETRECORDのみで使用)
+							// ローカル時刻(Flags に RECORD_FLAG_UTC を指定した場合 UTC)
 	DWORD StartTimeSpec;	// 録画開始時間の指定方法(RECORD_START_???)
 	union {
 		FILETIME Time;		// 録画開始時刻(StartTimeSpec==RECORD_START_TIME)
-							// ローカル時刻
+							// ローカル時刻(Flags に RECORD_FLAG_UTC を指定した場合 UTC)
 		ULONGLONG Delay;	// 録画開始時間(StartTimeSpec==RECORD_START_DELAY)
 							// 録画を開始するまでの時間(ms)
 	} StartTime;
 	DWORD StopTimeSpec;		// 録画停止時間の指定方法(RECORD_STOP_???)
 	union {
 		FILETIME Time;		// 録画停止時刻(StopTimeSpec==RECORD_STOP_TIME)
-							// ローカル時刻
+							// ローカル時刻(Flags に RECORD_FLAG_UTC を指定した場合 UTC)
 		ULONGLONG Duration;	// 録画停止時間(StopTimeSpec==RECORD_STOP_DURATION)
 							// 開始時間からのミリ秒
 	} StopTime;
@@ -855,13 +889,14 @@ enum {
 struct RecordStatusInfo {
 	DWORD Size;				// 構造体のサイズ
 	DWORD Status;			// 状態(RECORD_STATUS_???)
-	FILETIME StartTime;		// 録画開始時刻(ローカル時刻)
+	FILETIME StartTime;		// 録画開始時刻
+							// ローカル時刻(RECORD_STATUS_FLAG_UTC が指定されていれば UTC)
 	DWORD RecordTime;		// 録画時間(ms) 一時停止中を含まない
 	DWORD PauseTime;		// 一時停止時間(ms)
 	DWORD StopTimeSpec;		// 録画停止時間の指定方法(RECORD_STOP_???)
 	union {
 		FILETIME Time;		// 録画停止予定時刻(StopTimeSpec==RECORD_STOP_TIME)
-							// (ローカル時刻)
+							// ローカル時刻(RECORD_STATUS_FLAG_UTC が指定されていれば UTC)
 		ULONGLONG Duration;	// 録画停止までの時間(StopTimeSpec==RECORD_STOP_DURATION)
 							// 開始時刻(StartTime)からミリ秒単位
 	} StopTime;
@@ -882,6 +917,15 @@ enum { RECORDSTATUSINFO_SIZE_V1=TVTEST_OFFSETOF(RecordStatusInfo,pszFileName) };
 inline bool MsgGetRecordStatus(PluginParam *pParam,RecordStatusInfo *pInfo) {
 	return (*pParam->Callback)(pParam,MESSAGE_GETRECORDSTATUS,(LPARAM)pInfo,0)!=0;
 }
+#if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,14)
+// 録画ステータス取得フラグ
+enum {
+	RECORD_STATUS_FLAG_UTC = 0x00000001U	// UTC の時刻を取得
+};
+inline bool MsgGetRecordStatus(PluginParam *pParam,RecordStatusInfo *pInfo,DWORD Flags) {
+	return (*pParam->Callback)(pParam,MESSAGE_GETRECORDSTATUS,(LPARAM)pInfo,Flags)!=0;
+}
+#endif
 
 // 映像の情報
 struct VideoInfo {
@@ -1095,7 +1139,7 @@ struct ProgramInfo {
 	int MaxEventText;		// イベントテキストの最大長
 	LPWSTR pszEventExtText;	// 追加イベントテキスト
 	int MaxEventExtText;	// 追加イベントテキストの最大長
-	SYSTEMTIME StartTime;	// 開始日時(JST)
+	SYSTEMTIME StartTime;	// 開始日時(EPG 日時 : UTC+9)
 	DWORD Duration;			// 長さ(秒単位)
 };
 
@@ -1339,6 +1383,15 @@ enum SettingType {
 	IniFilePath           Ini ファイルのパス                  文字列
 	RecordFolder          録画時の保存先フォルダ              文字列
 
+	ver.0.0.14 以降
+	RecordFileName        録画のファイル名(※1)               文字列
+	CaptureFolder         キャプチャの保存先フォルダ(※2)     文字列
+	CaptureFileName       キャプチャのファイル名(※1)         文字列
+
+	※1　%event-name% などの変数が含まれている可能性があります。
+	　 　MsgFormatVarString を使って変数を展開できます。
+	※2　相対パスの可能性があります。その場合実行ファイルの場所が基準です。
+
 	* フォント関係の設定の取得は ver.0.0.14 正式版までに削除されます。
 	* 代わりに MsgGetFont を利用します。
 	OSDFont               OSD のフォント                      データ(LOGFONT)
@@ -1406,6 +1459,7 @@ inline DWORD MsgGetSetting(PluginParam *pParam,LPCWSTR pszName,LPWSTR pszString,
 }
 
 // フォントの設定を取得する
+// 現在は使用しません。
 inline bool MsgGetSetting(PluginParam *pParam,LPCWSTR pszName,LOGFONTW *pFont)
 {
 	SettingInfo Info;
@@ -1497,6 +1551,7 @@ enum {
 };
 
 // 録画開始情報
+// EVENT_STARTRECORD で渡されます。
 struct StartRecordInfo {
 	DWORD Size;				// 構造体のサイズ
 	DWORD Flags;			// フラグ(現在未使用)
@@ -1711,7 +1766,7 @@ struct EpgEventInfo {
 	BYTE RunningStatus;					// running_status
 	BYTE FreeCaMode;					// free_CA_mode
 	DWORD Reserved;						// 予約
-	SYSTEMTIME StartTime;				// 開始日時(ローカル時刻)
+	SYSTEMTIME StartTime;				// 開始日時(EPG 日時 : UTC+9)
 	DWORD Duration;						// 長さ(秒単位)
 	BYTE VideoListLength;				// 映像の情報の数
 	BYTE AudioListLength;				// 音声の情報の数
@@ -1848,7 +1903,7 @@ struct ProgramGuideProgramInfo {
 	WORD TransportStreamID;	// ストリームID
 	WORD ServiceID;			// サービスID
 	WORD EventID;			// イベントID
-	SYSTEMTIME StartTime;	// 開始日時
+	SYSTEMTIME StartTime;	// 開始日時(EPG 日時 : UTC+9)
 	DWORD Duration;			// 長さ(秒単位)
 };
 
@@ -2287,6 +2342,7 @@ inline bool MsgRegisterPluginCommand(PluginParam *pParam,const PluginCommandInfo
 }
 
 // プラグインのコマンドの状態を設定する
+// State に PLUGIN_COMMAND_STATE_* の組み合わせを指定します。
 inline bool MsgSetPluginCommandState(PluginParam *pParam,int ID,DWORD State) {
 	return (*pParam->Callback)(pParam,MESSAGE_SETPLUGINCOMMANDSTATE,ID,State)!=FALSE;
 }
@@ -2477,6 +2533,7 @@ enum {
 };
 
 // ステータス項目の通知を行う
+// Type に STATUS_ITEM_NOTIFY_* のいずれかを指定します。
 inline bool MsgStatusItemNotify(PluginParam *pParam,int ID,UINT Type) {
 	return (*pParam->Callback)(pParam,MESSAGE_STATUSITEMNOTIFY,ID,Type)!=FALSE;
 }
@@ -2913,6 +2970,7 @@ struct ShowDialogInfo {
 	POINT Position;					// ダイアログの位置(Flags に SHOW_DIALOG_FLAG_POSITION が指定されている場合に有効)
 };
 
+// ダイアログ表示のフラグ
 enum {
 	SHOW_DIALOG_FLAG_MODELESS = 0x00000001U,	// モードレス
 	SHOW_DIALOG_FLAG_POSITION = 0x00000002U		// 位置指定が有効
@@ -2926,6 +2984,233 @@ enum {
 // 指定しない場合はモーダルダイアログが作成され、EndDialog で指定された値が返ります。
 inline INT_PTR MsgShowDialog(PluginParam *pParam,ShowDialogInfo *pInfo) {
 	return (*pParam->Callback)(pParam,MESSAGE_SHOWDIALOG,(LPARAM)pInfo,0);
+}
+
+// 各種日時
+union TimeUnion {
+	SYSTEMTIME SystemTime;
+	FILETIME FileTime;
+};
+
+// 日時変換のフラグ
+enum {
+	CONVERT_TIME_FLAG_FROM_FILETIME = 0x00000001U,	// FILETIME から変換
+	CONVERT_TIME_FLAG_TO_FILETIME   = 0x00000002U,	// FILETIME へ変換
+	CONVERT_TIME_FLAG_FILETIME      = CONVERT_TIME_FLAG_FROM_FILETIME | CONVERT_TIME_FLAG_TO_FILETIME,
+	CONVERT_TIME_FLAG_OFFSET        = 0x00000004U	// オフセットの指定
+};
+
+// 日時変換の種類
+enum {
+	CONVERT_TIME_TYPE_UTC,			// UTC
+	CONVERT_TIME_TYPE_LOCAL,		// ローカル
+	CONVERT_TIME_TYPE_EPG,			// EPG 日時(UTC+9)
+	CONVERT_TIME_TYPE_EPG_DISPLAY	// EPG の表示用(変換先としてのみ指定可能)
+};
+
+// 日時変換の情報
+struct ConvertTimeInfo {
+	DWORD Size;					// 構造体のサイズ
+	DWORD Flags;				// 各種フラグ(CONVERT_TIME_FLAG_*)
+	DWORD TypeFrom;				// 変換元の種類(CONVERT_TIME_TYPE_*)
+	DWORD TypeTo;				// 変換先の種類(CONVERT_TIME_TYPE_*)
+	TimeUnion From;				// 変換元の日時
+	TimeUnion To;				// 変換先の日時
+	LONGLONG Offset;			// オフセットms(Flags に CONVERT_TIME_FLAG_OFFSET が指定されている場合のみ)
+};
+
+// 日時を変換する
+// Flags に CONVERT_TIME_FLAG_OFFSET を指定すると、Offset の時間が変換結果に加算されます。
+bool inline MsgConvertTime(PluginParam *pParam,ConvertTimeInfo *pInfo) {
+	return (*pParam->Callback)(pParam,MESSAGE_CONVERTTIME,(LPARAM)pInfo,0)!=FALSE;
+}
+// EPG 日時を変換する
+bool inline MsgConvertEpgTimeTo(
+	PluginParam *pParam,const SYSTEMTIME &EpgTime,DWORD Type,SYSTEMTIME *pDstTime)
+{
+	ConvertTimeInfo Info;
+	Info.Size = sizeof(ConvertTimeInfo);
+	Info.Flags = 0;
+	Info.TypeFrom = CONVERT_TIME_TYPE_EPG;
+	Info.TypeTo = Type;
+	Info.From.SystemTime = EpgTime;
+	if (!MsgConvertTime(pParam, &Info))
+		return false;
+	*pDstTime = Info.To.SystemTime;
+	return true;
+}
+
+// 映像ストリームのコールバック関数
+// Format はストリームのコーデックの FourCC で、現在以下のいずれかです。
+//   FCC('mp2v')  MPEG-2 Video
+//   FCC('H264')  H.264
+//   FCC('H265')  H.265
+// 渡されたデータを加工することはできません。
+// 戻り値は今のところ常に0を返します。
+typedef LRESULT (CALLBACK *VideoStreamCallbackFunc)(
+	DWORD Format,const void *pData,SIZE_T Size,void *pClientData);
+
+// 映像ストリームを取得するコールバック関数を設定する
+// 一つのプラグインで設定できるコールバック関数は一つだけです。
+// pClinetData はコールバック関数に渡されます。
+// pCallback に NULL を指定すると、設定が解除されます。
+inline bool MsgSetVideoStreamCallback(PluginParam *pParam,VideoStreamCallbackFunc pCallback,void *pClientData=NULL)
+{
+	return (*pParam->Callback)(pParam,MESSAGE_SETVIDEOSTREAMCALLBACK,(LPARAM)pCallback,(LPARAM)pClientData)!=0;
+}
+
+// 変数文字列のコンテキスト
+// MsgFormatVarString の説明を参照してください。
+struct VarStringContext;
+
+// 変数文字列のコンテキストを取得
+// 取得したコンテキストは MsgFreeVarStringContext で解放します。
+inline VarStringContext *MsgGetVarStringContext(PluginParam *pParam) {
+	return (VarStringContext*)(*pParam->Callback)(pParam,MESSAGE_GETVARSTRINGCONTEXT,0,0);
+}
+// 変数文字列のコンテキストを解放
+// MsgGetVarStringContext で取得したコンテキストを解放します。
+inline void MsgFreeVarStringContext(PluginParam *pParam,VarStringContext *pContext) {
+	(*pParam->Callback)(pParam,MESSAGE_FREEVARSTRINGCONTEXT,(LPARAM)pContext,0);
+}
+
+// 変数文字列のマップ関数
+typedef BOOL (CALLBACK *VarStringMapFunc)(LPCWSTR pszVar, LPWSTR *ppszString, void *pClientData);
+
+// 変数文字列のフォーマットフラグ
+enum {
+	VAR_STRING_FORMAT_FLAG_FILENAME = 0x00000001	// ファイル名用(ファイル名に使えない文字が全角になる)
+};
+
+// 変数文字列のフォーマット情報
+struct VarStringFormatInfo {
+	DWORD Size;							// 構造体のサイズ
+	DWORD Flags;						// 各種フラグ(VAR_STRING_FORMAT_FLAG_*)
+	LPCWSTR pszFormat;					// フォーマット文字列
+	const VarStringContext *pContext;	// コンテキスト(NULL で現在のコンテキスト)
+	VarStringMapFunc pMapFunc;			// マップ関数(必要なければ NULL)
+	void *pClientData;					// マップ関数に渡す任意データ
+	LPWSTR pszResult;					// 変換結果の文字列
+};
+
+// 変数文字列を使って文字列をフォーマット
+// 変数文字列は、%event-name% などの変数が含まれた文字列です。
+// このような文字列の変数を展開した文字列を取得できます。
+// 変数の展開に必要な、現在の番組や日時などの情報をコンテキストと呼びます。
+// MsgGetVarStringContext で、その時点のコンテキストを取得できます。
+/*
+	// 現在のコンテキストを取得
+	// (ここでは例のために取得していますが、現在の情報を使うのであれば
+	//  VarStringFormatInfo.pContext を NULL にすればよいです)
+	VarStringContext *pContext = MsgGetVarStringContext(pParam);
+
+	// 文字列をフォーマットする
+	VarStringFormatInfo Info;
+	Info.Size = sizeof(VarStringFormatInfo);
+	Info.Flags = 0;
+	Info.pszFormat = L"%event-name% %tot-date% %tot-time%";
+	Info.pContext = pContext;
+	Info.pMapFunc = NULL;
+	Info.pClientData = NULL;
+
+	if (MsgFormatVarString(pParam, &Info)) {
+		// Info.pszResult に結果の文字列が返される
+		...
+		// 不要になったらメモリを解放する
+		MsgMemoryFree(pParam, Info.pszResult);
+	}
+
+	// 不要になったらコンテキストを解放する
+	MsgFreeVarStringContext(pParam, pContext);
+*/
+// マップ関数を指定すると、任意の変数を文字列に変換できます。
+// 上記の例でマップ関数を使う場合は以下のようになります。
+/*
+	BOOL CALLBACK VarStringMap(LPCWSTR pszVar, LPWSTR *ppszString, void *pClientData)
+	{
+		PluginParam *pParam = static_cast<PluginParam*>(pClientData);
+		if (::lstrcmpiW(pszVar, L"my-var") == 0) {
+			LPCWSTR pszMapString = L"replaced string";	// 置き換える文字列
+			*ppszString = MsgStringDuplicate(pParam, pszMapString);
+			return TRUE;
+		}
+		return FALSE;
+	}
+
+	Info.pMapFunc = VarStringMap;
+	Info.pClientData = pParam;
+*/
+inline bool MsgFormatVarString(PluginParam *pParam,VarStringFormatInfo *pInfo) {
+	return (*pParam->Callback)(pParam,MESSAGE_FORMATVARSTRING,(LPARAM)pInfo,0)!=FALSE;
+}
+
+// 変数登録のフラグ
+enum {
+	REGISTER_VARIABLE_FLAG_OVERRIDE = 0x00000001	// デフォルトの変数を上書き
+};
+
+// 変数登録の情報
+struct RegisterVariableInfo {
+	DWORD Size;				// 構造体のサイズ
+	DWORD Flags;			// フラグ(REGISTER_VARIABLE_FLAG_*)
+	LPCWSTR pszKeyword;		// 識別子
+	LPCWSTR pszDescription;	// 説明文
+	LPCWSTR pszValue;		// 変数の値(NULL で動的に取得)
+};
+
+// 変数取得の情報
+// EVENT_GETVARIABLE で渡されます。
+struct GetVariableInfo {
+	LPCWSTR pszKeyword;		// 識別子
+	LPWSTR pszValue;		// 値
+};
+
+// 変数を登録
+// 変数を登録すると、TVTest の各所の変数文字列で利用できるようになります。
+// 変数の識別子は半角のアルファベットと数字、-記号のみ使用してください。
+// TVTest で既に定義されている識別子と同じものを指定した場合、
+// Flags に REGISTER_VARIABLE_FLAG_OVERRIDE が設定されている場合は
+// プラグインで登録されたものが優先され、そうでない場合は TVTest での定義が優先されます。
+// 同じ識別子の変数を再登録すると、値が更新されます。
+/*
+	// 変数 lucky-number を登録します。
+	// 変数文字列の中で "%lucky-number%" を使うと、"777" に置き換えられます。
+	RegisterVariableInfo Info;
+	Info.Size           = sizeof(RegisterVariableInfo);
+	Info.Flags          = 0;
+	Info.pszKeyword     = L"lucky-number";
+	Info.pszDescription = L"幸運の番号";
+	Info.pszValue       = L"777";
+	MsgRegisterVariable(pParam, &Info);
+*/
+// 変数の値が頻繁に変わるような場合は、動的に取得されるようにします。
+// pszValue に NULL を指定すると、変数が必要になった段階で
+// EVENT_GETVARIABLE が呼ばれるので、そこで値を返します。
+/*
+	// 変数の値が動的に取得されるようにする例
+	RegisterVariableInfo Info;
+	Info.Size           = sizeof(RegisterVariableInfo);
+	Info.Flags          = 0;
+	Info.pszKeyword     = L"tick-count";
+	Info.pszDescription = L"Tick count";
+	Info.pszValue       = NULL;
+	MsgRegisterVariable(pParam, &Info);
+
+	// EVENT_GETVARIABLE で値を返します。
+	bool OnGetVariable(GetVariableInfo *pInfo)
+	{
+		if (lstrcmpiW(pInfo->pszKeyword, L"tick-count") == 0) {
+			// GetTickCount() の値を返す
+			WCHAR szValue[16];
+			wsprintf(szValue, L"%u", GetTickCount());
+			pInfo->pszValue = MsgStringDuplicate(pParam, szValue);
+			return true;
+		}
+		return false;
+	}
+*/
+inline bool MsgRegisterVariable(PluginParam *pParam,const RegisterVariableInfo *pInfo) {
+	return (*pParam->Callback)(pParam,MESSAGE_REGISTERVARIABLE,(LPARAM)pInfo,0)!=FALSE;
 }
 
 #endif	// TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,14)
@@ -2963,6 +3248,9 @@ public:
 	}
 	void MemoryFree(void *pData) {
 		MsgMemoryFree(m_pParam,pData);
+	}
+	LPWSTR StringDuplicate(LPCWSTR pszString) {
+		return MsgStringDuplicate(m_pParam,pszString);
 	}
 	bool SetEventCallback(EventCallbackFunc Callback,void *pClientData=NULL) {
 		return MsgSetEventCallback(m_pParam,Callback,pClientData);
@@ -3051,6 +3339,12 @@ public:
 #endif
 		return MsgGetRecordStatus(m_pParam,pInfo);
 	}
+#if TVTEST_PLUGIN_VERSION>=TVTEST_PLUGIN_VERSION_(0,0,14)
+	bool GetRecordStatus(RecordStatusInfo *pInfo,DWORD Flags) {
+		pInfo->Size=sizeof(RecordStatusInfo);
+		return MsgGetRecordStatus(m_pParam,pInfo,Flags);
+	}
+#endif
 	bool GetVideoInfo(VideoInfo *pInfo) {
 		pInfo->Size=sizeof(VideoInfo);
 		return MsgGetVideoInfo(m_pParam,pInfo);
@@ -3440,6 +3734,30 @@ public:
 		pInfo->Size=sizeof(ShowDialogInfo);
 		return MsgShowDialog(m_pParam,pInfo);
 	}
+	bool ConvertTime(ConvertTimeInfo *pInfo) {
+		pInfo->Size=sizeof(ConvertTimeInfo);
+		return MsgConvertTime(m_pParam,pInfo);
+	}
+	bool ConvertEpgTimeTo(const SYSTEMTIME &EpgTime,DWORD Type,SYSTEMTIME *pDstTime) {
+		return MsgConvertEpgTimeTo(m_pParam,EpgTime,Type,pDstTime);
+	}
+	bool SetVideoStreamCallback(VideoStreamCallbackFunc pCallback,void *pClientData=NULL) {
+		return MsgSetVideoStreamCallback(m_pParam,pCallback,pClientData);
+	}
+	VarStringContext *GetVarStringContext() {
+		return MsgGetVarStringContext(m_pParam);
+	}
+	void FreeVarStringContext(VarStringContext *pContext) {
+		MsgFreeVarStringContext(m_pParam,pContext);
+	}
+	bool FormatVarString(VarStringFormatInfo *pInfo) {
+		pInfo->Size=sizeof(VarStringFormatInfo);
+		return MsgFormatVarString(m_pParam,pInfo);
+	}
+	bool RegisterVariable(RegisterVariableInfo *pInfo) {
+		pInfo->Size=sizeof(RegisterVariableInfo);
+		return MsgRegisterVariable(m_pParam,pInfo);
+	}
 #endif
 };
 
@@ -3618,6 +3936,8 @@ protected:
 	virtual void OnFavoritesChanged() {}
 	// ワンセグモードが変わった
 	virtual void On1SegModeChanged(bool f1SegMode) {}
+	// 変数を取得
+	virtual bool OnGetVariable(GetVariableInfo *pInfo) { return false; }
 #endif
 
 public:
@@ -3715,6 +4035,8 @@ public:
 		case EVENT_1SEGMODECHANGED:
 			On1SegModeChanged(lParam1!=0);
 			return 0;
+		case EVENT_GETVARIABLE:
+			return OnGetVariable((GetVariableInfo*)lParam1);
 #endif
 		}
 		return 0;

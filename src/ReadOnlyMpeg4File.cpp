@@ -454,6 +454,10 @@ bool CReadOnlyMpeg4File::InitializeBlockList()
         }
         // PAT + NIT + SDT + PMT + PCR
         __int64 size = 5;
+        if ((m_blockList.size() - 1) % 10 == 9) {
+            // EIT
+            ++size;
+        }
         if ((m_blockList.size() - 1) % 20 == 0) {
             // TOT
             ++size;
@@ -551,6 +555,15 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
     packet = &m_blockCache.back() - 187;
     CreateHeader(packet, 0, 2, 0, 0x01FF);
     CreatePcrAdaptation(packet + 4, static_cast<DWORD>(blockIndex) * 4500);
+
+    if (blockIndex % 10 == 9) {
+        // EIT
+        m_blockCache.insert(m_blockCache.end(), 188, 0xFF);
+        packet = &m_blockCache.back() - 187;
+        CreateHeader(packet, 1, 1, (blockIndex / 10) & 0x0F, 0x0012);
+        packet[4] = 0;
+        CreateEmptyEitPf(packet + 5, m_nid, m_tsid, m_sid);
+    }
 
     if (blockIndex % 20 == 0) {
         // TOT
@@ -671,19 +684,29 @@ int CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<BYTE> &data) const
         ++path;
     }
     int index = path[4] - '0';
-    BYTE head[8];
+    BYTE head[16];
     DWORD numRead;
     while (::ReadFile(m_hFile, head, 8, &numRead, NULL) && numRead == 8) {
-        DWORD boxSize = ArrayToDWORD(head);
-        if (boxSize < 8) {
+        LARGE_INTEGER boxSize;
+        boxSize.QuadPart = ArrayToDWORD(head);
+        if (boxSize.QuadPart == 1) {
+            // 64bit形式
+            if (!::ReadFile(m_hFile, head + 8, 8, &numRead, NULL) || numRead != 8) {
+                break;
+            }
+            numRead = 16;
+            boxSize.HighPart = ArrayToDWORD(head + 8);
+            boxSize.LowPart = ArrayToDWORD(head + 12);
+        }
+        if (boxSize.QuadPart < numRead) {
             break;
         }
         if (::memcmp(path, head + 4, 4) == 0 && --index < 0) {
             if (path[5] == '\0') {
-                if (boxSize - 8 <= READ_BOX_SIZE_MAX) {
-                    data.resize(boxSize - 8);
-                    if (boxSize <= 8 || ::ReadFile(m_hFile, &data.front(), boxSize - 8, &numRead, NULL) && numRead == boxSize - 8) {
-                        return boxSize - 8;
+                if (boxSize.QuadPart - numRead <= READ_BOX_SIZE_MAX) {
+                    data.resize(static_cast<size_t>(boxSize.QuadPart - numRead));
+                    if (data.empty() || ::ReadFile(m_hFile, &data.front(), static_cast<DWORD>(data.size()), &numRead, NULL) && numRead == data.size()) {
+                        return static_cast<int>(data.size());
                     }
                 }
                 break;
@@ -691,7 +714,7 @@ int CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<BYTE> &data) const
             return ReadBox(path + 6, data);
         }
         LARGE_INTEGER toMove;
-        toMove.QuadPart = boxSize - 8;
+        toMove.QuadPart = boxSize.QuadPart - numRead;
         if (!::SetFilePointerEx(m_hFile, toMove, NULL, FILE_CURRENT)) {
             break;
         }
@@ -802,6 +825,30 @@ size_t CReadOnlyMpeg4File::CreateSdt(BYTE *data, WORD nid, WORD tsid, WORD sid)
     data[25] = HIBYTE(crc);
     data[26] = LOBYTE(crc);
     return 27;
+}
+
+size_t CReadOnlyMpeg4File::CreateEmptyEitPf(BYTE *data, WORD nid, WORD tsid, WORD sid)
+{
+    data[0] = 0x4E;
+    data[1] = 0xF0;
+    data[2] = 15;
+    data[3] = HIBYTE(sid);
+    data[4] = LOBYTE(sid);
+    data[5] = 0xC1;
+    data[6] = 0;
+    data[7] = 0;
+    data[8] = HIBYTE(tsid);
+    data[9] = LOBYTE(tsid);
+    data[10] = HIBYTE(nid);
+    data[11] = LOBYTE(nid);
+    data[12] = 0;
+    data[13] = 0x4E;
+    DWORD crc = CalcCrc32(data, 14);
+    data[14] = HIBYTE(HIWORD(crc));
+    data[15] = LOBYTE(HIWORD(crc));
+    data[16] = HIBYTE(crc);
+    data[17] = LOBYTE(crc);
+    return 18;
 }
 
 size_t CReadOnlyMpeg4File::CreateTot(BYTE *data, SYSTEMTIME st)
