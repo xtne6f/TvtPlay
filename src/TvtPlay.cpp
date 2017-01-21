@@ -520,7 +520,7 @@ void CTvtPlay::LoadTVTestSettings()
     }
     else {
         // 可能ならAPIでフォント設定を取得する
-        fFontLoaded = m_pApp->GetFont(TEXT("StatusBarFont"), &logFont) || m_pApp->GetSetting(TEXT("StatusBarFont"), &logFont);
+        fFontLoaded = m_pApp->GetFont(TEXT("StatusBarFont"), &logFont);
     }
     ::GetPrivateProfileString(TEXT("ColorScheme"), TEXT("Name"), TEXT("!"), val, _countof(val), m_szIniFileName);
     if (val[0] != TEXT('!')) {
