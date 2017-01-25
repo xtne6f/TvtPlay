@@ -210,6 +210,7 @@ CTvtPlay::CTvtPlay()
     , m_pcr(0)
     , m_captionPid(-1)
 #endif
+    , m_Message(NULL)
 {
     m_szIniFileName[0] = 0;
     m_szSpecFileName[0] = 0;
@@ -351,6 +352,7 @@ bool CTvtPlay::Initialize()
     AnalyzeCommandLine(::GetCommandLine(), true);
     if (m_specOffset < 0) m_specOffset = preSpecOffset;
     if (m_specStretchID < 0) m_specStretchID = preSpecStretchID;
+    m_Message = ::RegisterWindowMessage(TEXT("TvtPlayRemocon"));
     return true;
 }
 
@@ -2365,6 +2367,25 @@ BOOL CALLBACK CTvtPlay::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, L
             }
         }
         break;
+    default:
+        if (uMsg == pThis->m_Message)
+        {
+            switch(wParam)
+            {
+                case 0:
+                    *pResult = pThis->GetDuration();
+                    break;
+                case 1:
+                    pThis->SeekAbsolute((int)lParam);
+                    break;
+                case 2:
+                    pThis->Seek((int)lParam);
+                    break;
+                case 3:
+                    *pResult = pThis->GetPosition();
+            }
+            return TRUE;
+        }
     }
     return FALSE;
 }
