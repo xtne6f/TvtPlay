@@ -1689,13 +1689,19 @@ void CTvtPlay::SetupDestination()
             ::PostThreadMessage(m_threadID, WM_TS_SET_UDP, 0, 1234 + chInfo.Channel);
         }
     }
-    else if (!::lstrcmpi(name, TEXT("BonDriver_Pipe.dll"))) {
-        if (m_pApp->GetCurrentChannelInfo(&chInfo) && m_hThread) {
-            ::PostThreadMessage(m_threadID, WM_TS_SET_PIPE, 0, chInfo.Channel);
-        }
-    }
     else {
-        if (m_hThread) ::PostThreadMessage(m_threadID, WM_TS_SET_UDP, 0, -1);
+        TCHAR ordinal[20] = TEXT("BonDriver_Pipe0.dll");
+        if (::lstrcmpi(name, TEXT("BonDriver_Pipe.dll"))) {
+            for (; ordinal[14] <= TEXT('9') && ::lstrcmpi(name, ordinal); ++ordinal[14]);
+        }
+        if (ordinal[14] <= TEXT('9')) {
+            if (m_pApp->GetCurrentChannelInfo(&chInfo) && m_hThread) {
+                ::PostThreadMessage(m_threadID, WM_TS_SET_PIPE, 0, chInfo.Channel);
+            }
+        }
+        else {
+            if (m_hThread) ::PostThreadMessage(m_threadID, WM_TS_SET_UDP, 0, -1);
+        }
     }
 }
 
@@ -2009,7 +2015,18 @@ void CTvtPlay::EnablePluginByDriverName()
         // ドライバ名に応じて有効無効を切り替える
         bool fEnable = false;
         if (m_fAutoEnUdp && !::lstrcmpi(name, TEXT("BonDriver_UDP.dll"))) fEnable = true;
-        if (m_fAutoEnPipe && !::lstrcmpi(name, TEXT("BonDriver_Pipe.dll"))) fEnable = true;
+        if (m_fAutoEnPipe) {
+            if (!::lstrcmpi(name, TEXT("BonDriver_Pipe.dll"))) fEnable = true;
+            else {
+                TCHAR ordinal[20] = TEXT("BonDriver_Pipe0.dll");
+                for (; ordinal[14] <= TEXT('9'); ++ordinal[14]) {
+                    if (!::lstrcmpi(name, ordinal)) {
+                        fEnable = true;
+                        break;
+                    }
+                }
+            }
+        }
 
         if (m_pApp->IsPluginEnabled() != fEnable) m_pApp->EnablePlugin(fEnable);
     }
