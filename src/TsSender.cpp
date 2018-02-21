@@ -622,8 +622,8 @@ bool CTsSender::Seek(int msec)
         if (!Seek(approx, IReadOnlyFile::MOVE_METHOD_BEGIN)) return false;
 
         // 移動分を差し引く
-        msec += MSB(m_pcr-prevPcr) ? (int)(prevPcr-m_pcr) / PCR_PER_MSEC :
-                                    -(int)(m_pcr-prevPcr) / PCR_PER_MSEC;
+        msec += MSB(m_pcr-prevPcr) ? (int)((prevPcr-m_pcr) / PCR_PER_MSEC) :
+                                    -(int)((m_pcr-prevPcr) / PCR_PER_MSEC);
     }
     if (msec < -5000 || 5000 < msec) return false;
 
@@ -637,7 +637,7 @@ bool CTsSender::Seek(int msec)
 
             DWORD prevPcr = m_pcr;
             if (!Seek(-rate * mul, IReadOnlyFile::MOVE_METHOD_CURRENT) || MSB(prevPcr-m_pcr)) return false;
-            msec += (int)(prevPcr-m_pcr) / PCR_PER_MSEC;
+            msec += (int)((prevPcr-m_pcr) / PCR_PER_MSEC);
             // 動画レートが極端に小さいとき動かない可能性があるため
             if (m_pcr == prevPcr) ++mul;
         }
@@ -652,7 +652,7 @@ bool CTsSender::Seek(int msec)
 
             DWORD prevPcr = m_pcr;
             if (!Seek(rate, IReadOnlyFile::MOVE_METHOD_CURRENT) || MSB(m_pcr-prevPcr)) return false;
-            msec -= (int)(m_pcr-prevPcr) / PCR_PER_MSEC;
+            msec -= (int)((m_pcr-prevPcr) / PCR_PER_MSEC);
         }
         if (msec > 500) return false;
     }
