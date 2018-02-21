@@ -136,7 +136,6 @@ CTvtPlay::CTvtPlay()
     , m_fIgnoreExt(false)
     , m_fAutoEnUdp(false)
     , m_fAutoEnPipe(false)
-    , m_fEventExecute(false)
     , m_fEventStartupDone(false)
     , m_fPausedOnPreviewChange(false)
     , m_specOffset(-1)
@@ -2216,29 +2215,6 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         if (pThis->m_fEventStartupDone) {
             pThis->EnablePluginByDriverName();
         }
-        // 複数禁止起動時にチャンネル設定されない場合の対策(ver.0.7.22未満)
-        if (pThis->m_fEventExecute &&
-            pThis->m_pApp->GetVersion() < TVTest::MakeVersion(0,7,22))
-        {
-            TCHAR path[MAX_PATH];
-            pThis->m_pApp->GetDriverName(path, _countof(path));
-            LPCTSTR name = ::PathFindFileName(path);
-
-            if (pThis->m_pApp->IsPluginEnabled() &&
-                (!::lstrcmpi(name, TEXT("BonDriver_UDP.dll")) ||
-                !::lstrcmpi(name, TEXT("BonDriver_Pipe.dll"))))
-            {
-                TVTest::ChannelInfo chInfo;
-                if (!pThis->m_pApp->GetCurrentChannelInfo(&chInfo)) {
-                    pThis->m_pApp->AddLog(L"SetChannel");
-                    for (int ch=0; ch < 10; ch++) {
-                        if (pThis->m_pApp->SetChannel(0, ch)) break;
-                    }
-                }
-            }
-        }
-        pThis->m_fEventExecute = false;
-
         // コマンドラインにパスが指定されていれば開く
         if (pThis->m_pApp->IsPluginEnabled() && pThis->m_szSpecFileName[0]) {
             if (pThis->m_playlist.PushBackListOrFile(pThis->m_szSpecFileName, true) >= 0) {
@@ -2276,7 +2252,6 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
         // 複数起動禁止時に複数起動された
         // ドライバ変更前に呼ばれるので、このあとEVENT_DRIVERCHANGEが呼ばれるかもしれない
         pThis->AnalyzeCommandLine(reinterpret_cast<LPCWSTR>(lParam1), false);
-        pThis->m_fEventExecute = true;
         // FALL THROUGH!
     case TVTest::EVENT_STARTUPDONE:
         // 起動時の処理が終わった

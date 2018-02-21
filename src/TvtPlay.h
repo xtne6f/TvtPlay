@@ -97,7 +97,6 @@ private:
     bool m_fSettingsLoaded;
     bool m_fForceEnable, m_fIgnoreExt;
     bool m_fAutoEnUdp, m_fAutoEnPipe;
-    bool m_fEventExecute;
     bool m_fEventStartupDone;
     bool m_fPausedOnPreviewChange;
     TCHAR m_szIniFileName[MAX_PATH];
