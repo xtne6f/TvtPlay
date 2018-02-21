@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.2.4 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.2.5 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -43,8 +43,7 @@ TvtPlay.iniは基本的にそのまま引き継げます。
 TVTestのPluginsフォルダにTvtPlay.tvtpを入れてください。BonDriver_Pipe.dllは使用
 しないならば捨ててください(後述の「BonDriver_Pipe.dllについて」を参照)。なお、
 TvtPlay.tvtp_x64はx64版のTVTest利用者向けです。
-"plus"フォルダにあるTvtPlay.tvtpはTVTest0.9.0以降専用です。TVTest0.9.0は未リリー
-スのため今後の仕様変更により使えなくなる可能性もあります。
+"plus"フォルダにあるTvtPlay.tvtpはTVTest0.9.0以降専用です。
 
 TVTest起動オプションの最後に拡張子.ts .m2t .m2ts .mp4 .m3u .tslist いずれかのフ
 ァイルパスを付加するとプラグインは有効になり、起動時にそのファイルを開きます。起
@@ -85,6 +84,9 @@ TVTest起動時につぎのようなオプションを追加することで、�
 /tvtpudp          BonDriver_UDP.dllの使用の有無でプラグインを有効・無効にする
 /tvtpudp /tvtplay 上述の動作＋ファイルパスの拡張子を問わない
 /tvtpipe          BonDriver_Pipe.dllについて/tvtpudpと同様(同時指定もできる)
+                  BonDriver_Pipe0.dll～BonDriver_Pipe9.dllにリネームされたものも
+                  同様に扱います【ver.2.5～】。使用中のBonDriverによって挙動を変
+                  えるプラグインをカスタマイズするときに便利です
 /tvtplay          起動時にプラグインを有効化＋ファイルパスの拡張子を問わない
 # 以上のオプションは複数起動禁止のTVTest起動中に追加できます(削除はできません)
 /tvtpofs <ms>[+-]<ofs>
