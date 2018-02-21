@@ -31,7 +31,7 @@ private:
     int m_bufSize;
     int m_bufPreSize;
     __int64 m_fileSize;
-    mutable CCriticalLock m_lock;
+    mutable recursive_mutex_ m_lock;
 };
 
 #endif // INCLUDE_BUFFERED_FILE_READER_H

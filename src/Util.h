@@ -18,7 +18,7 @@ HWND ASFilterFindWindow();
 LRESULT ASFilterSendMessageTimeout(UINT Msg, WPARAM wParam, LPARAM lParam, UINT uTimeout);
 BOOL ASFilterSendNotifyMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 
-#define READ_FILE_MAX_SIZE (4096 * 1024)
+static const size_t READ_FILE_MAX_SIZE = 64 * 1024 * 1024;
 #define ICON_SIZE 16
 
 std::vector<TCHAR> GetPrivateProfileSectionBuffer(LPCTSTR lpAppName, LPCTSTR lpFileName);
@@ -30,7 +30,7 @@ bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTST
 BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPCTSTR lpFileName);
 LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt);
 
-#define PCR_PER_MSEC 45
+static const DWORD PCR_PER_MSEC = 45;
 
 typedef struct {
 	int           sync;
@@ -114,25 +114,28 @@ inline void extract_ts_header(TS_HEADER *dst, const unsigned char *packet)
     dst->continuity_counter           = packet[3] & 0x0f;
 }
 
-class CCriticalLock
+class recursive_mutex_
 {
 public:
-    CCriticalLock() { ::InitializeCriticalSection(&m_section); }
-    ~CCriticalLock() { ::DeleteCriticalSection(&m_section); }
-    void Lock() { ::EnterCriticalSection(&m_section); }
-    void Unlock() { ::LeaveCriticalSection(&m_section); }
-    //CRITICAL_SECTION &GetCriticalSection() { return m_section; }
+    recursive_mutex_() { ::InitializeCriticalSection(&m_cs); }
+    ~recursive_mutex_() { ::DeleteCriticalSection(&m_cs); }
+    void lock() { ::EnterCriticalSection(&m_cs); }
+    void unlock() { ::LeaveCriticalSection(&m_cs); }
 private:
-    CRITICAL_SECTION m_section;
+    recursive_mutex_(const recursive_mutex_&);
+    recursive_mutex_ &operator=(const recursive_mutex_&);
+    CRITICAL_SECTION m_cs;
 };
 
 class CBlockLock
 {
 public:
-    CBlockLock(CCriticalLock *pLock) : m_pLock(pLock) { m_pLock->Lock(); }
-    ~CBlockLock() { m_pLock->Unlock(); }
+    CBlockLock(recursive_mutex_ *mtx) : m_mtx(mtx) { m_mtx->lock(); }
+    ~CBlockLock() { m_mtx->unlock(); }
 private:
-    CCriticalLock *m_pLock;
+    CBlockLock(const CBlockLock&);
+    CBlockLock &operator=(const CBlockLock&);
+    recursive_mutex_ *m_mtx;
 };
 
 COLORREF MixColor(COLORREF Color1,COLORREF Color2,BYTE Ratio=128);
