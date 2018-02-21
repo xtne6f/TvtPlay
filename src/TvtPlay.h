@@ -139,7 +139,7 @@ private:
     DWORD m_threadID;
     int m_threadPriority;
     CTsSender m_tsSender;
-    CCriticalLock m_tsInfoLock;
+    recursive_mutex_ m_tsInfoLock;
     int m_infoPos, m_infoDur, m_infoTot, m_infoExtMode, m_infoSpeed;
     bool m_fInfoPaused;
     bool m_fHalt, m_fAllRepeat, m_fSingleRepeat;
@@ -163,7 +163,7 @@ private:
     TCHAR m_szChaptersDirName[MAX_PATH];
 
     CTsTimestampShifter m_tsShifter;
-    CCriticalLock m_streamLock;
+    recursive_mutex_ m_streamLock;
     int m_streamCallbackRefCount;
     bool m_fResetPat;
 

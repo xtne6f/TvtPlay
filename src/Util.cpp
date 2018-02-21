@@ -39,7 +39,7 @@ std::vector<TCHAR> GetPrivateProfileSectionBuffer(LPCTSTR lpAppName, LPCTSTR lpF
             buf.resize(len + 1);
             break;
         }
-        if (buf.size() >= 4096 * 1024) {
+        if (buf.size() >= READ_FILE_MAX_SIZE / 2) {
             buf.assign(1, TEXT('\0'));
             break;
         }
