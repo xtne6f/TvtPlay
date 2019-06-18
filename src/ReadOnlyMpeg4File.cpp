@@ -228,10 +228,16 @@ bool CReadOnlyMpeg4File::ReadVideoSampleDesc(char index, std::vector<BYTE> &spsP
                             if (18 + spsLen + ppsLen < buf.size()) {
                                 spsPps.assign(3, 0);
                                 spsPps.push_back(1);
-                                spsPps.insert(m_spsPps.end(), buf.begin() + 16, buf.begin() + 16 + spsLen);
-                                spsPps.insert(m_spsPps.end(), 3, 0);
+                                spsPps.insert(spsPps.end(), buf.begin() + 16, buf.begin() + 16 + spsLen);
+#if MASK_OFF_SPS_CS45_FLAGS != 0
+                                if (spsPps.size() >= 7 && (spsPps[6] & 0x0C) != 0) {
+                                    spsPps[6] &= 0xF3;
+                                    OutputDebugString(TEXT("CReadOnlyMpeg4File::ReadVideoSampleDesc(): Masked SPS constraint_set[45]_flags off\n"));
+                                }
+#endif
+                                spsPps.insert(spsPps.end(), 3, 0);
                                 spsPps.push_back(1);
-                                spsPps.insert(m_spsPps.end(), buf.begin() + 19 + spsLen, buf.begin() + 19 + spsLen + ppsLen);
+                                spsPps.insert(spsPps.end(), buf.begin() + 19 + spsLen, buf.begin() + 19 + spsLen + ppsLen);
                                 return true;
                             }
                         }
