@@ -4,6 +4,10 @@
 #include "ReadOnlyFile.h"
 #include <vector>
 
+#ifndef MASK_OFF_SPS_CS45_FLAGS
+#define MASK_OFF_SPS_CS45_FLAGS 1
+#endif
+
 class CReadOnlyMpeg4File : public IReadOnlyFile
 {
     static const DWORD READ_BOX_SIZE_MAX = 64 * 1024 * 1024;
