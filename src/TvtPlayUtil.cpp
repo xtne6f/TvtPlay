@@ -86,7 +86,7 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
         szChName[0] = 0;
         if (itHover != chMap.end() && itHover->second.name[0]) {
             szChName[0] = TEXT(' ');
-            ::lstrcpyn(szChName+1, &itHover->second.name.front(), _countof(szChName)-1);
+            ::lstrcpyn(szChName+1, itHover->second.name.data(), _countof(szChName)-1);
         }
         if (posSec < 3600 && dur < 3600000) {
             ::wsprintf(szText, TEXT("%02d:%02d%s%s%s"), posSec/60%60, posSec%60, szOfsText, szTotText, szChName);

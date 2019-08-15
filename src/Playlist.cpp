@@ -46,7 +46,7 @@ int CPlaylist::PushBackList(LPCTSTR fullPath)
         ::lstrcpyn(dirName, fullPath, _countof(dirName));
         ::PathRemoveFileSpec(dirName);
 
-        for (TCHAR *p = &ret.front(); *p;) {
+        for (TCHAR *p = ret.data(); *p;) {
             // 1行取得してpを進める
             TCHAR line[512];
             int len = ::StrCSpn(p, TEXT("\r\n"));

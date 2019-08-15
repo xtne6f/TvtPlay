@@ -34,7 +34,7 @@ std::vector<TCHAR> GetPrivateProfileSectionBuffer(LPCTSTR lpAppName, LPCTSTR lpF
 {
     std::vector<TCHAR> buf(4096);
     for (;;) {
-        DWORD len = GetPrivateProfileSection(lpAppName, &buf.front(), static_cast<DWORD>(buf.size()), lpFileName);
+        DWORD len = GetPrivateProfileSection(lpAppName, buf.data(), static_cast<DWORD>(buf.size()), lpFileName);
         if (len < buf.size() - 2) {
             buf.resize(len + 1);
             break;
@@ -98,7 +98,7 @@ std::vector<WCHAR> ReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, bool fN
         if (size != INVALID_FILE_SIZE && size < READ_FILE_MAX_SIZE) {
             buf.resize(size + 3);
             DWORD numRead;
-            if (size == 0 || ::ReadFile(hFile, &buf.front(), size, &numRead, nullptr) && numRead == size) {
+            if (size == 0 || ::ReadFile(hFile, buf.data(), size, &numRead, nullptr) && numRead == size) {
                 buf[size] = buf[size + 1] = buf[size + 2] = 0;
             }
             else {
@@ -134,7 +134,7 @@ std::vector<WCHAR> ReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, bool fN
         if (retSize > 0) {
             ret.resize(retSize);
             if (!::MultiByteToWideChar(fNoBomUseAcp && !bomOffset ? CP_ACP : CP_UTF8, 0,
-                                       reinterpret_cast<LPCSTR>(&buf[bomOffset]), -1, &ret.front(), retSize))
+                                       reinterpret_cast<LPCSTR>(&buf[bomOffset]), -1, ret.data(), retSize))
             {
                 ret.clear();
             }
@@ -162,7 +162,7 @@ bool WriteUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, const WCHAR *pStr)
     if (hFile == INVALID_HANDLE_VALUE) return false;
 
     DWORD written;
-    if (!::WriteFile(hFile, &buf.front(), bufSize + 3 - 1, &written, nullptr)) {
+    if (!::WriteFile(hFile, buf.data(), bufSize + 3 - 1, &written, nullptr)) {
         ::CloseHandle(hFile);
         return false;
     }
