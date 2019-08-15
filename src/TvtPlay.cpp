@@ -125,7 +125,7 @@ static const LPCTSTR DEFAULT_BUTTON_LIST[] = {
     TEXT("'*'0'.'5:30~'*'0'.'5,StretchC"),
     TEXT(";'*'1' '.'0:30~'*'4'.'0:30~'*'0'.'2,StretchD,StretchA"),
     TEXT(";'*'1' '.'0:30~'*'4'.'0:30~'*'2'.'0:30~'*'0'.'5:30~'*'0'.'2,Width=32,StretchPopup,Stretch"),
-    NULL
+    nullptr
 };
 
 
@@ -142,7 +142,7 @@ CTvtPlay::CTvtPlay()
     , m_specStretchID(-1)
     , m_fShowOpenDialog(false)
     , m_fRaisePriority(false)
-    , m_hwndFrame(NULL)
+    , m_hwndFrame(nullptr)
     , m_fAutoHide(false)
     , m_fAutoHideActive(false)
     , m_fHoveredFromOutside(false)
@@ -169,8 +169,8 @@ CTvtPlay::CTvtPlay()
     , m_fDialogOpen(false)
     , m_seekMode(0)
     , m_apparentPos(-1)
-    , m_hThread(NULL)
-    , m_hThreadEvent(NULL)
+    , m_hThread(nullptr)
+    , m_hThreadEvent(nullptr)
     , m_threadID(0)
     , m_threadPriority(THREAD_PRIORITY_NORMAL)
     , m_infoPos(0)
@@ -734,16 +734,11 @@ bool CTvtPlay::InitializePlugin()
     if (m_fInitialized) return true;
 
     // ウィンドウクラスの登録
-    WNDCLASS wc;
+    WNDCLASS wc = {};
     wc.style            = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc      = FrameWindowProc;
-    wc.cbClsExtra       = 0;
-    wc.cbWndExtra       = 0;
     wc.hInstance        = g_hinstDLL;
-    wc.hIcon            = NULL;
-    wc.hCursor          = NULL;
     wc.hbrBackground    = (HBRUSH)GetStockObject(BLACK_BRUSH);
-    wc.lpszMenuName     = NULL;
     wc.lpszClassName    = TVTPLAY_FRAME_WINDOW_CLASS;
     if (!::RegisterClass(&wc)) return false;
 
@@ -752,7 +747,7 @@ bool CTvtPlay::InitializePlugin()
     // アイコン画像読み込み
     DrawUtil::CBitmap iconMap;
     if (m_szIconFileName[0])
-        iconMap.Load(NULL, m_szIconFileName, LR_CREATEDIBSECTION | LR_LOADFROMFILE);
+        iconMap.Load(nullptr, m_szIconFileName, LR_CREATEDIBSECTION | LR_LOADFROMFILE);
     if (!iconMap.IsCreated())
         if (!iconMap.Load(g_hinstDLL, IDB_BUTTONS)) return false;
 
@@ -760,7 +755,7 @@ bool CTvtPlay::InitializePlugin()
     if (!iconS.Create(ICON_SIZE * 3, ICON_SIZE, 1) ||
         !iconL.Create(ICON_SIZE * COMMAND_S_MAX, ICON_SIZE, 1)) return false;
 
-    HDC hdcMem = ::CreateCompatibleDC(NULL);
+    HDC hdcMem = ::CreateCompatibleDC(nullptr);
     if (!hdcMem) return false;
 
     int seekItemOrder = min(max(m_seekItemOrder, 0), BUTTON_MAX);
@@ -787,7 +782,7 @@ bool CTvtPlay::InitializePlugin()
         ::lstrcpy(text, m_buttonList[i]);
         ::CharUpper(text);
         for (;;) {
-            LPTSTR cmd = ::StrRChr(text, NULL, TEXT(','));
+            LPTSTR cmd = ::StrRChr(text, nullptr, TEXT(','));
             if (!cmd) break;
 
             if (!::StrCmpNI(cmd+1, TEXT("Width="), 6)) {
@@ -869,15 +864,15 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
         if (!InitializePlugin()) return false;
 
         if (!m_hwndFrame) {
-            m_hwndFrame = ::CreateWindow(TVTPLAY_FRAME_WINDOW_CLASS, NULL, WS_POPUP | WS_CLIPCHILDREN, 
+            m_hwndFrame = ::CreateWindow(TVTPLAY_FRAME_WINDOW_CLASS, nullptr, WS_POPUP | WS_CLIPCHILDREN,
                                          CW_USEDEFAULT, 0, CW_USEDEFAULT, 0,
-                                         m_pApp->GetAppWindow(), NULL, g_hinstDLL, this);
+                                         m_pApp->GetAppWindow(), nullptr, g_hinstDLL, this);
             if (!m_hwndFrame) return false;
         }
 
         if (!m_statusView.Create(m_hwndFrame, WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS)) {
             ::DestroyWindow(m_hwndFrame);
-            m_hwndFrame = NULL;
+            m_hwndFrame = nullptr;
             return false;
         }
         m_statusView.SetEventHandler(&m_eventHandler);
@@ -911,7 +906,7 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
         m_pApp->SetWindowMessageCallback(WindowMsgCallback, this);
     }
     else {
-        m_pApp->SetWindowMessageCallback(NULL, NULL);
+        m_pApp->SetWindowMessageCallback(nullptr, nullptr);
         Close();
 #ifdef EN_SWC
         if (m_captionAnalyzer.IsInitialized()) {
@@ -922,10 +917,10 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
         }
 #endif
         if (m_hwndFrame) {
-            m_statusView.SetEventHandler(NULL);
+            m_statusView.SetEventHandler(nullptr);
             m_statusView.Destroy();
             ::DestroyWindow(m_hwndFrame);
-            m_hwndFrame = NULL;
+            m_hwndFrame = nullptr;
         }
     }
     return true;
@@ -1034,14 +1029,14 @@ HWND CTvtPlay::GetFullscreenWindow()
         ::lstrcpyn(className, hostInfo.pszAppName, 48);
         ::lstrcat(className, L" Fullscreen");
 
-        HWND hwnd = NULL;
-        while ((hwnd = ::FindWindowEx(NULL, hwnd, className, NULL)) != NULL) {
+        HWND hwnd = nullptr;
+        while ((hwnd = ::FindWindowEx(nullptr, hwnd, className, nullptr)) != nullptr) {
             DWORD pid;
             ::GetWindowThreadProcessId(hwnd, &pid);
             if (pid == ::GetCurrentProcessId()) return hwnd;
         }
     }
-    return NULL;
+    return nullptr;
 }
 
 
@@ -1228,7 +1223,7 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
     case IDM_PLAYLIST_CLIP_NAME:
         {
             // 出力文字数を算出
-            int size = m_playlist.ToString(NULL, 0, selID==IDM_PLAYLIST_CLIP_NAME);
+            int size = m_playlist.ToString(nullptr, 0, selID==IDM_PLAYLIST_CLIP_NAME);
             // クリップボードにコピー
             if (size > 1 && ::OpenClipboard(m_hwndFrame)) {
                 if (::EmptyClipboard()) {
@@ -1346,10 +1341,10 @@ static INT_PTR CALLBACK EditChapterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, 
                 pch->second.name[0] = 0;
             }
             pch->second.name.resize(::lstrlen(&pch->second.name.front()) + 1);
-            pch->first = ::GetDlgItemInt(hDlg, IDC_EDIT_HOUR, NULL, FALSE)%100*3600000 +
-                         ::GetDlgItemInt(hDlg, IDC_EDIT_MIN, NULL, FALSE)%60*60000 +
-                         ::GetDlgItemInt(hDlg, IDC_EDIT_SEC, NULL, FALSE)%60*1000 +
-                         ::GetDlgItemInt(hDlg, IDC_EDIT_MSEC, NULL, FALSE)%1000;
+            pch->first = ::GetDlgItemInt(hDlg, IDC_EDIT_HOUR, nullptr, FALSE)%100*3600000 +
+                         ::GetDlgItemInt(hDlg, IDC_EDIT_MIN, nullptr, FALSE)%60*60000 +
+                         ::GetDlgItemInt(hDlg, IDC_EDIT_SEC, nullptr, FALSE)%60*1000 +
+                         ::GetDlgItemInt(hDlg, IDC_EDIT_MSEC, nullptr, FALSE)%1000;
             if (pch->first < 0) pch->first = 0;
             // FALL THROUGH!
         case IDCANCEL:
@@ -1484,7 +1479,7 @@ int CTvtPlay::TrackPopup(HMENU hmenu, const POINT &pt, UINT flags)
         // まずコントロールを表示させておく
         if (m_fAutoHideActive) ::SendMessage(m_hwndFrame, WM_TIMER, TIMER_ID_AUTO_HIDE, 1);
         selID = static_cast<int>(::TrackPopupMenu(hmenu, flags | TPM_NONOTIFY | TPM_RETURNCMD,
-                                                  pt.x, pt.y, 0, m_hwndFrame, NULL));
+                                                  pt.x, pt.y, 0, m_hwndFrame, nullptr));
         m_fPopuping = false;
     }
     return selID;
@@ -1552,15 +1547,15 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset, int stretchID)
     // 再生情報を初期化する
     UpdateInfos();
 
-    m_hThreadEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+    m_hThreadEvent = ::CreateEvent(nullptr, TRUE, FALSE, nullptr);
     if (!m_hThreadEvent) {
         m_tsSender.Close();
         return false;
     }
-    m_hThread = reinterpret_cast<HANDLE>(_beginthreadex(NULL, 0, TsSenderThread, this, 0, NULL));
+    m_hThread = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, TsSenderThread, this, 0, nullptr));
     if (!m_hThread) {
         ::CloseHandle(m_hThreadEvent);
-        m_hThreadEvent = NULL;
+        m_hThreadEvent = nullptr;
         m_tsSender.Close();
         return false;
     }
@@ -1589,10 +1584,10 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset, int stretchID)
     }
 
     if (m_hashListMax > 0 && m_fUpdateHashList) {
-        ::SetTimer(m_hwndFrame, TIMER_ID_UPDATE_HASH_LIST, TIMER_UPDATE_HASH_LIST_INTERVAL, NULL);
+        ::SetTimer(m_hwndFrame, TIMER_ID_UPDATE_HASH_LIST, TIMER_UPDATE_HASH_LIST_INTERVAL, nullptr);
     }
     if (m_chapter.NeedToSync()) {
-        ::SetTimer(m_hwndFrame, TIMER_ID_SYNC_CHAPTER, TIMER_SYNC_CHAPTER_INTERVAL, NULL);
+        ::SetTimer(m_hwndFrame, TIMER_ID_SYNC_CHAPTER, TIMER_SYNC_CHAPTER_INTERVAL, nullptr);
     }
     BeginWatchingNextChapter(true);
 
@@ -1629,9 +1624,9 @@ void CTvtPlay::Close()
         ::PostThreadMessage(m_threadID, WM_QUIT, 0, 0);
         ::WaitForSingleObject(m_hThread, INFINITE);
         ::CloseHandle(m_hThread);
-        m_hThread = NULL;
+        m_hThread = nullptr;
         ::CloseHandle(m_hThreadEvent);
-        m_hThreadEvent = NULL;
+        m_hThreadEvent = nullptr;
 
         HASH_INFO hashInfo = {};
         hashInfo.hash = m_tsSender.GetFileHash();
@@ -1795,7 +1790,7 @@ void CTvtPlay::BeginWatchingNextChapter(bool fDoDelay)
     if (m_hThread && !m_chapter.Get().empty()) {
         if (fDoDelay) {
             // シーク時などはGetPosition()が更新されるまで遅延させる
-            ::SetTimer(m_hwndFrame, TIMER_ID_WATCH_POS_GT, TIMER_WATCH_POS_GT_INTERVAL, NULL);
+            ::SetTimer(m_hwndFrame, TIMER_ID_WATCH_POS_GT, TIMER_WATCH_POS_GT_INTERVAL, nullptr);
         }
         else {
             // 直近の終了チャプターかスキップ開始チャプターを監視する
@@ -1855,7 +1850,7 @@ void CTvtPlay::OnResize(bool fInit)
 {
     RECT rect;
     if (CalcStatusRect(&rect, fInit)) {
-        ::SetWindowPos(m_hwndFrame, NULL, rect.left, rect.top,
+        ::SetWindowPos(m_hwndFrame, nullptr, rect.left, rect.top,
                        rect.right-rect.left, rect.bottom-rect.top, SWP_NOZORDER | SWP_NOACTIVATE);
     }
 }
@@ -1884,7 +1879,7 @@ void CTvtPlay::OnDispModeChange(bool fStandy, bool fInit)
         ::GetCursorPos(&m_lastCurPos);
         m_idleCurPos = m_lastCurPos;
         if (!m_fAutoHideActive) {
-            ::SetTimer(m_hwndFrame, TIMER_ID_AUTO_HIDE, TIMER_AUTO_HIDE_INTERVAL, NULL);
+            ::SetTimer(m_hwndFrame, TIMER_ID_AUTO_HIDE, TIMER_AUTO_HIDE_INTERVAL, nullptr);
             m_fAutoHideActive = true;
         }
     }
@@ -1895,7 +1890,7 @@ void CTvtPlay::OnDispModeChange(bool fStandy, bool fInit)
         ::GetCursorPos(&m_lastCurPos);
         m_idleCurPos.x = m_idleCurPos.y = -10;
         if (m_fAutoHide && !m_fAutoHideActive) {
-            ::SetTimer(m_hwndFrame, TIMER_ID_AUTO_HIDE, TIMER_AUTO_HIDE_INTERVAL, NULL);
+            ::SetTimer(m_hwndFrame, TIMER_ID_AUTO_HIDE, TIMER_AUTO_HIDE_INTERVAL, nullptr);
             m_fAutoHideActive = true;
         }
     }
@@ -2311,7 +2306,7 @@ BOOL CALLBACK CTvtPlay::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, L
         if (!pThis->m_pApp->GetFullscreen()) {
             RECT rect;
             if (pThis->CalcStatusRect(&rect)) {
-                ::SetWindowPos(pThis->m_hwndFrame, NULL, rect.left, rect.top, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+                ::SetWindowPos(pThis->m_hwndFrame, nullptr, rect.left, rect.top, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
             }
         }
         break;
@@ -2442,7 +2437,7 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
         }
         if (wParam && pThis->m_resetDropInterval > 0) {
             pThis->m_lastDropCount = 0;
-            ::SetTimer(hwnd, TIMER_ID_RESET_DROP, pThis->m_resetDropInterval, NULL);
+            ::SetTimer(hwnd, TIMER_ID_RESET_DROP, pThis->m_resetDropInterval, nullptr);
         }
         return 0;
     case WM_SATISFIED_POS_GT:
@@ -2577,7 +2572,7 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
     pThis->m_threadID = ::GetCurrentThreadId();
 
     for (;;) {
-        BOOL rv = ::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE);
+        BOOL rv = ::PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE);
         ::SetEvent(pThis->m_hThreadEvent);
         if (rv && msg.message == WM_TS_SET_SPEED || !rv && msgSetSpeed.message == WM_TS_SET_SPEED) {
             if (rv) {

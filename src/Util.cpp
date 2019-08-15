@@ -10,7 +10,7 @@ HWND ASFilterFindWindow()
 {
     TCHAR szName[128];
     ::wsprintf(szName, TEXT("%s,%lu"), ASFLT_FILTER_NAME, ::GetCurrentProcessId());
-    return ::FindWindowEx(HWND_MESSAGE, NULL, ASFLT_FILTER_NAME, szName);
+    return ::FindWindowEx(HWND_MESSAGE, nullptr, ASFLT_FILTER_NAME, szName);
 }
 
 LRESULT ASFilterSendMessageTimeout(UINT Msg, WPARAM wParam, LPARAM lParam, UINT uTimeout)
@@ -92,13 +92,13 @@ std::vector<WCHAR> ReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, bool fN
 {
     std::vector<BYTE> buf;
     HANDLE hFile = ::CreateFile(fileName, GENERIC_READ, dwShareMode,
-                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+                                nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hFile != INVALID_HANDLE_VALUE) {
-        DWORD size = ::GetFileSize(hFile, NULL);
+        DWORD size = ::GetFileSize(hFile, nullptr);
         if (size != INVALID_FILE_SIZE && size < READ_FILE_MAX_SIZE) {
             buf.resize(size + 3);
             DWORD numRead;
-            if (size == 0 || ::ReadFile(hFile, &buf.front(), size, &numRead, NULL) && numRead == size) {
+            if (size == 0 || ::ReadFile(hFile, &buf.front(), size, &numRead, nullptr) && numRead == size) {
                 buf[size] = buf[size + 1] = buf[size + 2] = 0;
             }
             else {
@@ -130,7 +130,7 @@ std::vector<WCHAR> ReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, bool fN
     }
     else {
         int retSize = ::MultiByteToWideChar(fNoBomUseAcp && !bomOffset ? CP_ACP : CP_UTF8, 0,
-                                            reinterpret_cast<LPCSTR>(&buf[bomOffset]), -1, NULL, 0);
+                                            reinterpret_cast<LPCSTR>(&buf[bomOffset]), -1, nullptr, 0);
         if (retSize > 0) {
             ret.resize(retSize);
             if (!::MultiByteToWideChar(fNoBomUseAcp && !bomOffset ? CP_ACP : CP_UTF8, 0,
@@ -148,21 +148,21 @@ std::vector<WCHAR> ReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, bool fN
 bool WriteUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, const WCHAR *pStr)
 {
     // 出力サイズ算出
-    int bufSize = ::WideCharToMultiByte(CP_UTF8, 0, pStr, -1, NULL, 0, NULL, NULL);
+    int bufSize = ::WideCharToMultiByte(CP_UTF8, 0, pStr, -1, nullptr, 0, nullptr, nullptr);
     if (bufSize <= 0) return false;
 
     // 文字コード変換(NULL文字含む)
     std::vector<BYTE> buf(3 + bufSize);
     buf[0] = 0xEF; buf[1] = 0xBB; buf[2] = 0xBF;
-    bufSize = ::WideCharToMultiByte(CP_UTF8, 0, pStr, -1, reinterpret_cast<LPSTR>(&buf[3]), bufSize, NULL, NULL);
+    bufSize = ::WideCharToMultiByte(CP_UTF8, 0, pStr, -1, reinterpret_cast<LPSTR>(&buf[3]), bufSize, nullptr, nullptr);
     if (bufSize <= 0) return false;
 
     HANDLE hFile = ::CreateFile(fileName, GENERIC_WRITE, dwShareMode,
-                                NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                                nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hFile == INVALID_HANDLE_VALUE) return false;
 
     DWORD written;
-    if (!::WriteFile(hFile, &buf.front(), bufSize + 3 - 1, &written, NULL)) {
+    if (!::WriteFile(hFile, &buf.front(), bufSize + 3 - 1, &written, nullptr)) {
         ::CloseHandle(hFile);
         return false;
     }
@@ -270,34 +270,24 @@ BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPC
 // 失敗時は負を返す
 LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt)
 {
-    HCRYPTPROV hProv = NULL;
-    HCRYPTHASH hHash = NULL;
+    HCRYPTPROV hProv;
     LONGLONG llRet = -1;
-
-    if (!::CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
-        hProv = NULL;
-        goto EXIT;
+    if (::CryptAcquireContext(&hProv, nullptr, nullptr, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
+        HCRYPTHASH hHash;
+        if (::CryptCreateHash(hProv, CALG_MD5, 0, 0, &hHash)) {
+            BYTE pbHash[16];
+            DWORD dwHashLen = 16;
+            // リトルエンディアンを仮定
+            if (::CryptHashData(hHash, (LPBYTE)&dwSalt, sizeof(dwSalt), 0) &&
+                ::CryptHashData(hHash, pbData, dwDataLen, 0) &&
+                ::CryptGetHashParam(hHash, HP_HASHVAL, pbHash, &dwHashLen, 0)) {
+                llRet = ((LONGLONG)pbHash[0]<<48) | ((LONGLONG)pbHash[1]<<40) | ((LONGLONG)pbHash[2]<<32) |
+                        ((LONGLONG)pbHash[3]<<24) | (pbHash[4]<<16) | (pbHash[5]<<8) | pbHash[6];
+            }
+            ::CryptDestroyHash(hHash);
+        }
+        ::CryptReleaseContext(hProv, 0);
     }
-
-    if (!::CryptCreateHash(hProv, CALG_MD5, 0, 0, &hHash)) {
-        hHash = NULL;
-        goto EXIT;
-    }
-
-    // リトルエンディアンを仮定
-    if (!::CryptHashData(hHash, (LPBYTE)&dwSalt, sizeof(dwSalt), 0)) goto EXIT;
-    if (!::CryptHashData(hHash, pbData, dwDataLen, 0)) goto EXIT;
-
-    BYTE pbHash[16];
-    DWORD dwHashLen = 16;
-    if (!::CryptGetHashParam(hHash, HP_HASHVAL, pbHash, &dwHashLen, 0)) goto EXIT;
-
-    llRet = ((LONGLONG)pbHash[0]<<48) | ((LONGLONG)pbHash[1]<<40) | ((LONGLONG)pbHash[2]<<32) |
-            ((LONGLONG)pbHash[3]<<24) | (pbHash[4]<<16) | (pbHash[5]<<8) | pbHash[6];
-
-EXIT:
-    if (hHash) ::CryptDestroyHash(hHash);
-    if (hProv) ::CryptReleaseContext(hProv, 0);
     return llRet;
 }
 
@@ -572,7 +562,7 @@ unsigned char *resync(unsigned char *head, unsigned char *tail, int unit_size)
 		buf += 1;
 	}
 
-	return NULL;
+	return nullptr;
 }
 
 void extract_adaptation_field(ADAPTATION_FIELD *dst, const unsigned char *data)
@@ -643,7 +633,7 @@ bool CompareLogFont(const LOGFONT *pFont1,const LOGFONT *pFont2)
 
 
 CGlobalLock::CGlobalLock()
-	: m_hMutex(NULL)
+	: m_hMutex(nullptr)
 	, m_fOwner(false)
 {
 }
@@ -655,24 +645,22 @@ CGlobalLock::~CGlobalLock()
 
 bool CGlobalLock::Create(LPCTSTR pszName)
 {
-	if (m_hMutex!=NULL)
+	if (m_hMutex!=nullptr)
 		return false;
-	SECURITY_DESCRIPTOR sd;
-	SECURITY_ATTRIBUTES sa;
-	::ZeroMemory(&sd,sizeof(sd));
+	SECURITY_DESCRIPTOR sd = {};
+	SECURITY_ATTRIBUTES sa = {};
 	::InitializeSecurityDescriptor(&sd,SECURITY_DESCRIPTOR_REVISION);
-	::SetSecurityDescriptorDacl(&sd,TRUE,NULL,FALSE);
-	::ZeroMemory(&sa,sizeof(sa));
+	::SetSecurityDescriptorDacl(&sd,TRUE,nullptr,FALSE);
 	sa.nLength=sizeof(sa);
 	sa.lpSecurityDescriptor=&sd;
 	m_hMutex=::CreateMutex(&sa,FALSE,pszName);
 	m_fOwner=false;
-	return m_hMutex!=NULL;
+	return m_hMutex!=nullptr;
 }
 
 bool CGlobalLock::Wait(DWORD Timeout)
 {
-	if (m_hMutex==NULL)
+	if (m_hMutex==nullptr)
 		return false;
 	if (::WaitForSingleObject(m_hMutex,Timeout)==WAIT_TIMEOUT)
 		return false;
@@ -682,16 +670,16 @@ bool CGlobalLock::Wait(DWORD Timeout)
 
 void CGlobalLock::Close()
 {
-	if (m_hMutex!=NULL) {
+	if (m_hMutex!=nullptr) {
 		Release();
 		::CloseHandle(m_hMutex);
-		m_hMutex=NULL;
+		m_hMutex=nullptr;
 	}
 }
 
 void CGlobalLock::Release()
 {
-	if (m_hMutex!=NULL && m_fOwner) {
+	if (m_hMutex!=nullptr && m_fOwner) {
 		::ReleaseMutex(m_hMutex);
 		m_fOwner=false;
 	}

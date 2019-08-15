@@ -54,9 +54,9 @@ public:
     bool Seek(int msec);
     void Pause(bool fPause, bool fPurge = true);
     void SetSpeed(int num, int den);
-    bool IsOpen() const { return m_file != NULL; }
+    bool IsOpen() const { return m_file != nullptr; }
     bool IsPaused() const { return m_fPause; }
-    bool IsFixed(bool *pfSpecialExt = NULL) const { if (pfSpecialExt) *pfSpecialExt=m_fSpecialExtending; return m_fFixed; }
+    bool IsFixed(bool *pfSpecialExt = nullptr) const { if (pfSpecialExt) *pfSpecialExt=m_fSpecialExtending; return m_fFixed; }
     void GetSpeed(int *pNum, int *pDen) const { *pNum=m_speedNum; *pDen=m_speedDen; }
     __int64 GetFileHash() const { return m_hash; }
     int GetDuration() const;
@@ -75,7 +75,7 @@ private:
     void ClosePipe();
     void CloseCtrlPipe();
     void SendData(BYTE *pData, int dataSize);
-    int TransactMessage(LPCTSTR request, LPTSTR reply = NULL);
+    int TransactMessage(LPCTSTR request, LPTSTR reply = nullptr);
     static DWORD DiffPcr(DWORD a, DWORD b) { return ((a-b)&0x80000000) && b-a<PCR_LAP_THRESHOLD ? 0 : a-b; }
 
     std::unique_ptr<IReadOnlyFile> m_file;

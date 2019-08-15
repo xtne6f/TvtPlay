@@ -7,7 +7,7 @@ bool CReadOnlyLocalFile::Open(LPCTSTR path, int flags)
     if (flags & OPEN_FLAG_NORMAL) {
         m_hFile = ::CreateFile(path, GENERIC_READ,
                                FILE_SHARE_READ | FILE_SHARE_DELETE | (flags & OPEN_FLAG_SHARE_WRITE ? FILE_SHARE_WRITE : 0),
-                               NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
     }
     return m_hFile != INVALID_HANDLE_VALUE;
 }
@@ -24,7 +24,7 @@ int CReadOnlyLocalFile::Read(BYTE *pBuf, int numToRead)
 {
     DWORD numRead;
     if (m_hFile != INVALID_HANDLE_VALUE && numToRead > 0 &&
-        ::ReadFile(m_hFile, pBuf, numToRead, &numRead, NULL)) {
+        ::ReadFile(m_hFile, pBuf, numToRead, &numRead, nullptr)) {
         return numRead;
     }
     return -1;

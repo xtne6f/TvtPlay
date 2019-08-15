@@ -137,17 +137,17 @@ void CTsTimestampShifter::Transform_(BYTE *pPacket)
 
 
 CTsSender::CTsSender()
-    : m_curr(NULL)
-    , m_head(NULL)
-    , m_tail(NULL)
+    : m_curr(nullptr)
+    , m_head(nullptr)
+    , m_tail(nullptr)
     , m_unitSize(0)
     , m_fTrimPacket(false)
     , m_fUnderrunCtrl(false)
     , m_pcrDisconThreshold(0xffffffff)
-    , m_sock(NULL)
+    , m_sock(INVALID_SOCKET)
     , m_udpPort(0)
-    , m_hPipe(NULL)
-    , m_hCtrlPipe(NULL)
+    , m_hPipe(INVALID_HANDLE_VALUE)
+    , m_hCtrlPipe(INVALID_HANDLE_VALUE)
     , m_baseTick(0)
     , m_renewSizeTick(0)
     , m_renewDurTick(0)
@@ -203,7 +203,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
             return false;
         }
     }
-    if (m_file == NULL) {
+    if (m_file == nullptr) {
         // まず読み込み共有で開いてみる
         m_file.reset(new CReadOnlyLocalFile());
         m_fShareWrite = false;
@@ -390,7 +390,7 @@ void CTsSender::SetModTimestamp(bool fModTimestamp)
 void CTsSender::Close()
 {
     if (m_fPause) Pause(true, true);
-    m_reader.SetFile(NULL);
+    m_reader.SetFile(nullptr);
     m_file.reset();
     CloseSocket();
     ClosePipe();
@@ -789,7 +789,7 @@ int CTsSender::ReadToPcr(int limit, bool fSend, bool fSyncRead)
         // m_currをパケットヘッダと同期させる
         int i = 0;
         for (; i < RESYNC_FAILURE_LIMIT; ++i) {
-            if ((m_curr = resync(m_curr, m_tail, m_unitSize)) != NULL) break;
+            if ((m_curr = resync(m_curr, m_tail, m_unitSize)) != nullptr) break;
             m_curr = m_tail; // 処理済にする
             RotateBuffer(fSend, fSyncRead);
             if (!m_curr) return 0;
@@ -910,7 +910,7 @@ void CTsSender::RotateBuffer(bool fSend, bool fSyncRead)
         BYTE *pBuf;
         int readBytes = fSyncRead ? m_reader.SyncRead(&pBuf) : m_reader.Read(&pBuf);
         if (readBytes < 0) {
-            m_curr = m_head = m_tail = NULL;
+            m_curr = m_head = m_tail = nullptr;
         }
         else {
             m_curr = m_head = pBuf - carrySize;
@@ -931,12 +931,12 @@ bool CTsSender::Seek(__int64 distanceToMove, IReadOnlyFile::MOVE_METHOD moveMeth
 
     if (m_file->SetPointer(distanceToMove, moveMethod) < 0) return false;
 
-    m_curr = m_head = m_tail = NULL;
+    m_curr = m_head = m_tail = nullptr;
     m_fEnPcr = false;
     if (ReadToPcr(120000, false, true) != 2) {
         // なるべく呼び出し前の状態に回復させるが、完全とは限らない
         if (m_file->SetPointer(lastPos, IReadOnlyFile::MOVE_METHOD_BEGIN) >= 0) {
-            m_curr = m_head = m_tail = NULL;
+            m_curr = m_head = m_tail = nullptr;
             m_fEnPcr = false;
             if (ReadToPcr(120000, false, true) == 2) m_prevPcr = m_pcr;
         }
@@ -973,7 +973,6 @@ void CTsSender::OpenSocket()
     if (::WSAStartup(MAKEWORD(2,0), &wsaData) == 0) {
         m_sock = ::socket(AF_INET, SOCK_DGRAM, 0);
         if (m_sock == INVALID_SOCKET) {
-            m_sock = NULL;
             ::WSACleanup();
         }
     }
@@ -981,9 +980,9 @@ void CTsSender::OpenSocket()
 
 void CTsSender::CloseSocket()
 {
-    if (m_sock) {
+    if (m_sock != INVALID_SOCKET) {
         ::closesocket(m_sock);
-        m_sock = NULL;
+        m_sock = INVALID_SOCKET;
         ::WSACleanup();
     }
 }
@@ -995,24 +994,18 @@ void CTsSender::OpenPipe()
 
     if (::WaitNamedPipe(m_pipeName, NMPWAIT_USE_DEFAULT_WAIT)) {
         // TSデータ書き込み用
-        m_hPipe = ::CreateFile(m_pipeName, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
-        if (m_hPipe == INVALID_HANDLE_VALUE) {
-            m_hPipe = NULL;
-        }
+        m_hPipe = ::CreateFile(m_pipeName, GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
     }
-    if (m_hPipe) {
+    if (m_hPipe != INVALID_HANDLE_VALUE) {
         TCHAR name[_countof(m_pipeName) + 4];
         ::wsprintf(name, TEXT("%sCtrl"), m_pipeName);
         if (::WaitNamedPipe(name, NMPWAIT_USE_DEFAULT_WAIT)) {
             // 制御用
-            m_hCtrlPipe = ::CreateFile(name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
-            if (m_hCtrlPipe == INVALID_HANDLE_VALUE) {
-                m_hCtrlPipe = NULL;
-            }
-            else {
+            m_hCtrlPipe = ::CreateFile(name, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+            if (m_hCtrlPipe != INVALID_HANDLE_VALUE) {
                 // メッセージストリームにする
                 DWORD dwMode = PIPE_READMODE_MESSAGE;
-                if (!::SetNamedPipeHandleState(m_hCtrlPipe, &dwMode, NULL, NULL)) {
+                if (!::SetNamedPipeHandleState(m_hCtrlPipe, &dwMode, nullptr, nullptr)) {
                     CloseCtrlPipe();
                 }
             }
@@ -1024,25 +1017,25 @@ void CTsSender::ClosePipe()
 {
     CloseCtrlPipe();
 
-    if (m_hPipe) {
+    if (m_hPipe != INVALID_HANDLE_VALUE) {
         ::CloseHandle(m_hPipe);
-        m_hPipe = NULL;
+        m_hPipe = INVALID_HANDLE_VALUE;
     }
 }
 
 void CTsSender::CloseCtrlPipe()
 {
-    if (m_hCtrlPipe) {
+    if (m_hCtrlPipe != INVALID_HANDLE_VALUE) {
         ::CloseHandle(m_hCtrlPipe);
-        m_hCtrlPipe = NULL;
+        m_hCtrlPipe = INVALID_HANDLE_VALUE;
     }
 }
 
 void CTsSender::SendData(BYTE *pData, int dataSize)
 {
     if (m_udpAddr[0]) {
-        if (!m_sock) OpenSocket();
-        if (m_sock) {
+        if (m_sock == INVALID_SOCKET) OpenSocket();
+        if (m_sock != INVALID_SOCKET) {
             // UDP転送
             sockaddr_in addr = {};
             addr.sin_family = AF_INET;
@@ -1062,33 +1055,28 @@ void CTsSender::SendData(BYTE *pData, int dataSize)
         }
     }
     if (m_pipeName[0]) {
-        if (!m_hPipe) OpenPipe();
-        if (m_hPipe) {
+        if (m_hPipe == INVALID_HANDLE_VALUE) OpenPipe();
+        if (m_hPipe != INVALID_HANDLE_VALUE) {
             // パイプ転送
             DWORD written;
-            if (!::WriteFile(m_hPipe, pData, (DWORD)dataSize, &written, NULL)) {
+            if (!::WriteFile(m_hPipe, pData, (DWORD)dataSize, &written, nullptr)) {
                 ClosePipe();
             }
         }
     }
-    /*static HANDLE hFile;
-    if (!hFile) hFile = CreateFile(TEXT("foo.ts"), GENERIC_WRITE, 0, NULL,
-                                   CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    DWORD written;
-    ::WriteFile(hFile, pData, (DWORD)dataSize, &written, NULL);*/
 }
 
 // 受信側に要求を送る
 // 戻り値: 0(失敗)または受け取った応答文字数
 int CTsSender::TransactMessage(LPCTSTR request, LPTSTR reply)
 {
-    if (m_pipeName[0] && m_hCtrlPipe) {
+    if (m_pipeName[0] && m_hCtrlPipe != INVALID_HANDLE_VALUE) {
         TCHAR buf[BON_PIPE_MESSAGE_MAX];
         DWORD read;
         BOOL fSuccess = ::TransactNamedPipe(m_hCtrlPipe,
                                             const_cast<LPTSTR>(request),
                                             (::lstrlen(request) + 1) * sizeof(TCHAR),
-                                            buf, sizeof(buf), &read, NULL);
+                                            buf, sizeof(buf), &read, nullptr);
         if (fSuccess && read >= sizeof(TCHAR)) {
             buf[read / sizeof(TCHAR) - 1] = 0;
             if (buf[0] == TEXT('A') && buf[1] == TEXT(' ')) {

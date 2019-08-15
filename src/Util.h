@@ -143,10 +143,6 @@ private:
     recursive_mutex_ *m_mtx;
 };
 
-inline bool IsStringEmpty(LPCWSTR pszString) {
-	return pszString==NULL || pszString[0]==L'\0';
-}
-
 COLORREF MixColor(COLORREF Color1,COLORREF Color2,BYTE Ratio=128);
 bool CompareLogFont(const LOGFONT *pFont1,const LOGFONT *pFont2);
 

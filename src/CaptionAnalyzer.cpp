@@ -28,7 +28,7 @@ static void OutputDebugFormat(LPCTSTR format, ...)
 }
 
 CCaptionAnalyzer::CCaptionAnalyzer()
-    : m_hCaptionDll(NULL)
+    : m_hCaptionDll(nullptr)
     , m_showLate(0)
     , m_clearEarly(0)
     , m_fShowing(false)
@@ -36,10 +36,10 @@ CCaptionAnalyzer::CCaptionAnalyzer()
     , m_commandFront(0)
     , m_pts(0)
     , m_fEnPts(false)
-    , m_pfnUnInitializeCP(NULL)
-    , m_pfnAddTSPacketCP(NULL)
-    , m_pfnClearCP(NULL)
-    , m_pfnGetCaptionDataCP(NULL)
+    , m_pfnUnInitializeCP(nullptr)
+    , m_pfnAddTSPacketCP(nullptr)
+    , m_pfnClearCP(nullptr)
+    , m_pfnGetCaptionDataCP(nullptr)
 {
 }
 
@@ -103,7 +103,7 @@ bool CCaptionAnalyzer::Initialize(LPCTSTR captionDllPath, LPCTSTR blacklistPath,
 
     if (m_hCaptionDll) {
         ::FreeLibrary(m_hCaptionDll);
-        m_hCaptionDll = NULL;
+        m_hCaptionDll = nullptr;
     }
     return false;
 }
@@ -115,7 +115,7 @@ void CCaptionAnalyzer::UnInitialize()
     m_reList.clear();
     m_pfnUnInitializeCP();
     ::FreeLibrary(m_hCaptionDll);
-    m_hCaptionDll = NULL;
+    m_hCaptionDll = nullptr;
 }
 
 // PCRが連続でなくなったとき(シークなど)は呼ぶべき
@@ -170,7 +170,7 @@ void CCaptionAnalyzer::AddPacket(BYTE *pPacket)
             // アダプテーションに続けてペイロードがある
             ADAPTATION_FIELD adapt;
             extract_adaptation_field(&adapt, pPayload);
-            pPayload = adapt.adaptation_field_length >= 0 ? pPayload + adapt.adaptation_field_length + 1 : NULL;
+            pPayload = adapt.adaptation_field_length >= 0 ? pPayload + adapt.adaptation_field_length + 1 : nullptr;
         }
         if (pPayload) {
             int payloadSize = 188 - static_cast<int>(pPayload - pPacket);

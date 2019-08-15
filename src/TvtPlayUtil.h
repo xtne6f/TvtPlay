@@ -60,7 +60,7 @@ public:
     virtual void Seek(int msec)=0;
     virtual void SeekAbsolute(int msec)=0;
     virtual void SeekAbsoluteApparently(int msec)=0;
-    virtual void OnCommand(int id, const POINT *pPt = NULL, UINT flags = 0)=0;
+    virtual void OnCommand(int id, const POINT *pPt = nullptr, UINT flags = 0)=0;
 };
 
 class CStatusViewEventHandler : public CStatusView::CEventHandler

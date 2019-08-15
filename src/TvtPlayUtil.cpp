@@ -185,7 +185,7 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
                 }
             }
             else if (it->second.IsIn()) {
-                ::MoveToEx(hdc, chapX, rcBar.top-7, NULL);
+                ::MoveToEx(hdc, chapX, rcBar.top-7, nullptr);
                 isX = it->second.IsX();
                 isIn = true;
             }

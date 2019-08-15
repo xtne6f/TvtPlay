@@ -13,7 +13,7 @@ public:
     void ClearShowState();
     bool CheckShowState(DWORD currentPcr);
     void AddPacket(BYTE *pPacket);
-    bool IsInitialized() const { return m_hCaptionDll != NULL; }
+    bool IsInitialized() const { return m_hCaptionDll != nullptr; }
 private:
     HMODULE m_hCaptionDll;
     int m_showLate, m_clearEarly;

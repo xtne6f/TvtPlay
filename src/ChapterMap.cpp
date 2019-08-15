@@ -13,7 +13,7 @@
 
 CChapterMap::CChapterMap()
     : m_hDir(INVALID_HANDLE_VALUE)
-    , m_hEvent(NULL)
+    , m_hEvent(nullptr)
     , m_fWritable(false)
     , m_retryCount(0)
 {
@@ -33,7 +33,7 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
 
     // カレントからの絶対パスに変換
     TCHAR fullPath[MAX_PATH];
-    DWORD rv = ::GetFullPathName(path, _countof(fullPath), fullPath, NULL);
+    DWORD rv = ::GetFullPathName(path, _countof(fullPath), fullPath, nullptr);
     if (!rv || rv >= _countof(fullPath)) return false;
 
     // 長い名前に変換
@@ -83,7 +83,7 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
     }
 
     LPCTSTR chReadPath = subChPath[0] && ::PathFileExists(subChPath) ? subChPath :
-                         ::PathFileExists(chPath) ? chPath : NULL;
+                         ::PathFileExists(chPath) ? chPath : nullptr;
     if (chReadPath) {
         // 中身がチャプターコマンド仕様に従っている場合のみ書き込み可能(m_fWritable)
         for (int i = 0; i < RETRY_LIMIT; ++i) {
@@ -102,8 +102,8 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
         if (::PathRemoveFileSpec(tmpPath)) {
             m_hDir = ::CreateFile(tmpPath, FILE_LIST_DIRECTORY,
                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                  NULL, OPEN_EXISTING,
-                                  FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, NULL);
+                                  nullptr, OPEN_EXISTING,
+                                  FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr);
             Sync();
         }
     }
@@ -114,7 +114,7 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
         LPCTSTR ogmReadPath = subOgmPath[0] && ::PathFileExists(subOgmPath) ? subOgmPath :
                               ogmPath[0] && ::PathFileExists(ogmPath) ? ogmPath :
                               subOgm2Path[0] && ::PathFileExists(subOgm2Path) ? subOgm2Path :
-                              ogm2Path[0] && ::PathFileExists(ogm2Path) ? ogm2Path : NULL;
+                              ogm2Path[0] && ::PathFileExists(ogm2Path) ? ogm2Path : nullptr;
         if (ogmReadPath) {
             // BOMがなければANSIコードページで読む
             std::vector<WCHAR> cmd = ReadUtfFileToEnd(ogmReadPath, FILE_SHARE_READ, true);
@@ -140,7 +140,7 @@ void CChapterMap::Close()
     }
     if (m_hEvent) {
         ::CloseHandle(m_hEvent);
-        m_hEvent = NULL;
+        m_hEvent = nullptr;
     }
     m_fWritable = false;
     m_retryCount = 0;
@@ -189,21 +189,21 @@ bool CChapterMap::Sync()
             ASSERT(false);
         }
         ::CloseHandle(m_hEvent);
-        m_hEvent = NULL;
+        m_hEvent = nullptr;
     }
 
     if (!m_hEvent) {
         // ディレクトリの監視をはじめる
-        m_hEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+        m_hEvent = ::CreateEvent(nullptr, TRUE, FALSE, nullptr);
         if (m_hEvent) {
             memset(&m_ol, 0, sizeof(m_ol));
             m_ol.hEvent = m_hEvent;
             if (::ReadDirectoryChangesW(m_hDir, &m_buf, sizeof(m_buf), FALSE,
                                         FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE,
-                                        NULL, &m_ol, NULL) == 0)
+                                        nullptr, &m_ol, nullptr) == 0)
             {
                 ::CloseHandle(m_hEvent);
-                m_hEvent = NULL;
+                m_hEvent = nullptr;
             }
         }
     }

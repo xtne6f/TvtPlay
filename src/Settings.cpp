@@ -14,6 +14,11 @@ static char THIS_FILE[]=__FILE__;
 
 #define lengthof _countof
 
+static inline bool IsStringEmpty(LPCTSTR pszString)
+{
+	return pszString==NULL || pszString[0]==TEXT('\0');
+}
+
 
 static unsigned int StrToUInt(LPCTSTR pszValue)
 {
