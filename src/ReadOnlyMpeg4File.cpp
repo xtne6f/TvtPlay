@@ -101,11 +101,11 @@ void CReadOnlyMpeg4File::InitializeMetaInfo(LPCTSTR path, LPCTSTR iniPath)
         ::WritePrivateProfileString(TEXT("MP4"), TEXT("Time"), TEXT(""), iniPath);
     }
     TCHAR metaName[MAX_PATH];
-    GetBufferedProfileString(&buf.front(), TEXT("Meta"), TEXT("metadata.ini"), metaName, _countof(metaName));
+    GetBufferedProfileString(buf.data(), TEXT("Meta"), TEXT("metadata.ini"), metaName, _countof(metaName));
     TCHAR szBroadcastID[15];
-    GetBufferedProfileString(&buf.front(), TEXT("BroadcastID"), TEXT("0x000100020003"), szBroadcastID, _countof(szBroadcastID));
+    GetBufferedProfileString(buf.data(), TEXT("BroadcastID"), TEXT("0x000100020003"), szBroadcastID, _countof(szBroadcastID));
     TCHAR szTime[20];
-    GetBufferedProfileString(&buf.front(), TEXT("Time"), TEXT(""), szTime, _countof(szTime));
+    GetBufferedProfileString(buf.data(), TEXT("Time"), TEXT(""), szTime, _countof(szTime));
     if (metaName[0] && ::lstrlen(path) < MAX_PATH) {
         TCHAR metaPath[MAX_PATH];
         ::lstrcpy(metaPath, path);
@@ -113,13 +113,13 @@ void CReadOnlyMpeg4File::InitializeMetaInfo(LPCTSTR path, LPCTSTR iniPath)
             // "Meta"設定の[*]セクションで上書き
             buf = GetPrivateProfileSectionBuffer(TEXT("*"), metaPath);
             TCHAR szBroadcastID_[15];
-            GetBufferedProfileString(&buf.front(), TEXT("BroadcastID"), szBroadcastID, szBroadcastID_, _countof(szBroadcastID_));
+            GetBufferedProfileString(buf.data(), TEXT("BroadcastID"), szBroadcastID, szBroadcastID_, _countof(szBroadcastID_));
             TCHAR szTime_[20];
-            GetBufferedProfileString(&buf.front(), TEXT("Time"), szTime, szTime_, _countof(szTime_));
+            GetBufferedProfileString(buf.data(), TEXT("Time"), szTime, szTime_, _countof(szTime_));
             // "Meta"設定の[ファイル名]セクションで上書き
             buf = GetPrivateProfileSectionBuffer(::PathFindFileName(path), metaPath);
-            GetBufferedProfileString(&buf.front(), TEXT("BroadcastID"), szBroadcastID_, szBroadcastID, _countof(szBroadcastID));
-            GetBufferedProfileString(&buf.front(), TEXT("Time"), szTime_, szTime, _countof(szTime));
+            GetBufferedProfileString(buf.data(), TEXT("BroadcastID"), szBroadcastID_, szBroadcastID, _countof(szBroadcastID));
+            GetBufferedProfileString(buf.data(), TEXT("Time"), szTime_, szTime, _countof(szTime));
         }
     }
     LARGE_INTEGER broadcastID = {};
@@ -615,7 +615,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
             }
             // PES header
             sample.insert(sample.begin(), 14, 0xFF);
-            CreatePesHeader(&sample.front(), 0xE0, 0, static_cast<DWORD>(45000 * (sampleTime + m_cttsV[indexV]) / m_timeScaleV + 22500), stuffingSize);
+            CreatePesHeader(sample.data(), 0xE0, 0, static_cast<DWORD>(45000 * (sampleTime + m_cttsV[indexV]) / m_timeScaleV + 22500), stuffingSize);
             n += 14;
         }
         for (int i = 0; i < n; ++counterV) {
@@ -651,7 +651,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
                 sample[18] |= n >> 3 & 0xFF;
                 sample[19] |= n << 5 & 0xFF;
                 // PES header
-                CreatePesHeader(&sample.front(), 0xC0, (n + 8) & 0xFFFF, static_cast<DWORD>(45000 * sampleTime / m_timeScaleA[a] + 22500), 0);
+                CreatePesHeader(sample.data(), 0xC0, (n + 8) & 0xFFFF, static_cast<DWORD>(45000 * sampleTime / m_timeScaleA[a] + 22500), 0);
                 n += 14;
             }
             for (int i = 0; i < n; ++counterA[a]) {
@@ -711,7 +711,7 @@ int CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<BYTE> &data) const
             if (path[5] == '\0') {
                 if (boxSize.QuadPart - numRead <= READ_BOX_SIZE_MAX) {
                     data.resize(static_cast<size_t>(boxSize.QuadPart - numRead));
-                    if (data.empty() || ::ReadFile(m_hFile, &data.front(), static_cast<DWORD>(data.size()), &numRead, nullptr) && numRead == data.size()) {
+                    if (data.empty() || ::ReadFile(m_hFile, data.data(), static_cast<DWORD>(data.size()), &numRead, nullptr) && numRead == data.size()) {
                         return static_cast<int>(data.size());
                     }
                 }
@@ -740,7 +740,7 @@ int CReadOnlyMpeg4File::ReadSample(size_t index, const std::vector<__int64> &sts
         DWORD numRead;
         if (data->empty() ||
             !::SetFilePointerEx(m_hFile, toMove, nullptr, FILE_BEGIN) ||
-            !::ReadFile(m_hFile, &data->front(), stsz[index], &numRead, nullptr) || numRead != stsz[index]) {
+            !::ReadFile(m_hFile, data->data(), stsz[index], &numRead, nullptr) || numRead != stsz[index]) {
             data->clear();
         }
         return static_cast<int>(data->size());

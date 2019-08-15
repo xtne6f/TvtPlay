@@ -88,7 +88,7 @@ int CBufferedFileReader::Read(BYTE **ppBuf)
         }
         else {
             m_queue.splice(m_queue.end(), m_queue, m_queue.begin());
-            *ppBuf = &m_queue.back().front() + m_bufPreSize;
+            *ppBuf = m_queue.back().data() + m_bufPreSize;
             ::SetEvent(m_hThreadEvent);
             return static_cast<int>(m_queue.back().size()) - m_bufPreSize;
         }

@@ -74,7 +74,7 @@ bool CCaptionAnalyzer::Initialize(LPCTSTR captionDllPath, LPCTSTR blacklistPath,
                 // コンパイルブロックのリストを作成しておく
                 const std::basic_regex<TCHAR> rePattern(TEXT("m?(.)(.+?)\\1s"));
                 std::match_results<LPCTSTR> m;
-                for (const TCHAR *p = &patterns.front(); *p;) {
+                for (const TCHAR *p = patterns.data(); *p;) {
                     int len = ::StrCSpn(p, TEXT("\r\n"));
                     if (std::regex_match(p, &p[len], m, rePattern)) {
                         std::basic_regex<TCHAR> re;

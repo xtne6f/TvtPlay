@@ -89,7 +89,7 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
         for (int i = 0; i < RETRY_LIMIT; ++i) {
             std::vector<WCHAR> cmd = ReadUtfFileToEnd(chReadPath, FILE_SHARE_READ);
             if (!cmd.empty()) {
-                m_fWritable = InsertCommand(&cmd.front());
+                m_fWritable = InsertCommand(cmd.data());
                 break;
             }
             ::Sleep(200);
@@ -119,7 +119,7 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
             // BOMがなければANSIコードページで読む
             std::vector<WCHAR> cmd = ReadUtfFileToEnd(ogmReadPath, FILE_SHARE_READ, true);
             if (!cmd.empty()) {
-                InsertOgmStyleCommand(&cmd.front());
+                InsertOgmStyleCommand(cmd.data());
             }
         }
         else {
@@ -217,7 +217,7 @@ bool CChapterMap::Sync()
         }
         std::vector<WCHAR> cmd = ReadUtfFileToEnd(m_path, FILE_SHARE_READ);
         if (!cmd.empty()) {
-            InsertCommand(&cmd.front());
+            InsertCommand(cmd.data());
             m_retryCount = 0;
             return true;
         }
@@ -301,7 +301,7 @@ bool CChapterMap::Save() const
     cmd.push_back(TEXT('c'));
     cmd.push_back(TEXT('\0'));
 
-    return WriteUtfFileToEnd(m_path, 0, &cmd.front());
+    return WriteUtfFileToEnd(m_path, 0, cmd.data());
 }
 
 bool CChapterMap::InsertCommand(LPCTSTR p)
@@ -368,12 +368,12 @@ bool CChapterMap::InsertOgmStyleCommand(LPCTSTR p)
         if (*p == TEXT('\r') && *(p+1) == TEXT('\n')) ++p;
         if (*p) ++p;
         // 左右の空白文字を取り除く
-        ::StrTrim(&line.front(), TEXT(" \t"));
-        line.resize(::lstrlen(&line.front()) + 1);
+        ::StrTrim(line.data(), TEXT(" \t"));
+        line.resize(::lstrlen(line.data()) + 1);
 
-        if (!::StrCmpNI(&line.front(), TEXT("CHAPTER"), 7)) {
+        if (!::StrCmpNI(line.data(), TEXT("CHAPTER"), 7)) {
             line.erase(line.begin(), line.begin() + 7);
-            if (idStr[0] && !::StrCmpNI(&line.front(), idStr, ::lstrlen(idStr))) {
+            if (idStr[0] && !::StrCmpNI(line.data(), idStr, ::lstrlen(idStr))) {
                 // "CHAPTER[0-9]*NAME="
                 ch.second.name.assign(line.begin() + ::lstrlen(idStr), line.end());
                 m_map.insert(ch);
@@ -381,7 +381,7 @@ bool CChapterMap::InsertOgmStyleCommand(LPCTSTR p)
             }
             else {
                 // 例えば"CHAPTER[0-9]*COMMENT="などは無視する
-                LPCTSTR q = &line.front();
+                LPCTSTR q = line.data();
                 while (TEXT('0') <= *q && *q <= TEXT('9')) ++q;
                 if (*q == TEXT('=')) {
                     idStr[0] = 0;
@@ -390,7 +390,7 @@ bool CChapterMap::InsertOgmStyleCommand(LPCTSTR p)
                         ch.first = ::StrToInt(q+1)*3600000 + ::StrToInt(q+4)*60000 + ::StrToInt(q+7)*1000 + ::StrToInt(q+10);
                         if (ch.first >= 0) {
                             ch.first = min(ch.first, CHAPTER_POS_MAX);
-                            ::lstrcpyn(idStr, &line.front(), min(static_cast<int>(q-&line.front()+1), _countof(idStr)-5));
+                            ::lstrcpyn(idStr, line.data(), min(static_cast<int>(q-line.data()+1), _countof(idStr)-5));
                             ::lstrcat(idStr, TEXT("NAME="));
                         }
                     }

@@ -310,7 +310,7 @@ bool CTvtPlay::Initialize()
         ::wsprintf(key, TEXT("Seek%c"), TEXT('A') + i);
         ::wsprintf(name, TEXT("シーク:%c"), TEXT('A') + i);
         if (!DEFAULT_SEEK_LIST[i]) {
-            if (!GetBufferedProfileInt(&buf.front(), key, 0)) break;
+            if (!GetBufferedProfileInt(buf.data(), key, 0)) break;
         }
         m_pApp->RegisterCommand(ID_COMMAND_SEEK_A + i, key, name);
     }
@@ -319,7 +319,7 @@ bool CTvtPlay::Initialize()
         ::wsprintf(key, TEXT("Stretch%c"), TEXT('A') + i);
         ::wsprintf(name, TEXT("倍速:%c"), TEXT('A') + i);
         if (!DEFAULT_STRETCH_LIST[i]) {
-            if (!GetBufferedProfileInt(&buf.front(), key, 0)) break;
+            if (!GetBufferedProfileInt(buf.data(), key, 0)) break;
         }
         m_pApp->RegisterCommand(ID_COMMAND_STRETCH_A + i, key, name);
     }
@@ -341,7 +341,7 @@ bool CTvtPlay::Initialize()
     m_pApp->SetEventCallback(EventCallback, this);
 
     TCHAR cmdOption[128];
-    GetBufferedProfileString(&buf.front(), TEXT("TvtpCmdOption"), TEXT(""), cmdOption, _countof(cmdOption));
+    GetBufferedProfileString(buf.data(), TEXT("TvtpCmdOption"), TEXT(""), cmdOption, _countof(cmdOption));
 
     // コマンドラインで指定されていなければ設定ファイルの値を適用する
     AnalyzeCommandLine(cmdOption, false);
@@ -374,7 +374,7 @@ void CTvtPlay::LoadSettings()
     int iniVer = 0;
     {
         std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(SETTINGS, m_szIniFileName);
-        LPCTSTR pBuf = &buf.front();
+        LPCTSTR pBuf = buf.data();
         iniVer              = GetBufferedProfileInt(pBuf, TEXT("Version"), 0);
         m_fAllRepeat        = GetBufferedProfileInt(pBuf, TEXT("TsRepeatAll"), 0) != 0;
         m_fSingleRepeat     = GetBufferedProfileInt(pBuf, TEXT("TsRepeatSingle"), 0) != 0;
@@ -475,7 +475,7 @@ static void LoadFontSetting(LOGFONT *pFont, LPCTSTR iniFileName)
 {
     std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(TEXT("Status"), iniFileName);
     TCHAR szFont[LF_FACESIZE];
-    GetBufferedProfileString(&buf.front(), TEXT("FontName"), TEXT(""), szFont, _countof(szFont));
+    GetBufferedProfileString(buf.data(), TEXT("FontName"), TEXT(""), szFont, _countof(szFont));
     if (szFont[0]) {
         ::lstrcpy(pFont->lfFaceName, szFont);
         pFont->lfEscapement     = 0;
@@ -489,14 +489,14 @@ static void LoadFontSetting(LOGFONT *pFont, LPCTSTR iniFileName)
         pFont->lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE;
     }
 
-    int val = GetBufferedProfileInt(&buf.front(), TEXT("FontSize"), INT_MAX);
+    int val = GetBufferedProfileInt(buf.data(), TEXT("FontSize"), INT_MAX);
     if (val != INT_MAX) {
         pFont->lfHeight = val;
         pFont->lfWidth  = 0;
     }
-    val = GetBufferedProfileInt(&buf.front(), TEXT("FontWeight"), INT_MAX);
+    val = GetBufferedProfileInt(buf.data(), TEXT("FontWeight"), INT_MAX);
     if (val != INT_MAX) pFont->lfWeight = val;
-    val = GetBufferedProfileInt(&buf.front(), TEXT("FontItalic"), INT_MAX);
+    val = GetBufferedProfileInt(buf.data(), TEXT("FontItalic"), INT_MAX);
     if (val != INT_MAX) pFont->lfItalic = static_cast<BYTE>(val);
 }
 
@@ -668,7 +668,7 @@ bool CTvtPlay::LoadFileInfoSetting(std::list<HASH_INFO> &hashList) const
     if (!m_fSettingsLoaded || m_hashListMax <= 0) return false;
 
     std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(TEXT("FileInfo"), m_szIniFileName);
-    if (!GetBufferedProfileInt(&buf.front(), TEXT("Enabled"), 0)) {
+    if (!GetBufferedProfileInt(buf.data(), TEXT("Enabled"), 0)) {
         return false;
     }
     for (int i = 0; i < m_hashListMax; ++i) {
@@ -676,12 +676,12 @@ bool CTvtPlay::LoadFileInfoSetting(std::list<HASH_INFO> &hashList) const
         HASH_INFO hashInfo;
         TCHAR key[32], val[64];
         ::wsprintf(key, TEXT("Hash%d"), i);
-        GetBufferedProfileString(&buf.front(), key, TEXT(""), val, _countof(val));
+        GetBufferedProfileString(buf.data(), key, TEXT(""), val, _countof(val));
         if (!val[0]) break;
         if (!::StrToInt64Ex(val, STIF_SUPPORT_HEX, &hashInfo.hash)) continue;
 
         ::wsprintf(key, TEXT("Resume%d"), i);
-        hashInfo.resumePos = GetBufferedProfileInt(&buf.front(), key, 0);
+        hashInfo.resumePos = GetBufferedProfileInt(buf.data(), key, 0);
         hashList.push_back(hashInfo);
     }
     return true;
@@ -694,7 +694,7 @@ void CTvtPlay::SaveFileInfoSetting(const std::list<HASH_INFO> &hashList) const
 
     // 不整合を防ぐため一度に書き込む
     std::vector<TCHAR> buf(32 + hashList.size() * 96);
-    TCHAR *p = &buf.front();
+    TCHAR *p = buf.data();
     p += ::wsprintf(p, TEXT("Enabled=1")) + 1;
     std::list<HASH_INFO>::const_iterator it = hashList.begin();
     for (int i = 0; i < m_hashListMax && it != hashList.end(); ++i, ++it) {
@@ -702,7 +702,7 @@ void CTvtPlay::SaveFileInfoSetting(const std::list<HASH_INFO> &hashList) const
         p += ::wsprintf(p, TEXT("Resume%d=%d"), i, it->resumePos) + 1;
     }
     p[0] = 0;
-    ::WritePrivateProfileSection(TEXT("FileInfo"), &buf.front(), m_szIniFileName);
+    ::WritePrivateProfileSection(TEXT("FileInfo"), buf.data(), m_szIniFileName);
 }
 
 // ファイル固有情報を更新する
@@ -1059,23 +1059,23 @@ bool CTvtPlay::OpenWithDialog()
                       OFN_ALLOWMULTISELECT | OFN_EXPLORER;
     // OFN_ENABLEHOOKではVistaスタイルが適用されないため
     ofn.nMaxFile    = static_cast<DWORD>(bufFile.size());
-    ofn.lpstrFile   = &bufFile.front();
+    ofn.lpstrFile   = bufFile.data();
 
     bool fAdded = false;
     m_fDialogOpen = true;
     if (::GetOpenFileName(&ofn)) {
-        LPCTSTR spec = &bufFile.front() + ::lstrlen(&bufFile.front()) + 1;
+        LPCTSTR spec = bufFile.data() + ::lstrlen(bufFile.data()) + 1;
         if (*spec) {
             // 複数のファイルが選択された
             for (; *spec; spec += ::lstrlen(spec) + 1) {
                 TCHAR path[MAX_PATH];
-                if (::PathCombine(path, &bufFile.front(), spec)) {
+                if (::PathCombine(path, bufFile.data(), spec)) {
                     if (m_playlist.PushBackListOrFile(path, !fAdded) >= 0) fAdded = true;
                 }
             }
         }
         else {
-            fAdded = m_playlist.PushBackListOrFile(&bufFile.front(), true) >= 0;
+            fAdded = m_playlist.PushBackListOrFile(bufFile.data(), true) >= 0;
         }
     }
     else if (::CommDlgExtendedError() == FNERR_BUFFERTOOSMALL) {
@@ -1292,7 +1292,7 @@ void CTvtPlay::SeekChapterWithPopup(const POINT &pt, UINT flags)
             TCHAR str[128];
             ::wsprintf(str, TEXT("%d:%02d:%02d.%03d %.63s"),
                        it->first/3600000, it->first/60000%60, it->first/1000%60, it->first%1000,
-                       &it->second.name.front());
+                       it->second.name.data());
             ::AppendMenu(hmenu, MF_STRING, 1 + i, str);
         }
         selID = TrackPopup(hmenu, pt, flags);
@@ -1315,7 +1315,7 @@ static INT_PTR CALLBACK EditChapterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, 
     case WM_INITDIALOG:
         ::SetWindowLongPtr(hDlg, GWLP_USERDATA, lParam);
         pch = reinterpret_cast<std::pair<int, CChapterMap::CHAPTER>*>(lParam);
-        ::SetDlgItemText(hDlg, IDC_EDIT_NAME, &pch->second.name.front());
+        ::SetDlgItemText(hDlg, IDC_EDIT_NAME, pch->second.name.data());
         ::SetDlgItemInt(hDlg, IDC_EDIT_HOUR, pch->first/3600000%100, FALSE);
         ::SetDlgItemInt(hDlg, IDC_EDIT_MIN, pch->first/60000%60, FALSE);
         ::SetDlgItemInt(hDlg, IDC_EDIT_SEC, pch->first/1000%60, FALSE);
@@ -1337,10 +1337,10 @@ static INT_PTR CALLBACK EditChapterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, 
         case IDOK:
             pch = reinterpret_cast<std::pair<int, CChapterMap::CHAPTER>*>(::GetWindowLongPtr(hDlg, GWLP_USERDATA));
             pch->second.name.resize(4096);
-            if (!::GetDlgItemText(hDlg, IDC_EDIT_NAME, &pch->second.name.front(), 4096)) {
+            if (!::GetDlgItemText(hDlg, IDC_EDIT_NAME, pch->second.name.data(), 4096)) {
                 pch->second.name[0] = 0;
             }
-            pch->second.name.resize(::lstrlen(&pch->second.name.front()) + 1);
+            pch->second.name.resize(::lstrlen(pch->second.name.data()) + 1);
             pch->first = ::GetDlgItemInt(hDlg, IDC_EDIT_HOUR, nullptr, FALSE)%100*3600000 +
                          ::GetDlgItemInt(hDlg, IDC_EDIT_MIN, nullptr, FALSE)%60*60000 +
                          ::GetDlgItemInt(hDlg, IDC_EDIT_SEC, nullptr, FALSE)%60*1000 +
@@ -1372,7 +1372,7 @@ void CTvtPlay::EditChapterWithPopup(int pos, const POINT &pt, UINT flags)
         TCHAR str[128];
         ::wsprintf(str, TEXT("%d:%02d:%02d.%03d %.63s"),
                    ch.first/3600000, ch.first/60000%60, ch.first/1000%60, ch.first%1000,
-                   &ch.second.name.front());
+                   ch.second.name.data());
         ::ModifyMenu(hmenu, IDM_CHAPTER_EDIT, MF_STRING, IDM_CHAPTER_EDIT, str);
         ::CheckMenuItem(hmenu, IDM_CHAPTER_IN, ch.second.IsIn() ? MF_CHECKED : MF_UNCHECKED);
         ::CheckMenuItem(hmenu, IDM_CHAPTER_OUT, ch.second.IsOut() ? MF_CHECKED : MF_UNCHECKED);
