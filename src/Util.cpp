@@ -505,17 +505,17 @@ int select_unit_size(unsigned char *head, unsigned char *tail)
 	memset(count, 0, sizeof(count));
 
 	// 1st step, count up 0x47 interval
-	while( buf+188 < tail ){
+	while( tail-buf > 188 ){
 		if(buf[0] != 0x47){
 			buf += 1;
 			continue;
 		}
 		m = 320;
-		if( buf+m > tail){
-			m = tail-buf;
+		if( tail-buf < m){
+			m = (int)(tail-buf);
 		}
 		for(i=188;i<m;i++){
-			if(buf[i] == 0x47){
+			if(buf[i] == 0x47 && (tail-buf <= i+i || buf[i+i] == 0x47)){
 				count[i-188] += 1;
 			}
 		}
