@@ -3,14 +3,14 @@
 #include "BufferedFileReader.h"
 
 CBufferedFileReader::CBufferedFileReader()
-    : m_file(NULL)
-    , m_hThread(NULL)
+    : m_file(nullptr)
+    , m_hThread(nullptr)
 {
 }
 
 CBufferedFileReader::~CBufferedFileReader()
 {
-    SetFile(NULL);
+    SetFile(nullptr);
 }
 
 // ファイルを設定する
@@ -33,7 +33,7 @@ bool CBufferedFileReader::SetupBuffer(int bufSize, int bufPreSize, int bufNum)
         ::WaitForSingleObject(m_hThread, INFINITE);
         ::CloseHandle(m_hThread);
         ::CloseHandle(m_hThreadEvent);
-        m_hThread = NULL;
+        m_hThread = nullptr;
     }
     m_queue.clear();
     if (m_file && bufSize >= 1 && bufPreSize >= 0 && bufNum >= 1) {
@@ -46,16 +46,16 @@ bool CBufferedFileReader::SetupBuffer(int bufSize, int bufPreSize, int bufNum)
         m_bufSize = bufSize;
         m_bufPreSize = bufPreSize;
         m_fRead = false;
-        m_hThreadEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
+        m_hThreadEvent = ::CreateEvent(nullptr, FALSE, FALSE, nullptr);
         if (m_hThreadEvent) {
             m_fStop = false;
-            m_hThread = reinterpret_cast<HANDLE>(::_beginthreadex(NULL, 0, ReadThread, this, 0, NULL));
+            m_hThread = reinterpret_cast<HANDLE>(::_beginthreadex(nullptr, 0, ReadThread, this, 0, nullptr));
             if (!m_hThread) {
                 ::CloseHandle(m_hThreadEvent);
             }
         }
     }
-    return m_hThread != NULL;
+    return m_hThread != nullptr;
 }
 
 // 先読みを終了する

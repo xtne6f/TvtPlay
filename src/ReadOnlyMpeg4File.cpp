@@ -16,7 +16,7 @@ bool CReadOnlyMpeg4File::Open(LPCTSTR path, int flags)
         ::GetPrivateProfileInt(TEXT("MP4"), TEXT("Enabled"), 1, iniPath))
     {
         m_hFile = ::CreateFile(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE,
-                               NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (m_hFile == INVALID_HANDLE_VALUE || !InitializeTable()) {
             Close();
         }
@@ -131,7 +131,7 @@ void CReadOnlyMpeg4File::InitializeMetaInfo(LPCTSTR path, LPCTSTR iniPath)
     if (!szTime[0]) {
         // ファイルの更新日時をTOTとする
         FILETIME ft;
-        if (::GetFileTime(m_hFile, NULL, NULL, &ft)) {
+        if (::GetFileTime(m_hFile, nullptr, nullptr, &ft)) {
             m_totStart.LowPart = ft.dwLowDateTime;
             m_totStart.HighPart = ft.dwHighDateTime;
             m_totStart.QuadPart += 9 * 36000000000LL;
@@ -180,14 +180,14 @@ bool CReadOnlyMpeg4File::InitializeTable()
             }
             else if (m_stsoA[0].empty() && ReadAudioSampleDesc(i, m_adtsHeader[0], buf)) {
                 m_timeScaleA[0] = timeScale;
-                if (!ReadSampleTable(i, m_stsoA[0], m_stszA[0], m_sttsA[0], NULL, buf) ||
+                if (!ReadSampleTable(i, m_stsoA[0], m_stszA[0], m_sttsA[0], nullptr, buf) ||
                     std::find_if(m_stszA[0].begin(), m_stszA[0].end(), [](DWORD a) { return a > AUDIO_SAMPLE_MAX; }) != m_stszA[0].end()) {
                     m_stsoA[0].clear();
                 }
             }
             else if (m_stsoA[1].empty() && !m_stsoA[0].empty() && ReadAudioSampleDesc(i, m_adtsHeader[1], buf)) {
                 m_timeScaleA[1] = timeScale;
-                if (!ReadSampleTable(i, m_stsoA[1], m_stszA[1], m_sttsA[1], NULL, buf) ||
+                if (!ReadSampleTable(i, m_stsoA[1], m_stszA[1], m_sttsA[1], nullptr, buf) ||
                     std::find_if(m_stszA[1].begin(), m_stszA[1].end(), [](DWORD a) { return a > AUDIO_SAMPLE_MAX; }) != m_stszA[1].end()) {
                     m_stsoA[1].clear();
                 }
@@ -473,7 +473,7 @@ bool CReadOnlyMpeg4File::InitializeBlockList()
             if (sampleTime >= static_cast<__int64>(m_blockList.size()) * m_timeScaleV / 10) {
                 break;
             }
-            int n = ReadSample(indexV, m_stsoV, m_stszV, NULL);
+            int n = ReadSample(indexV, m_stsoV, m_stszV, nullptr);
             if (n > 0) {
                 // (AUD or stuffing) + SPS + PPS
                 n += 6 + static_cast<int>(m_spsPps.size());
@@ -488,7 +488,7 @@ bool CReadOnlyMpeg4File::InitializeBlockList()
                 if (sampleTime >= static_cast<__int64>(m_blockList.size()) * m_timeScaleA[a] / 10) {
                     break;
                 }
-                int n = ReadSample(indexA[a], m_stsoA[a], m_stszA[a], NULL);
+                int n = ReadSample(indexA[a], m_stsoA[a], m_stszA[a], nullptr);
                 if (n > 0) {
                     // ADTS header
                     n += 7;
@@ -684,7 +684,7 @@ int CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<BYTE> &data) const
 {
     if (path[0] == '/') {
         LARGE_INTEGER toMove = {};
-        if (!::SetFilePointerEx(m_hFile, toMove, NULL, FILE_BEGIN)) {
+        if (!::SetFilePointerEx(m_hFile, toMove, nullptr, FILE_BEGIN)) {
             return -1;
         }
         ++path;
@@ -692,12 +692,12 @@ int CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<BYTE> &data) const
     int index = path[4] - '0';
     BYTE head[16];
     DWORD numRead;
-    while (::ReadFile(m_hFile, head, 8, &numRead, NULL) && numRead == 8) {
+    while (::ReadFile(m_hFile, head, 8, &numRead, nullptr) && numRead == 8) {
         LARGE_INTEGER boxSize;
         boxSize.QuadPart = ArrayToDWORD(head);
         if (boxSize.QuadPart == 1) {
             // 64bit形式
-            if (!::ReadFile(m_hFile, head + 8, 8, &numRead, NULL) || numRead != 8) {
+            if (!::ReadFile(m_hFile, head + 8, 8, &numRead, nullptr) || numRead != 8) {
                 break;
             }
             numRead = 16;
@@ -711,7 +711,7 @@ int CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<BYTE> &data) const
             if (path[5] == '\0') {
                 if (boxSize.QuadPart - numRead <= READ_BOX_SIZE_MAX) {
                     data.resize(static_cast<size_t>(boxSize.QuadPart - numRead));
-                    if (data.empty() || ::ReadFile(m_hFile, &data.front(), static_cast<DWORD>(data.size()), &numRead, NULL) && numRead == data.size()) {
+                    if (data.empty() || ::ReadFile(m_hFile, &data.front(), static_cast<DWORD>(data.size()), &numRead, nullptr) && numRead == data.size()) {
                         return static_cast<int>(data.size());
                     }
                 }
@@ -721,7 +721,7 @@ int CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<BYTE> &data) const
         }
         LARGE_INTEGER toMove;
         toMove.QuadPart = boxSize.QuadPart - numRead;
-        if (!::SetFilePointerEx(m_hFile, toMove, NULL, FILE_CURRENT)) {
+        if (!::SetFilePointerEx(m_hFile, toMove, nullptr, FILE_CURRENT)) {
             break;
         }
     }
@@ -739,8 +739,8 @@ int CReadOnlyMpeg4File::ReadSample(size_t index, const std::vector<__int64> &sts
         toMove.QuadPart = stso[index];
         DWORD numRead;
         if (data->empty() ||
-            !::SetFilePointerEx(m_hFile, toMove, NULL, FILE_BEGIN) ||
-            !::ReadFile(m_hFile, &data->front(), stsz[index], &numRead, NULL) || numRead != stsz[index]) {
+            !::SetFilePointerEx(m_hFile, toMove, nullptr, FILE_BEGIN) ||
+            !::ReadFile(m_hFile, &data->front(), stsz[index], &numRead, nullptr) || numRead != stsz[index]) {
             data->clear();
         }
         return static_cast<int>(data->size());

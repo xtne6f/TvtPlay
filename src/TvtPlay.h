@@ -41,7 +41,7 @@ public:
     void Seek(int msec);
     void SeekAbsolute(int msec);
     void SeekAbsoluteApparently(int msec) { m_apparentPos = msec; }
-    void OnCommand(int id, const POINT *pPt = NULL, UINT flags = 0);
+    void OnCommand(int id, const POINT *pPt = nullptr, UINT flags = 0);
 private:
     // ファイルごとの固有情報
     struct HASH_INFO {

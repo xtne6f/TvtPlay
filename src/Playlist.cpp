@@ -16,7 +16,7 @@ int CPlaylist::PushBackListOrFile(LPCTSTR path, bool fMovePos)
 {
     // カレントからの絶対パスに変換
     TCHAR fullPath[MAX_PATH];
-    DWORD rv = ::GetFullPathName(path, _countof(fullPath), fullPath, NULL);
+    DWORD rv = ::GetFullPathName(path, _countof(fullPath), fullPath, nullptr);
     if (rv == 0 || rv >= MAX_PATH) return -1;
 
     int pos = -1;
