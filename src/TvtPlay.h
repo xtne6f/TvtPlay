@@ -10,6 +10,8 @@ class CTvtPlay : public TVTest::CTVTestPlugin, public ITvtPlayController
     static const int TIMER_SYNC_CHAPTER_INTERVAL = 1000;
     static const int TIMER_WATCH_POS_GT_INTERVAL = 1000;
     static const int POPUP_MAX_MAX = 10000;
+    static const int ICON_SIZE_MIN = 16;
+    static const int ICON_SIZE_MAX = 256;
 public:
     // CTVTestPlugin
     CTvtPlay();

@@ -171,17 +171,17 @@ bool WriteUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, const WCHAR *pStr)
 }
 
 
-static void IconIndexToPos(int *pX, int *pW, HDC hdc, int idx)
+static void IconIndexToPos(int *pX, int *pW, HDC hdc, int idx, int iconMaxWidth)
 {
     *pX = 0;
-    *pW = ICON_SIZE;
+    *pW = iconMaxWidth;
     for (int x=0, i=0; i <= idx; i++) {
         if (::GetPixel(hdc, x, 0) == RGB(0,0,0)) {
             *pW = 1;
-            while (*pW < ICON_SIZE && ::GetPixel(hdc, x + (*pW)++, 0) == RGB(0,0,0));
+            while (*pW < iconMaxWidth && ::GetPixel(hdc, x + (*pW)++, 0) == RGB(0,0,0));
         }
         else {
-            *pW = ICON_SIZE;
+            *pW = iconMaxWidth;
         }
         *pX = x;
         x += *pW;
@@ -189,25 +189,25 @@ static void IconIndexToPos(int *pX, int *pW, HDC hdc, int idx)
 }
 
 
-static int DrawMonoColorIcon(HDC hdcDest, int destX, int destY, HDC hdcSrc, int idx, bool fInvert)
+static int DrawMonoColorIcon(HDC hdcDest, int destX, int destY, HDC hdcSrc, int idx, int iconSize, bool fInvert)
 {
     int x, width;
-    IconIndexToPos(&x, &width, hdcSrc, idx);
-    int ofsY = width == ICON_SIZE ? 0 : 1;
+    IconIndexToPos(&x, &width, hdcSrc, idx, iconSize);
+    int ofsY = width == iconSize ? 0 : 1;
 
     if (fInvert) {
-        ::BitBlt(hdcDest, destX, destY+ofsY, width, ICON_SIZE-ofsY, hdcSrc, x, ofsY, MERGEPAINT);
+        ::BitBlt(hdcDest, destX, destY+ofsY, width, iconSize-ofsY, hdcSrc, x, ofsY, MERGEPAINT);
     }
     else {
-        ::PatBlt(hdcDest, destX, destY+ofsY, width, ICON_SIZE-ofsY, DSTINVERT);
-        ::BitBlt(hdcDest, destX, destY+ofsY, width, ICON_SIZE-ofsY, hdcSrc, x, ofsY, MERGEPAINT);
-        ::PatBlt(hdcDest, destX, destY+ofsY, width, ICON_SIZE-ofsY, DSTINVERT);
+        ::PatBlt(hdcDest, destX, destY+ofsY, width, iconSize-ofsY, DSTINVERT);
+        ::BitBlt(hdcDest, destX, destY+ofsY, width, iconSize-ofsY, hdcSrc, x, ofsY, MERGEPAINT);
+        ::PatBlt(hdcDest, destX, destY+ofsY, width, iconSize-ofsY, DSTINVERT);
     }
     return width;
 }
 
 
-bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTSTR pIdxList)
+bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTSTR pIdxList, int iconSize)
 {
     if (!hdcDest || !hbm) return false;
 
@@ -219,18 +219,18 @@ bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTST
     if (!*p || *p == TEXT(',')) {
         // indexが1つだけ指定されている場合
         int idx = ::StrToInt(pIdxList);
-        ::PatBlt(hdcDest, destX, destY, ICON_SIZE, ICON_SIZE, WHITENESS);
-        DrawMonoColorIcon(hdcDest, destX, destY, hdcMem, min(max(idx,0),255), false);
+        ::PatBlt(hdcDest, destX, destY, iconSize, iconSize, WHITENESS);
+        DrawMonoColorIcon(hdcDest, destX, destY, hdcMem, min(max(idx,0),255), iconSize, false);
 
-        ::PatBlt(hdcDest, destX+ICON_SIZE, destY, ICON_SIZE, ICON_SIZE, WHITENESS);
-        DrawMonoColorIcon(hdcDest, destX+ICON_SIZE, destY, hdcMem, min(max(idx+1,0),255), false);
+        ::PatBlt(hdcDest, destX + iconSize, destY, iconSize, iconSize, WHITENESS);
+        DrawMonoColorIcon(hdcDest, destX + iconSize, destY, hdcMem, min(max(idx+1,0),255), iconSize, false);
     }
     else {
         p = pIdxList;
         for (int i = 0; *p && *p != TEXT(','); i++) {
             bool fInvert = false;
-            int x = destX + i * ICON_SIZE;
-            ::PatBlt(hdcDest, x, destY, ICON_SIZE, ICON_SIZE, WHITENESS);
+            int x = destX + i * iconSize;
+            ::PatBlt(hdcDest, x, destY, iconSize, iconSize, WHITENESS);
             while (*p && *p != TEXT(',') && *p != TEXT(':')) {
                 int idx, width;
                 if (*p == TEXT('~')) {
@@ -245,8 +245,8 @@ bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTST
                     idx = ::StrToInt(p);
                     p += ::StrCSpn(p, TEXT(",:-~'"));
                 }
-                width = DrawMonoColorIcon(hdcDest, x, destY, hdcMem, min(max(idx,0),255), fInvert);
-                x += width == ICON_SIZE ? 0 : width - 1;
+                width = DrawMonoColorIcon(hdcDest, x, destY, hdcMem, min(max(idx,0),255), iconSize, fInvert);
+                x += width == iconSize ? 0 : width - 1;
                 if (*p == TEXT('-')) p++;
             }
             if (*p == TEXT(':')) p++;
@@ -505,17 +505,17 @@ int select_unit_size(unsigned char *head, unsigned char *tail)
 	memset(count, 0, sizeof(count));
 
 	// 1st step, count up 0x47 interval
-	while( buf+188 < tail ){
+	while( tail-buf > 188 ){
 		if(buf[0] != 0x47){
 			buf += 1;
 			continue;
 		}
 		m = 320;
-		if( buf+m > tail){
-			m = tail-buf;
+		if( tail-buf < m){
+			m = (int)(tail-buf);
 		}
 		for(i=188;i<m;i++){
-			if(buf[i] == 0x47){
+			if(buf[i] == 0x47 && (tail-buf <= i+i || buf[i+i] == 0x47)){
 				count[i-188] += 1;
 			}
 		}

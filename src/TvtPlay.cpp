@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2018-02-22
+// 最終更新: 2019-08-16
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -31,7 +31,7 @@
 #define INFO_DESCRIPTION_SUFFIX L"+)"
 
 static const WCHAR INFO_PLUGIN_NAME[] = L"TvtPlay";
-static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.2.5" INFO_DESCRIPTION_SUFFIX;
+static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.2.6" INFO_DESCRIPTION_SUFFIX;
 static const int INFO_VERSION = 23;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
@@ -628,14 +628,24 @@ bool CTvtPlay::InitializePlugin()
 
     // アイコン画像読み込み
     DrawUtil::CBitmap iconMap;
-    if (m_szIconFileName[0])
-        iconMap.Load(nullptr, m_szIconFileName, LR_CREATEDIBSECTION | LR_LOADFROMFILE);
-    if (!iconMap.IsCreated())
+    int iconSize = 0;
+    if (m_szIconFileName[0]) {
+        if (iconMap.Load(nullptr, m_szIconFileName, LR_CREATEDIBSECTION | LR_LOADFROMFILE)) {
+            iconSize = iconMap.GetHeight();
+            if (iconSize < ICON_SIZE_MIN || ICON_SIZE_MAX < iconSize) {
+                iconMap.Destroy();
+            }
+        }
+    }
+    if (!iconMap.IsCreated()) {
         if (!iconMap.Load(g_hinstDLL, IDB_BUTTONS)) return false;
+        iconSize = iconMap.GetHeight();
+    }
 
     DrawUtil::CBitmap iconS, iconL;
-    if (!iconS.Create(ICON_SIZE * 3, ICON_SIZE, 1) ||
-        !iconL.Create(ICON_SIZE * COMMAND_S_MAX, ICON_SIZE, 1)) return false;
+    if (iconSize < ICON_SIZE_MIN || ICON_SIZE_MAX < iconSize ||
+        !iconS.Create(iconSize * 3, iconSize, 1) ||
+        !iconL.Create(iconSize * COMMAND_S_MAX, iconSize, 1)) return false;
 
     HDC hdcMem = ::CreateCompatibleDC(nullptr);
     if (!hdcMem) return false;
@@ -659,7 +669,7 @@ bool CTvtPlay::InitializePlugin()
 
         // コマンドはカンマ区切りで2つまで指定できる
         int cmdID[2] = {-1, -1};
-        int cmdCount = 0, width = ICON_SIZE;
+        int cmdCount = 0, width = iconSize;
         TCHAR text[BUTTON_TEXT_MAX];
         ::lstrcpy(text, m_buttonList[i]);
         ::CharUpper(text);
@@ -712,7 +722,7 @@ bool CTvtPlay::InitializePlugin()
         rgbq[1].rgbBlue = rgbq[1].rgbGreen = rgbq[1].rgbRed = 255;
         ::SetDIBColorTable(hdcMem, 0, 2, rgbq);
 
-        ComposeMonoColorIcon(hdcMem, 0, 0, iconMap.GetHandle(), m_buttonList[i]);
+        ComposeMonoColorIcon(hdcMem, 0, 0, iconMap.GetHandle(), m_buttonList[i], iconSize);
 
         new CButtonStatusItem(&m_statusView, this, STATUS_ITEM_BUTTON + cmdID[0],
                               STATUS_ITEM_BUTTON + cmdID[1], width, *pIcon);

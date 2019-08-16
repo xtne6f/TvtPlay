@@ -32,7 +32,7 @@ protected:
     int m_Width;
     int m_MinWidth;
     bool GetMenuPos(POINT *pPos, UINT *pFlags) const;
-    void DrawIcon(HDC hdc, const RECT *pRect, HBITMAP hbm, int srcX = 0, int srcY = 0, int iconWidth = 16, int iconHeight = 16) const;
+    void DrawIcon(HDC hdc, const RECT *pRect, HBITMAP hbm, int srcX, int srcY, int iconWidth, int iconHeight) const;
 };
 
 class CStatusView
