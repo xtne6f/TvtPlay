@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.2.5 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.2.6 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
@@ -295,8 +295,8 @@ SeekItemOrder / StatusItemOrder【ver.1.6～】
     # たとえば[=3]とすればButton03の左隣、[=0]とすれば左端に配置されます。
 IconImage
     アイコン画像を絶対パスかTVTestフォルダからの相対パスで指定
-    # プラグインに内蔵されている"src/Buttons.bmp"の画像を置き換えます。高さ16px
-    # のモノクロBMPファイルを指定してください。
+    # プラグインに内蔵されている"src/Buttons.bmp"の画像を置き換えます。モノクロ
+    # BMPファイルを指定してください。
 Seek[A-Z]
     シーク時間をミリ秒で指定する
     # ボタンコマンドやキー割り当ての"シーク:A"～に対応します。
@@ -313,11 +313,13 @@ Button[00-17]
     # SeekToEnd,SeekToPrev,SeekToNext,AddChapter,RepeatChapter,SkipXChapter,
     # ChapterPopup,Loop,Pause,Stretch,StretchRe,StretchPopup,Seek[A-Z],
     # Stretch[A-Z]
-    # (ボタン幅)のデフォルトは16です。';'でコメントアウトするか何も指定しなけれ
-    # ばそのボタンは消えます。並べ替えもできます。Stretch/StretchReコマンドは設
-    # 定キーStretchAから[=100]となる設定キーまでを順/逆順に倍速切り替えします。
-    # アイコン画像の X座標=(アイコン番号)×16 の位置をアイコンとして使用します。
-    # ただし、左上1pxが黒色ならば幅16pxを最大とする可変ピッチです【ver.0.9～】。
+    # (ボタン幅)のデフォルトはアイコン画像の高さ(前述IconImageキー参照、内蔵のも
+    # のは16)です。';'でコメントアウトするか何も指定しなければそのボタンは消えま
+    # す。並べ替えもできます。Stretch/StretchReコマンドは設定キーStretchAから
+    # [=100]となる設定キーまでを順/逆順に倍速切り替えします。
+    # アイコン画像の X座標=(アイコン番号)×(画像の高さ) の位置をアイコンとして使
+    # 用します。ただし、左上1pxが黒色ならば(画像の高さ)pxを最大とする可変ピッチ
+    # です【ver.0.9～】。
     # RepeatChapter,SkipXChapter,Loop,Pause,Stretch*は切り替えのため複数のアイコ
     # ンを使います。
     # "{アイコン番号}"のフォーマットについて【ver.0.9～】
