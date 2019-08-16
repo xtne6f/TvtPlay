@@ -29,8 +29,8 @@ protected:
 		DRAWTEXT_HCENTER = 0x00000001UL
 	};
 	void DrawText(HDC hdc,const RECT *pRect,LPCTSTR pszText,DWORD Flags=0) const;
-	void DrawIcon(HDC hdc,const RECT *pRect,HBITMAP hbm,int SrcX=0,int SrcY=0,
-				  int IconWidth=16,int IconHeight=16,bool fEnabled=true) const;
+	void DrawIcon(HDC hdc,const RECT *pRect,HBITMAP hbm,int SrcX,int SrcY,
+				  int IconWidth,int IconHeight,bool fEnabled=true) const;
 
 public:
 	CStatusItem(int ID,int DefaultWidth);

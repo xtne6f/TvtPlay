@@ -425,7 +425,8 @@ void CButtonStatusItem::Draw(HDC hdc, const RECT *pRect)
                   (ID_COMMAND_STRETCH_A <= subCmdID && subCmdID < ID_COMMAND_STRETCH_A + COMMAND_S_MAX) &&
                   stid == subCmdID - ID_COMMAND_STRETCH_A ? 2 : 0;
     }
-    DrawIcon(hdc, pRect, m_icon.GetHandle(), ICON_SIZE * iconPos);
+    int iconSize = m_icon.GetHeight();
+    DrawIcon(hdc, pRect, m_icon.GetHandle(), iconSize * iconPos, 0, iconSize, iconSize);
 }
 
 void CButtonStatusItem::OnLButtonDown(int x, int y)
