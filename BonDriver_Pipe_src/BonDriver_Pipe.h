@@ -43,6 +43,7 @@ class CBonDriverPipe : public IBonDriver2
 public:
     CBonDriverPipe();
     ~CBonDriverPipe(); // 派生禁止!
+    STRUCT_IBONDRIVER2 &GetBonStruct2() { return m_bonStruct2; }
     // IBonDriver
     const BOOL OpenTuner(void);
     void CloseTuner(void);
@@ -97,6 +98,7 @@ private:
     DWORD m_dwReadyReqNum;
     DWORD m_dwCurChannel;
     bool m_fPause;
+    STRUCT_IBONDRIVER2 m_bonStruct2;
 };
 
 #endif // INCLUDE_BON_DRIVER_PIPE_H

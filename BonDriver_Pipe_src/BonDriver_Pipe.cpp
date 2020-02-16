@@ -36,6 +36,12 @@ extern "C" BONAPI IBonDriver * CreateBonDriver(void)
     return g_pBonThis;
 }
 
+extern "C" BONAPI const STRUCT_IBONDRIVER * CreateBonStruct(void)
+{
+    CBonDriverPipe *pThis = static_cast<CBonDriverPipe*>(CreateBonDriver());
+    return &pThis->GetBonStruct2().Initialize(pThis, NULL);
+}
+
 CBonDriverPipe::CBonDriverPipe()
     : m_hReadPipe(INVALID_HANDLE_VALUE)
     , m_hReadPipeThread(NULL)
