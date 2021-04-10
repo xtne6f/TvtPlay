@@ -2,6 +2,7 @@
 #define COLOR_SCHEME_H
 
 
+#include <string>
 #include "Theme.h"
 
 

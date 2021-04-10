@@ -1,5 +1,4 @@
 ﻿#include <Windows.h>
-#include <string>
 #include "Util.h"
 #include "ColorScheme.h"
 #include "Settings.h"
