@@ -3,6 +3,7 @@
 
 
 #include "Theme.h"
+#include <string>
 
 
 class CColorScheme
