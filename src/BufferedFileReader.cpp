@@ -62,7 +62,7 @@ bool CBufferedFileReader::SetupBuffer(int bufSize, int bufPreSize, int bufNum)
 void CBufferedFileReader::Flush()
 {
     if (m_hThread) {
-        CBlockLock lock(&m_lock);
+        lock_recursive_mutex lock(m_lock);
         __int64 rewind = 0;
         while (m_tail != m_queue.begin()) {
             rewind += static_cast<int>((--m_tail)->size()) - m_bufPreSize;
@@ -79,7 +79,7 @@ void CBufferedFileReader::Flush()
 int CBufferedFileReader::Read(BYTE **ppBuf)
 {
     if (m_hThread) {
-        CBlockLock lock(&m_lock);
+        lock_recursive_mutex lock(m_lock);
         if (m_tail == m_queue.begin()) {
             int numRead = SyncRead(ppBuf);
             m_fRead = true;
@@ -112,7 +112,7 @@ int CBufferedFileReader::SyncRead(BYTE **ppBuf)
 __int64 CBufferedFileReader::GetFilePosition() const
 {
     if (m_file) {
-        CBlockLock lock(&m_lock);
+        lock_recursive_mutex lock(m_lock);
         __int64 rewind = 0;
         if (m_hThread) {
             for (auto it = m_tail; it != m_queue.begin(); ) {
@@ -129,7 +129,7 @@ __int64 CBufferedFileReader::GetFileSize() const
 {
     if (m_file) {
         if (m_fileSize < 0) {
-            CBlockLock lock(&m_lock);
+            lock_recursive_mutex lock(m_lock);
             return m_file->GetSize();
         }
         return m_fileSize;
@@ -145,7 +145,7 @@ unsigned int __stdcall CBufferedFileReader::ReadThread(void *pParam)
         if (this_.m_fStop) {
             break;
         }
-        CBlockLock lock(&this_.m_lock);
+        lock_recursive_mutex lock(this_.m_lock);
         if (this_.m_fRead && std::next(this_.m_tail, 1) != this_.m_queue.end()) {
             this_.m_tail->resize(this_.m_bufPreSize + this_.m_bufSize);
             int numRead = this_.m_file->Read(&(*this_.m_tail)[this_.m_bufPreSize], this_.m_bufSize);

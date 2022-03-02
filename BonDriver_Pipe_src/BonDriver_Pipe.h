@@ -6,25 +6,28 @@
 // 制御パイプを実装するとき定義
 #define EN_CTRL_PIPE
 
-class CCriticalLock
+class recursive_mutex_
 {
 public:
-    CCriticalLock() { ::InitializeCriticalSection(&m_section); }
-    ~CCriticalLock() { ::DeleteCriticalSection(&m_section); }
-    void Lock() { ::EnterCriticalSection(&m_section); }
-    void Unlock() { ::LeaveCriticalSection(&m_section); }
-    //CRITICAL_SECTION &GetCriticalSection() { return m_section; }
+    recursive_mutex_() { ::InitializeCriticalSection(&m_cs); }
+    ~recursive_mutex_() { ::DeleteCriticalSection(&m_cs); }
+    void lock() { ::EnterCriticalSection(&m_cs); }
+    void unlock() { ::LeaveCriticalSection(&m_cs); }
 private:
-    CRITICAL_SECTION m_section;
+    recursive_mutex_(const recursive_mutex_&);
+    recursive_mutex_ &operator=(const recursive_mutex_&);
+    CRITICAL_SECTION m_cs;
 };
 
-class CBlockLock
+class lock_recursive_mutex
 {
 public:
-    CBlockLock(CCriticalLock *pLock) : m_pLock(pLock) { m_pLock->Lock(); }
-    ~CBlockLock() { m_pLock->Unlock(); }
+    lock_recursive_mutex(recursive_mutex_ &mtx) : m_mtx(mtx) { m_mtx.lock(); }
+    ~lock_recursive_mutex() { m_mtx.unlock(); }
 private:
-    CCriticalLock *m_pLock;
+    lock_recursive_mutex(const lock_recursive_mutex&);
+    lock_recursive_mutex &operator=(const lock_recursive_mutex&);
+    recursive_mutex_ &m_mtx;
 };
 
 class CBonDriverPipe : public IBonDriver2
@@ -92,7 +95,7 @@ private:
     HANDLE m_hOnStreamEvent;
     HANDLE m_hOnPurgeEvent;
     HANDLE m_hQuitEvent;
-    CCriticalLock m_reqLock;
+    recursive_mutex_ m_reqLock;
     AsyncIoReq *m_pIoReqBuff;
     AsyncIoReq *m_pIoGetReq;
     DWORD m_dwReadyReqNum;

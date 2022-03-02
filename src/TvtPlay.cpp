@@ -1764,7 +1764,7 @@ void CTvtPlay::SetRepeatFlags(bool fAllRepeat, bool fSingleRepeat)
 
 int CTvtPlay::GetStretchID()
 {
-    CBlockLock lock(&m_tsInfoLock);
+    lock_recursive_mutex lock(m_tsInfoLock);
     if (m_infoSpeed == 100) return -1;
     for (int i = 0; i < m_stretchListNum; ++i) {
         if (m_stretchList[i] == m_infoSpeed) return i;
@@ -2567,7 +2567,7 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
     static const int RESET_WAIT = 10;
     int resetCount = -RESET_WAIT;
     {
-        CBlockLock lock(&pThis->m_tsInfoLock);
+        lock_recursive_mutex lock(pThis->m_tsInfoLock);
         pThis->m_infoSpeed = speed;
         posSec = pThis->m_infoPos / 1000;
         durSec = pThis->m_infoDur / 1000;
@@ -2666,7 +2666,7 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
                 fLowSpeed = false;
 #ifdef EN_SWC
                 {
-                    CBlockLock lock(&pThis->m_streamLock);
+                    lock_recursive_mutex lock(pThis->m_streamLock);
                     fLowSpeed = pThis->m_captionAnalyzer.CheckShowState(pThis->m_pcr);
                 }
 #endif
@@ -2727,7 +2727,7 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
             if (speed != 100 && speed != lowSpeed) {
                 int fSetSpeed = false;
                 {
-                    CBlockLock lock(&pThis->m_streamLock);
+                    lock_recursive_mutex lock(pThis->m_streamLock);
                     if (pThis->m_captionAnalyzer.CheckShowState(pThis->m_pcr)) {
                         if (!fLowSpeed) {
                             // 低速にする
@@ -2772,7 +2772,7 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
         }
 
         {
-            CBlockLock lock(&pThis->m_tsInfoLock);
+            lock_recursive_mutex lock(pThis->m_tsInfoLock);
             pThis->UpdateInfos();
             pThis->m_infoSpeed = speed;
             if (posSec != pThis->m_infoPos / 1000 || durSec != pThis->m_infoDur / 1000 ||
@@ -2832,7 +2832,7 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
     CTvtPlay &t = *static_cast<CTvtPlay*>(pClientData);
 
     if (t.m_fResetPat) {
-        CBlockLock lock(&t.m_streamLock);
+        lock_recursive_mutex lock(t.m_streamLock);
         t.m_tsShifter.Reset();
 #ifdef EN_SWC
         PAT zeroPat = {};
@@ -2870,12 +2870,12 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
                 }
             }
             if (pcrPid < 0) {
-                CBlockLock lock(&t.m_streamLock);
+                lock_recursive_mutex lock(t.m_streamLock);
                 t.m_captionAnalyzer.ClearShowState();
             }
             // 参照PIDのときはPCRを取得する
             if (header.pid == pcrPid) {
-                CBlockLock lock(&t.m_streamLock);
+                lock_recursive_mutex lock(t.m_streamLock);
                 DWORD pcr = (DWORD)adapt.pcr_45khz;
 
                 // PCRの連続性チェック
@@ -2926,7 +2926,7 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
         !header.transport_scrambling_control &&
         !header.transport_error_indicator)
     {
-        CBlockLock lock(&t.m_streamLock);
+        lock_recursive_mutex lock(t.m_streamLock);
         t.m_captionAnalyzer.AddPacket(pData);
     }
 #endif
