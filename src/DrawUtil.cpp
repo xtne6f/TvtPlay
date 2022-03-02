@@ -403,7 +403,7 @@ bool CFont::operator==(const CFont &Font) const
 	LOGFONT lf1,lf2;
 	GetLogFont(&lf1);
 	Font.GetLogFont(&lf2);
-	return CompareLogFont(&lf1,&lf2);
+	return CompareLogFont(lf1,lf2);
 }
 
 bool CFont::operator!=(const CFont &Font) const

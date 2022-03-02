@@ -253,22 +253,22 @@ void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst)
         for (int i = fIgnoreFirst; i < argc; ++i) {
             // オプションは複数起動禁止時に無効->有効にすることができる
             if (argv[i][0] == TEXT('/') || argv[i][0] == TEXT('-')) {
-                if (!::lstrcmpi(argv[i]+1, TEXT("tvtplay"))) m_fForceEnable = m_fIgnoreExt = true;
-                else if (!::lstrcmpi(argv[i]+1, TEXT("tvtpudp"))) m_fAutoEnUdp = true;
-                else if (!::lstrcmpi(argv[i]+1, TEXT("tvtpipe"))) m_fAutoEnPipe = true;
-                else if (!::lstrcmpi(argv[i]+1, TEXT("tvtpofs")) && i+1 < argc) {
+                if (!_tcsicmp(argv[i] + 1, TEXT("tvtplay"))) m_fForceEnable = m_fIgnoreExt = true;
+                else if (!_tcsicmp(argv[i] + 1, TEXT("tvtpudp"))) m_fAutoEnUdp = true;
+                else if (!_tcsicmp(argv[i] + 1, TEXT("tvtpipe"))) m_fAutoEnPipe = true;
+                else if (!_tcsicmp(argv[i] + 1, TEXT("tvtpofs")) && i+1 < argc) {
                     ++i;
                     if (TEXT('0') <= argv[i][0] && argv[i][0] <= TEXT('9')) {
-                        m_specOffset = ::StrToInt(argv[i]);
-                        int n = ::StrCSpn(argv[i], TEXT("+-"));
+                        m_specOffset = _tcstol(argv[i], nullptr, 10);
+                        size_t n = _tcscspn(argv[i], TEXT("+-"));
                         if (argv[i][n] == TEXT('+')) ++n;
-                        m_specOffset += ::StrToInt(argv[i] + n);
+                        m_specOffset += _tcstol(argv[i] + n, nullptr, 10);
                         if (m_specOffset < 0) m_specOffset = 0;
                     }
                 }
-                else if (!::lstrcmpi(argv[i]+1, TEXT("tvtpstr")) && i+1 < argc) {
+                else if (!_tcsicmp(argv[i] + 1, TEXT("tvtpstr")) && i+1 < argc) {
                     ++i;
-                    int stid = (TCHAR)::CharUpper((LPTSTR)argv[i][0]) - TEXT('A');
+                    int stid = argv[i][0] - (argv[i][0] < TEXT('a') ? TEXT('A') : TEXT('a'));
                     if (0 <= stid && stid < COMMAND_S_MAX) {
                         m_specStretchID = stid;
                     }
@@ -285,7 +285,7 @@ void CTvtPlay::AnalyzeCommandLine(LPCWSTR cmdLine, bool fIgnoreFirst)
                 }
             }
             if (fSpec) {
-                ::lstrcpyn(m_szSpecFileName, argv[argc-1], _countof(m_szSpecFileName));
+                _tcsncpy_s(m_szSpecFileName, argv[argc-1], _TRUNCATE);
             }
         }
 
@@ -307,8 +307,8 @@ bool CTvtPlay::Initialize()
     std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(SETTINGS, m_szIniFileName);
     for (int i = 0; i < COMMAND_S_MAX; ++i) {
         TCHAR key[16], name[16];
-        ::wsprintf(key, TEXT("Seek%c"), TEXT('A') + i);
-        ::wsprintf(name, TEXT("シーク:%c"), TEXT('A') + i);
+        _stprintf_s(key, TEXT("Seek%c"), TEXT('A') + i);
+        _stprintf_s(name, TEXT("シーク:%c"), TEXT('A') + i);
         if (!DEFAULT_SEEK_LIST[i]) {
             if (!GetBufferedProfileInt(buf.data(), key, 0)) break;
         }
@@ -316,8 +316,8 @@ bool CTvtPlay::Initialize()
     }
     for (int i = 0; i < COMMAND_S_MAX; ++i) {
         TCHAR key[16], name[16];
-        ::wsprintf(key, TEXT("Stretch%c"), TEXT('A') + i);
-        ::wsprintf(name, TEXT("倍速:%c"), TEXT('A') + i);
+        _stprintf_s(key, TEXT("Stretch%c"), TEXT('A') + i);
+        _stprintf_s(name, TEXT("倍速:%c"), TEXT('A') + i);
         if (!DEFAULT_STRETCH_LIST[i]) {
             if (!GetBufferedProfileInt(buf.data(), key, 0)) break;
         }
@@ -432,7 +432,7 @@ void CTvtPlay::LoadSettings()
         m_seekListNum = 0;
         while (m_seekListNum < COMMAND_S_MAX) {
             TCHAR key[16];
-            ::wsprintf(key, TEXT("Seek%c"), TEXT('A') + m_seekListNum);
+            _stprintf_s(key, TEXT("Seek%c"), TEXT('A') + m_seekListNum);
             int val = GetBufferedProfileInt(pBuf, key, DEFAULT_SEEK_LIST[m_seekListNum]);
             if (!val) break;
             m_seekList[m_seekListNum++] = val;
@@ -441,7 +441,7 @@ void CTvtPlay::LoadSettings()
         m_stretchListNum = 0;
         while (m_stretchListNum < COMMAND_S_MAX) {
             TCHAR key[16];
-            ::wsprintf(key, TEXT("Stretch%c"), TEXT('A') + m_stretchListNum);
+            _stprintf_s(key, TEXT("Stretch%c"), TEXT('A') + m_stretchListNum);
             int val = GetBufferedProfileInt(pBuf, key, DEFAULT_STRETCH_LIST[m_stretchListNum]);
             if (!val) break;
             m_stretchList[m_stretchListNum++] = min(max(val, 25), 800);
@@ -450,7 +450,7 @@ void CTvtPlay::LoadSettings()
         int j = 0;
         for (int i = 0; i < BUTTON_MAX; ++i) {
             TCHAR key[16];
-            ::wsprintf(key, TEXT("Button%02d"), i);
+            _stprintf_s(key, TEXT("Button%02d"), i);
             GetBufferedProfileString(pBuf, key, DEFAULT_BUTTON_LIST[j] ? DEFAULT_BUTTON_LIST[j++] : TEXT(""),
                                      m_buttonList[i], _countof(m_buttonList[0]));
         }
@@ -477,7 +477,7 @@ static void LoadFontSetting(LOGFONT *pFont, LPCTSTR iniFileName)
     TCHAR szFont[LF_FACESIZE];
     GetBufferedProfileString(buf.data(), TEXT("FontName"), TEXT(""), szFont, _countof(szFont));
     if (szFont[0]) {
-        ::lstrcpy(pFont->lfFaceName, szFont);
+        _tcscpy_s(pFont->lfFaceName, szFont);
         pFont->lfEscapement     = 0;
         pFont->lfOrientation    = 0;
         pFont->lfUnderline      = 0;
@@ -536,9 +536,9 @@ void CTvtPlay::LoadTVTestSettings()
         {
             // Mutex名を生成
             WCHAR szMutexName[64+MAX_PATH];
-            ::lstrcpyn(szMutexName, hostInfo.pszAppName, 48);
-            ::lstrcat(szMutexName, L"_Ini_Mutex_");
-            ::lstrcat(szMutexName, szAppIniPath);
+            _tcsncpy_s(szMutexName, hostInfo.pszAppName, 47);
+            _tcscat_s(szMutexName, L"_Ini_Mutex_");
+            _tcscat_s(szMutexName, szAppIniPath);
             for (WCHAR *p = szMutexName; *p; ++p)
                 if (*p == L'\\') *p = L':';
 
@@ -643,17 +643,17 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
 
         for (int i = 0; i < m_seekListNum; ++i) {
             TCHAR key[16];
-            ::wsprintf(key, TEXT("Seek%c"), TEXT('A') + i);
+            _stprintf_s(key, TEXT("Seek%c"), TEXT('A') + i);
             WritePrivateProfileInt(SETTINGS, key, m_seekList[i], m_szIniFileName);
         }
         for (int i = 0; i < m_stretchListNum; ++i) {
             TCHAR key[16];
-            ::wsprintf(key, TEXT("Stretch%c"), TEXT('A') + i);
+            _stprintf_s(key, TEXT("Stretch%c"), TEXT('A') + i);
             WritePrivateProfileInt(SETTINGS, key, m_stretchList[i], m_szIniFileName);
         }
         for (int i = 0; i < BUTTON_MAX; ++i) {
             TCHAR key[16];
-            ::wsprintf(key, TEXT("Button%02d"), i);
+            _stprintf_s(key, TEXT("Button%02d"), i);
             ::WritePrivateProfileString(SETTINGS, key, m_buttonList[i], m_szIniFileName);
         }
     }
@@ -675,12 +675,12 @@ bool CTvtPlay::LoadFileInfoSetting(std::list<HASH_INFO> &hashList) const
         // キー番号が小さいものほど新しい
         HASH_INFO hashInfo;
         TCHAR key[32], val[64];
-        ::wsprintf(key, TEXT("Hash%d"), i);
+        _stprintf_s(key, TEXT("Hash%d"), i);
         GetBufferedProfileString(buf.data(), key, TEXT(""), val, _countof(val));
         if (!val[0]) break;
         if (!::StrToInt64Ex(val, STIF_SUPPORT_HEX, &hashInfo.hash)) continue;
 
-        ::wsprintf(key, TEXT("Resume%d"), i);
+        _stprintf_s(key, TEXT("Resume%d"), i);
         hashInfo.resumePos = GetBufferedProfileInt(buf.data(), key, 0);
         hashList.push_back(hashInfo);
     }
@@ -694,14 +694,13 @@ void CTvtPlay::SaveFileInfoSetting(const std::list<HASH_INFO> &hashList) const
 
     // 不整合を防ぐため一度に書き込む
     std::vector<TCHAR> buf(32 + hashList.size() * 96);
-    TCHAR *p = buf.data();
-    p += ::wsprintf(p, TEXT("Enabled=1")) + 1;
+    size_t pos = _stprintf_s(buf.data(), buf.size(), TEXT("Enabled=1")) + 1;
     std::list<HASH_INFO>::const_iterator it = hashList.begin();
     for (int i = 0; i < m_hashListMax && it != hashList.end(); ++i, ++it) {
-        p += ::wsprintf(p, TEXT("Hash%d=0x%06x%08x"), i, (DWORD)(it->hash>>32), (DWORD)(it->hash)) + 1;
-        p += ::wsprintf(p, TEXT("Resume%d=%d"), i, it->resumePos) + 1;
+        pos += _stprintf_s(buf.data() + pos, buf.size() - pos, TEXT("Hash%d=0x%06x%08x"), i, (DWORD)(it->hash>>32), (DWORD)(it->hash)) + 1;
+        pos += _stprintf_s(buf.data() + pos, buf.size() - pos, TEXT("Resume%d=%d"), i, it->resumePos) + 1;
     }
-    p[0] = 0;
+    buf[pos] = 0;
     ::WritePrivateProfileSection(TEXT("FileInfo"), buf.data(), m_szIniFileName);
 }
 
@@ -789,31 +788,30 @@ bool CTvtPlay::InitializePlugin()
         int cmdID[2] = {-1, -1};
         int cmdCount = 0, width = iconSize;
         TCHAR text[BUTTON_TEXT_MAX];
-        ::lstrcpy(text, m_buttonList[i]);
-        ::CharUpper(text);
+        _tcscpy_s(text, m_buttonList[i]);
         for (;;) {
-            LPTSTR cmd = ::StrRChr(text, nullptr, TEXT(','));
+            LPTSTR cmd = _tcsrchr(text, TEXT(','));
             if (!cmd) break;
 
-            if (!::StrCmpNI(cmd+1, TEXT("Width="), 6)) {
-                width = ::StrToInt(cmd+7);
+            if (!_tcsnicmp(cmd + 1, TEXT("Width="), 6)) {
+                width = _tcstol(cmd + 7, nullptr, 10);
             }
             else if (cmdCount < 2) {
-                if (::lstrcmpi(cmd+1, TEXT("SeekA")) >= 0 &&
-                    ::lstrcmpi(cmd+1, TEXT("SeekZ")) <= 0 &&
-                    ::lstrlen(cmd) == 6)
+                if (_tcsicmp(cmd + 1, TEXT("SeekA")) >= 0 &&
+                    _tcsicmp(cmd + 1, TEXT("SeekZ")) <= 0 &&
+                    _tcslen(cmd) == 6)
                 {
-                    cmdID[cmdCount++] = ID_COMMAND_SEEK_A + cmd[5] - TEXT('A');
+                    cmdID[cmdCount++] = ID_COMMAND_SEEK_A + cmd[5] - (cmd[5] < TEXT('a') ? TEXT('A') : TEXT('a'));
                 }
-                else if (::lstrcmpi(cmd+1, TEXT("StretchA")) >= 0 &&
-                         ::lstrcmpi(cmd+1, TEXT("StretchZ")) <= 0 &&
-                         ::lstrlen(cmd) == 9)
+                else if (_tcsicmp(cmd + 1, TEXT("StretchA")) >= 0 &&
+                         _tcsicmp(cmd + 1, TEXT("StretchZ")) <= 0 &&
+                         _tcslen(cmd) == 9)
                 {
-                    cmdID[cmdCount++] = ID_COMMAND_STRETCH_A + cmd[8] - TEXT('A');
+                    cmdID[cmdCount++] = ID_COMMAND_STRETCH_A + cmd[8] - (cmd[8] < TEXT('a') ? TEXT('A') : TEXT('a'));
                 }
                 else {
                     for (int k = 0; k < _countof(COMMAND_LIST); ++k) {
-                        if (!::lstrcmpi(cmd+1, COMMAND_LIST[k].pszText)) {
+                        if (!_tcsicmp(cmd + 1, COMMAND_LIST[k].pszText)) {
                             cmdID[cmdCount++] = COMMAND_LIST[k].ID;
                             break;
                         }
@@ -902,7 +900,7 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
         TCHAR blacklistPath[MAX_PATH + 32];
         if (::GetModuleFileName(g_hinstDLL, blacklistPath, MAX_PATH)) {
             ::PathRemoveExtension(blacklistPath);
-            ::lstrcat(blacklistPath, TEXT("_Blacklist.txt"));
+            _tcscat_s(blacklistPath, TEXT("_Blacklist.txt"));
             if (m_captionAnalyzer.Initialize(m_szCaptionDllPath, blacklistPath, m_swcShowLate, m_swcClearEarly)) {
                 m_captionPid = GetCaptionPid();
                 m_fResetPat = true;
@@ -961,7 +959,7 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
             TCHAR str[32];
             for (int i = 0; i < m_stretchListNum; ++i) {
                 if (m_stretchList[i] > 100) {
-                    ::wsprintf(str, TEXT("=%d%%"), m_stretchList[i]);
+                    _stprintf_s(str, TEXT("=%d%%"), m_stretchList[i]);
                     ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==-m_stretchList[i]?MF_CHECKED:MF_UNCHECKED), 105 + i, str);
                 }
             }
@@ -969,12 +967,12 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
             ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==75  ?MF_CHECKED:MF_UNCHECKED), 102, TEXT("0.75倍"));
             ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==50  ?MF_CHECKED:MF_UNCHECKED), 103, TEXT("0.50倍"));
             ::AppendMenu(hSubMenu, MF_STRING|(m_slowerWithCaption==25  ?MF_CHECKED:MF_UNCHECKED), 104, TEXT("0.25倍"));
-            ::lstrcpy(str, TEXT("字幕でゆっくり"));
+            _tcscpy_s(str, TEXT("字幕でゆっくり"));
             if (m_slowerWithCaption > 0) {
-                ::wsprintf(str + ::lstrlen(str), TEXT(" [0.%02d倍]"), m_slowerWithCaption);
+                _stprintf_s(str, TEXT("字幕でゆっくり [0.%02d倍]"), m_slowerWithCaption);
             }
             else if (m_slowerWithCaption < 0) {
-                ::wsprintf(str + ::lstrlen(str), TEXT(" [=%d%%]"), -m_slowerWithCaption);
+                _stprintf_s(str, TEXT("字幕でゆっくり [=%d%%]"), -m_slowerWithCaption);
             }
             ::AppendMenu(hmenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSubMenu), str);
         }
@@ -1036,8 +1034,8 @@ HWND CTvtPlay::GetFullscreenWindow()
     TVTest::HostInfo hostInfo;
     if (m_pApp->GetFullscreen() && m_pApp->GetHostInfo(&hostInfo)) {
         TCHAR className[64];
-        ::lstrcpyn(className, hostInfo.pszAppName, 48);
-        ::lstrcat(className, L" Fullscreen");
+        _tcsncpy_s(className, hostInfo.pszAppName, 47);
+        _tcscat_s(className, L" Fullscreen");
 
         HWND hwnd = nullptr;
         while ((hwnd = ::FindWindowEx(nullptr, hwnd, className, nullptr)) != nullptr) {
@@ -1074,10 +1072,10 @@ bool CTvtPlay::OpenWithDialog()
     bool fAdded = false;
     m_fDialogOpen = true;
     if (::GetOpenFileName(&ofn)) {
-        LPCTSTR spec = bufFile.data() + ::lstrlen(bufFile.data()) + 1;
+        LPCTSTR spec = bufFile.data() + _tcslen(bufFile.data()) + 1;
         if (*spec) {
             // 複数のファイルが選択された
-            for (; *spec; spec += ::lstrlen(spec) + 1) {
+            for (; *spec; spec += _tcslen(spec) + 1) {
                 TCHAR path[MAX_PATH];
                 if (::PathCombine(path, bufFile.data(), spec)) {
                     if (m_playlist.PushBackListOrFile(path, !fAdded) >= 0) fAdded = true;
@@ -1105,12 +1103,12 @@ bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
 
     // 特定指示子をTVTestの保存先フォルダに置換する(手抜き)
     TCHAR pattern[MAX_PATH];
-    if (!::StrCmpNI(m_szPopupPattern, TEXT("%RecordFolder%"), 14)) {
+    if (!_tcsnicmp(m_szPopupPattern, TEXT("%RecordFolder%"), 14)) {
         if (m_pApp->GetSetting(L"RecordFolder", pattern, _countof(pattern)) <= 0) pattern[0] = 0;
         ::PathAppend(pattern, m_szPopupPattern + 14);
     }
     else {
-        ::lstrcpy(pattern, m_szPopupPattern);
+        _tcscpy_s(pattern, m_szPopupPattern);
     }
 
     // ファイルリスト取得
@@ -1130,7 +1128,7 @@ bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
     // ファイル名を昇順or降順ソート
     std::vector<LPCTSTR> nameList(listSize);
     for (int i = 0; i < listSize; ++i) nameList[i] = findList[i].cFileName;
-    std::sort(nameList.begin(), nameList.end(), [](LPCTSTR a, LPCTSTR b) { return ::lstrcmpi(a, b) < 0; });
+    std::sort(nameList.begin(), nameList.end(), [](LPCTSTR a, LPCTSTR b) { return _tcsicmp(a, b) < 0; });
     if (m_fPopupDesc) std::reverse(nameList.begin(), nameList.end());
 
     // ポップアップしない部分をとばす
@@ -1146,8 +1144,8 @@ bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
         else {
             for (int i = 0; skipSize+i < listSize; ++i) {
                 TCHAR str[64];
-                ::lstrcpyn(str, nameList[skipSize+i], 64);
-                if (::lstrlen(str) == 63) ::lstrcpy(&str[60], TEXT("..."));
+                _tcsncpy_s(str, nameList[skipSize+i], _TRUNCATE);
+                if (_tcslen(str) == 63) _tcscpy_s(&str[60], 4, TEXT("..."));
                 // プレフィクス対策
                 for (LPTSTR p = str; *p; p++)
                     if (*p == TEXT('&')) *p = TEXT('_');
@@ -1185,8 +1183,8 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
             std::vector<CPlaylist::PLAY_INFO>::const_iterator it = m_playlist.Get().begin();
             for (int cmdID = 1; it != m_playlist.Get().end() && cmdID <= 10000; ++cmdID, ++it) {
                 TCHAR str[64];
-                ::lstrcpyn(str, PathFindFileName((*it).path), 64);
-                if (::lstrlen(str) == 63) ::lstrcpy(&str[60], TEXT("..."));
+                _tcsncpy_s(str, PathFindFileName((*it).path), _TRUNCATE);
+                if (_tcslen(str) == 63) _tcscpy_s(&str[60], 4, TEXT("..."));
                 // プレフィクス対策
                 for (LPTSTR p = str; *p; ++p)
                     if (*p == TEXT('&')) *p = TEXT('_');
@@ -1274,7 +1272,7 @@ void CTvtPlay::StretchWithPopup(const POINT &pt, UINT flags)
         for (int i = 0; i < m_stretchListNum; ++i) {
             if (m_stretchList[i] != 100) {
                 TCHAR str[32];
-                ::wsprintf(str, TEXT("%d%%"), m_stretchList[i]);
+                _stprintf_s(str, TEXT("%d%%"), m_stretchList[i]);
                 ::AppendMenu(hmenu, MF_STRING|(i==stid?MF_CHECKED:MF_UNCHECKED), 1 + i, str);
             }
         }
@@ -1300,9 +1298,9 @@ void CTvtPlay::SeekChapterWithPopup(const POINT &pt, UINT flags)
         for (i = 0, it = m_chapter.Get().begin(); it != m_chapter.Get().end(); i++, it++)
         {
             TCHAR str[128];
-            ::wsprintf(str, TEXT("%d:%02d:%02d.%03d %.63s"),
-                       it->first/3600000, it->first/60000%60, it->first/1000%60, it->first%1000,
-                       it->second.name.data());
+            _stprintf_s(str, TEXT("%d:%02d:%02d.%03d %.63s"),
+                        it->first/3600000, it->first/60000%60, it->first/1000%60, it->first%1000,
+                        it->second.name.data());
             ::AppendMenu(hmenu, MF_STRING, 1 + i, str);
         }
         selID = TrackPopup(hmenu, pt, flags);
@@ -1350,7 +1348,7 @@ static INT_PTR CALLBACK EditChapterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, 
             if (!::GetDlgItemText(hDlg, IDC_EDIT_NAME, pch->second.name.data(), 4096)) {
                 pch->second.name[0] = 0;
             }
-            pch->second.name.resize(::lstrlen(pch->second.name.data()) + 1);
+            pch->second.name.resize(_tcslen(pch->second.name.data()) + 1);
             pch->first = ::GetDlgItemInt(hDlg, IDC_EDIT_HOUR, nullptr, FALSE)%100*3600000 +
                          ::GetDlgItemInt(hDlg, IDC_EDIT_MIN, nullptr, FALSE)%60*60000 +
                          ::GetDlgItemInt(hDlg, IDC_EDIT_SEC, nullptr, FALSE)%60*1000 +
@@ -1380,9 +1378,9 @@ void CTvtPlay::EditChapterWithPopup(int pos, const POINT &pt, UINT flags)
     if (hTopMenu) {
         HMENU hmenu = ::GetSubMenu(hTopMenu, 0);
         TCHAR str[128];
-        ::wsprintf(str, TEXT("%d:%02d:%02d.%03d %.63s"),
-                   ch.first/3600000, ch.first/60000%60, ch.first/1000%60, ch.first%1000,
-                   ch.second.name.data());
+        _stprintf_s(str, TEXT("%d:%02d:%02d.%03d %.63s"),
+                    ch.first/3600000, ch.first/60000%60, ch.first/1000%60, ch.first%1000,
+                    ch.second.name.data());
         ::ModifyMenu(hmenu, IDM_CHAPTER_EDIT, MF_STRING, IDM_CHAPTER_EDIT, str);
         ::CheckMenuItem(hmenu, IDM_CHAPTER_IN, ch.second.IsIn() ? MF_CHECKED : MF_UNCHECKED);
         ::CheckMenuItem(hmenu, IDM_CHAPTER_OUT, ch.second.IsOut() ? MF_CHECKED : MF_UNCHECKED);
@@ -1612,7 +1610,7 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset, int stretchID)
     rvi.pszDescription = L"再生ファイル名";
     rvi.pszValue = ::PathFindFileName(fileName);
     m_pApp->RegisterVariable(&rvi);
-    if (!::lstrcmpi(::PathFindExtension(fileName), TEXT(".mp4"))) {
+    if (!_tcsicmp(::PathFindExtension(fileName), TEXT(".mp4"))) {
         rvi.Flags = 0;
         rvi.pszKeyword = L"playback-nts-filename";
         rvi.pszDescription = L"再生ファイル名(非TS時のみ)";
@@ -1689,15 +1687,15 @@ void CTvtPlay::SetupDestination()
     m_pApp->GetDriverName(path, _countof(path));
     LPCTSTR name = ::PathFindFileName(path);
 
-    if (!::lstrcmpi(name, TEXT("BonDriver_UDP.dll"))) {
+    if (!_tcsicmp(name, TEXT("BonDriver_UDP.dll"))) {
         if (m_pApp->GetCurrentChannelInfo(&chInfo) && m_hThread) {
             ::PostThreadMessage(m_threadID, WM_TS_SET_UDP, 0, 1234 + chInfo.Channel);
         }
     }
     else {
         TCHAR ordinal[20] = TEXT("BonDriver_Pipe0.dll");
-        if (::lstrcmpi(name, TEXT("BonDriver_Pipe.dll"))) {
-            for (; ordinal[14] <= TEXT('9') && ::lstrcmpi(name, ordinal); ++ordinal[14]);
+        if (_tcsicmp(name, TEXT("BonDriver_Pipe.dll"))) {
+            for (; ordinal[14] <= TEXT('9') && _tcsicmp(name, ordinal); ++ordinal[14]);
         }
         if (ordinal[14] <= TEXT('9')) {
             if (m_pApp->GetCurrentChannelInfo(&chInfo) && m_hThread) {
@@ -2019,13 +2017,13 @@ void CTvtPlay::EnablePluginByDriverName()
 
         // ドライバ名に応じて有効無効を切り替える
         bool fEnable = false;
-        if (m_fAutoEnUdp && !::lstrcmpi(name, TEXT("BonDriver_UDP.dll"))) fEnable = true;
+        if (m_fAutoEnUdp && !_tcsicmp(name, TEXT("BonDriver_UDP.dll"))) fEnable = true;
         if (m_fAutoEnPipe) {
-            if (!::lstrcmpi(name, TEXT("BonDriver_Pipe.dll"))) fEnable = true;
+            if (!_tcsicmp(name, TEXT("BonDriver_Pipe.dll"))) fEnable = true;
             else {
                 TCHAR ordinal[20] = TEXT("BonDriver_Pipe0.dll");
                 for (; ordinal[14] <= TEXT('9'); ++ordinal[14]) {
-                    if (!::lstrcmpi(name, ordinal)) {
+                    if (!_tcsicmp(name, ordinal)) {
                         fEnable = true;
                         break;
                     }
@@ -2507,12 +2505,12 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
         if (pThis->IsOpen()) {
             if (!pThis->m_playlist.Get().empty()) {
                 size_t pos = pThis->m_playlist.GetPosition();
-                int len = ::lstrlen(pThis->m_playlist.Get()[pos].path);
+                size_t len = _tcslen(pThis->m_playlist.Get()[pos].path);
                 if (!lParam) {
                     return len;
                 }
-                if (len < static_cast<int>(wParam)) {
-                    ::lstrcpy(reinterpret_cast<LPWSTR>(lParam), pThis->m_playlist.Get()[pos].path);
+                if (len < static_cast<size_t>(wParam)) {
+                    _tcscpy_s(reinterpret_cast<LPWSTR>(lParam), static_cast<size_t>(wParam), pThis->m_playlist.Get()[pos].path);
                     return len;
                 }
             }
@@ -2612,7 +2610,7 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
             case WM_TS_SET_PIPE:
                 if (0 <= msg.lParam && msg.lParam <= 9) {
                     TCHAR name[MAX_PATH];
-                    ::wsprintf(name, PIPE_NAME, static_cast<int>(msg.lParam));
+                    _stprintf_s(name, PIPE_NAME, static_cast<int>(msg.lParam));
                     pThis->m_tsSender.SetPipeName(name);
                 }
                 else {

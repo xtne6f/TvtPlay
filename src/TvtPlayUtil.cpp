@@ -1,6 +1,5 @@
 ﻿#include <Windows.h>
 #include <WindowsX.h>
-#include <Shlwapi.h>
 #include <map>
 #include "Util.h"
 #include "StatusView.h"
@@ -81,29 +80,29 @@ void CSeekStatusItem::Draw(HDC hdc, const RECT *pRect)
             TCHAR sign = ofsSec < 0 ? TEXT('-') : TEXT('+');
             if (ofsSec < 0) ofsSec = -ofsSec;
             if (ofsSec < 60)
-                ::wsprintf(szOfsText, TEXT("%c%d"), sign, ofsSec);
+                _stprintf_s(szOfsText, TEXT("%c%d"), sign, ofsSec);
             else if (ofsSec < 3600)
-                ::wsprintf(szOfsText, TEXT("%c%d:%02d"), sign, ofsSec/60, ofsSec%60);
+                _stprintf_s(szOfsText, TEXT("%c%d:%02d"), sign, ofsSec/60, ofsSec%60);
             else
-                ::wsprintf(szOfsText, TEXT("%c%d:%02d:%02d"), sign, ofsSec/60/60, ofsSec/60%60, ofsSec%60);
+                _stprintf_s(szOfsText, TEXT("%c%d:%02d:%02d"), sign, ofsSec/60/60, ofsSec/60%60, ofsSec%60);
         }
         szTotText[0] = 0;
         if (m_fDrawTot) {
             int tot = m_pPlugin->GetTotTime();
             int totSec = tot / 1000 + posSec;
-            if (tot < 0) ::lstrcpy(szTotText, TEXT(" (不明)"));
-            else ::wsprintf(szTotText, TEXT(" (%d:%02d:%02d)"), totSec/60/60%24, totSec/60%60, totSec%60);
+            if (tot < 0) _tcscpy_s(szTotText, TEXT(" (不明)"));
+            else _stprintf_s(szTotText, TEXT(" (%d:%02d:%02d)"), totSec/60/60%24, totSec/60%60, totSec%60);
         }
         szChName[0] = 0;
         if (itHover != chMap.end() && itHover->second.name[0]) {
             szChName[0] = TEXT(' ');
-            ::lstrcpyn(szChName+1, itHover->second.name.data(), _countof(szChName)-1);
+            _tcsncpy_s(szChName + 1, _countof(szChName) - 1, itHover->second.name.data(), _TRUNCATE);
         }
         if (posSec < 3600 && dur < 3600000) {
-            ::wsprintf(szText, TEXT("%02d:%02d%s%s%s"), posSec/60%60, posSec%60, szOfsText, szTotText, szChName);
+            _stprintf_s(szText, TEXT("%02d:%02d%s%s%s"), posSec/60%60, posSec%60, szOfsText, szTotText, szChName);
         }
         else {
-            ::wsprintf(szText, TEXT("%d:%02d:%02d%s%s%s"), posSec/60/60, posSec/60%60, posSec%60, szOfsText, szTotText, szChName);
+            _stprintf_s(szText, TEXT("%d:%02d:%02d%s%s%s"), posSec/60/60, posSec/60%60, posSec%60, szOfsText, szTotText, szChName);
         }
         // シーク位置の描画に必要な幅を取得する
         ::SetRectEmpty(&rc);
@@ -327,21 +326,21 @@ void CPositionStatusItem::Draw(HDC hdc, const RECT *pRect)
     if (m_pPlugin->IsPosDrawTotEnabled()) {
         int tot = m_pPlugin->GetTotTime();
         int totSec = tot / 1000 + posSec;
-        if (tot < 0) ::lstrcpy(szTotText, TEXT(" (不明)"));
-        else ::wsprintf(szTotText, TEXT(" (%d:%02d:%02d)"), totSec/60/60%24, totSec/60%60, totSec%60);
+        if (tot < 0) _tcscpy_s(szTotText, TEXT(" (不明)"));
+        else _stprintf_s(szTotText, TEXT(" (%d:%02d:%02d)"), totSec/60/60%24, totSec/60%60, totSec%60);
     }
 
     if (durSec < 60 * 60 && posSec < 60 * 60) {
-        ::wsprintf(szText, TEXT("%02d:%02d/%02d:%02d%s%s"),
-                   posSec / 60 % 60, posSec % 60,
-                   durSec / 60 % 60, durSec % 60,
-                   extMode==2 ? TEXT("*") : extMode ? TEXT("+") : TEXT(""), szTotText);
+        _stprintf_s(szText, TEXT("%02d:%02d/%02d:%02d%s%s"),
+                    posSec / 60 % 60, posSec % 60,
+                    durSec / 60 % 60, durSec % 60,
+                    extMode==2 ? TEXT("*") : extMode ? TEXT("+") : TEXT(""), szTotText);
     }
     else {
-        ::wsprintf(szText, TEXT("%d:%02d:%02d/%d:%02d:%02d%s%s"),
-                   posSec / 60 / 60, posSec / 60 % 60, posSec % 60,
-                   durSec / 60 / 60, durSec / 60 % 60, durSec % 60,
-                   extMode==2 ? TEXT("*") : extMode ? TEXT("+") : TEXT(""), szTotText);
+        _stprintf_s(szText, TEXT("%d:%02d:%02d/%d:%02d:%02d%s%s"),
+                    posSec / 60 / 60, posSec / 60 % 60, posSec % 60,
+                    durSec / 60 / 60, durSec / 60 % 60, durSec % 60,
+                    extMode==2 ? TEXT("*") : extMode ? TEXT("+") : TEXT(""), szTotText);
     }
     ::DrawText(hdc, szText, -1, const_cast<LPRECT>(pRect),
                DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
@@ -359,8 +358,8 @@ int CPositionStatusItem::CalcSuitableWidth()
             if (hdc) {
                 // 表示に適したアイテム幅を算出
                 TCHAR szText[128];
-                ::lstrcpy(szText, TEXT("00:00:00/00:00:00+"));
-                if (m_pPlugin->IsPosDrawTotEnabled()) ::lstrcat(szText, TEXT(" (00:00:00)"));
+                _tcscpy_s(szText, TEXT("00:00:00/00:00:00+"));
+                if (m_pPlugin->IsPosDrawTotEnabled()) _tcscat_s(szText, TEXT(" (00:00:00)"));
                 HFONT hfontOld = SelectFont(hdc, hfont);
                 RECT rc;
                 ::SetRectEmpty(&rc);

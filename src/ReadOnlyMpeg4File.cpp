@@ -106,9 +106,9 @@ void CReadOnlyMpeg4File::InitializeMetaInfo(LPCTSTR path, LPCTSTR iniPath)
     GetBufferedProfileString(buf.data(), TEXT("BroadcastID"), TEXT("0x000100020003"), szBroadcastID, _countof(szBroadcastID));
     TCHAR szTime[20];
     GetBufferedProfileString(buf.data(), TEXT("Time"), TEXT(""), szTime, _countof(szTime));
-    if (metaName[0] && ::lstrlen(path) < MAX_PATH) {
+    if (metaName[0] && _tcslen(path) < MAX_PATH) {
         TCHAR metaPath[MAX_PATH];
-        ::lstrcpy(metaPath, path);
+        _tcscpy_s(metaPath, path);
         if (::PathRemoveFileSpec(metaPath) && ::PathAppend(metaPath, metaName)) {
             // "Meta"設定の[*]セクションで上書き
             buf = GetPrivateProfileSectionBuffer(TEXT("*"), metaPath);
@@ -137,17 +137,17 @@ void CReadOnlyMpeg4File::InitializeMetaInfo(LPCTSTR path, LPCTSTR iniPath)
             m_totStart.QuadPart += 9 * 36000000000LL;
         }
     }
-    else if (::lstrlen(szTime) == 19 &&
+    else if (_tcslen(szTime) == 19 &&
              szTime[4] == TEXT('-') && szTime[7] == TEXT('-') &&
              szTime[10] == TEXT('T') && szTime[13] == TEXT(':') && szTime[16] == TEXT(':'))
     {
         SYSTEMTIME st = {};
-        st.wYear = LOWORD(::StrToInt(&szTime[0]));
-        st.wMonth = LOWORD(::StrToInt(&szTime[5]));
-        st.wDay = LOWORD(::StrToInt(&szTime[8]));
-        st.wHour = LOWORD(::StrToInt(&szTime[11]));
-        st.wMinute = LOWORD(::StrToInt(&szTime[14]));
-        st.wSecond = LOWORD(::StrToInt(&szTime[17]));
+        st.wYear = static_cast<WORD>(_tcstol(&szTime[0], nullptr, 10));
+        st.wMonth = static_cast<WORD>(_tcstol(&szTime[5], nullptr, 10));
+        st.wDay = static_cast<WORD>(_tcstol(&szTime[8], nullptr, 10));
+        st.wHour = static_cast<WORD>(_tcstol(&szTime[11], nullptr, 10));
+        st.wMinute = static_cast<WORD>(_tcstol(&szTime[14], nullptr, 10));
+        st.wSecond = static_cast<WORD>(_tcstol(&szTime[17], nullptr, 10));
         FILETIME ft;
         if (::SystemTimeToFileTime(&st, &ft)) {
             m_totStart.LowPart = ft.dwLowDateTime;

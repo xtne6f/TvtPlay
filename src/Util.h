@@ -2,6 +2,7 @@
 #define INCLUDE_UTIL_H
 
 #include <vector>
+#include <tchar.h>
 
 // 高速鑑賞機能("字幕でゆっくり")をつけるときコメントをはずす
 //#define EN_SWC
@@ -142,8 +143,8 @@ private:
     recursive_mutex_ *m_mtx;
 };
 
+bool CompareLogFont(const LOGFONT &lf1, const LOGFONT &lf2);
 COLORREF MixColor(COLORREF Color1,COLORREF Color2,BYTE Ratio=128);
-bool CompareLogFont(const LOGFONT *pFont1,const LOGFONT *pFont2);
 
 class CGlobalLock
 {

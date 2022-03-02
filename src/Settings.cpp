@@ -62,12 +62,12 @@ CSettings::~CSettings()
 bool CSettings::Open(LPCTSTR pszFileName,LPCTSTR pszSection,unsigned int Flags)
 {
 	Close();
-	if (IsStringEmpty(pszFileName) || ::lstrlen(pszFileName)>=MAX_PATH
+	if (IsStringEmpty(pszFileName) || _tcslen(pszFileName)>=MAX_PATH
 			|| IsStringEmpty(pszSection)
 			|| Flags==0)
 		return false;
-	lstrcpy(m_szFileName,pszFileName);
-	lstrcpyn(m_szSection,pszSection,MAX_SECTION);
+	_tcscpy_s(m_szFileName,pszFileName);
+	_tcsncpy_s(m_szSection,pszSection,_TRUNCATE);
 	m_OpenFlags=Flags;
 	return true;
 }
@@ -101,7 +101,7 @@ bool CSettings::Read(LPCTSTR pszValueName,int *pData)
 
 	if (!Read(pszValueName,szValue,lengthof(szValue)) || szValue[0]==_T('\0'))
 		return false;
-	*pData=::StrToInt(szValue);
+	*pData=_tcstol(szValue,NULL,10);
 	return true;
 }
 
@@ -110,7 +110,7 @@ bool CSettings::Write(LPCTSTR pszValueName,int Data)
 {
 	TCHAR szValue[16];
 
-	wsprintf(szValue,TEXT("%d"),Data);
+	_stprintf_s(szValue,TEXT("%d"),Data);
 	return Write(pszValueName,szValue);
 }
 
@@ -130,7 +130,7 @@ bool CSettings::Write(LPCTSTR pszValueName,unsigned int Data)
 {
 	TCHAR szValue[16];
 
-	wsprintf(szValue,TEXT("%u"),Data);
+	_stprintf_s(szValue,TEXT("%u"),Data);
 	return Write(pszValueName,szValue);
 }
 
@@ -183,7 +183,7 @@ bool CSettings::Write(LPCTSTR pszValueName,LPCTSTR pszData)
 			p++;
 		}
 		if (*p==Quote) {
-			size_t Length=::lstrlen(pszData);
+			size_t Length=_tcslen(pszData);
 			LPTSTR pszBuff=new TCHAR[Length+3];
 
 			pszBuff[0]=_T('\"');
@@ -206,9 +206,9 @@ bool CSettings::Read(LPCTSTR pszValueName,bool *pfData)
 
 	if (!Read(pszValueName,szData,lengthof(szData)))
 		return false;
-	if (lstrcmpi(szData,TEXT("yes"))==0 || lstrcmpi(szData,TEXT("true"))==0)
+	if (_tcsicmp(szData,TEXT("yes"))==0 || _tcsicmp(szData,TEXT("true"))==0)
 		*pfData=true;
-	else if (lstrcmpi(szData,TEXT("no"))==0 || lstrcmpi(szData,TEXT("false"))==0)
+	else if (_tcsicmp(szData,TEXT("no"))==0 || _tcsicmp(szData,TEXT("false"))==0)
 		*pfData=false;
 	else
 		return false;
@@ -228,7 +228,7 @@ bool CSettings::ReadColor(LPCTSTR pszValueName,COLORREF *pcrData)
 {
 	TCHAR szText[8];
 
-	if (!Read(pszValueName,szText,lengthof(szText)) || szText[0]!=_T('#') || lstrlen(szText)!=7)
+	if (!Read(pszValueName,szText,lengthof(szText)) || szText[0]!=_T('#') || _tcslen(szText)!=7)
 		return false;
 	*pcrData=RGB((HexToNum(szText[1])<<4) | HexToNum(szText[2]),
 				 (HexToNum(szText[3])<<4) | HexToNum(szText[4]),
@@ -241,8 +241,8 @@ bool CSettings::WriteColor(LPCTSTR pszValueName,COLORREF crData)
 {
 	TCHAR szText[8];
 
-	wsprintf(szText,TEXT("#%02x%02x%02x"),
-			 GetRValue(crData),GetGValue(crData),GetBValue(crData));
+	_stprintf_s(szText,TEXT("#%02x%02x%02x"),
+			    GetRValue(crData),GetGValue(crData),GetBValue(crData));
 	return Write(pszValueName,szText);
 }
 
@@ -270,7 +270,7 @@ bool CSettings::Read(LPCTSTR pszValueName,LOGFONT *pFont)
 		if (*q!=_T('\0')) {
 			switch (i) {
 			case 0:
-				::lstrcpyn(pFont->lfFaceName,q,LF_FACESIZE);
+				_tcsncpy_s(pFont->lfFaceName,q,_TRUNCATE);
 				pFont->lfWidth=0;
 				pFont->lfEscapement=0;
 				pFont->lfOrientation=0;
@@ -285,14 +285,14 @@ bool CSettings::Read(LPCTSTR pszValueName,LOGFONT *pFont)
 				pFont->lfPitchAndFamily=DEFAULT_PITCH | FF_DONTCARE;
 				break;
 			case 1:
-				pFont->lfHeight=::StrToInt(q);
+				pFont->lfHeight=_tcstol(q,NULL,10);
 				break;
 			case 2:
-				pFont->lfWeight=::StrToInt(q);
+				pFont->lfWeight=_tcstol(q,NULL,10);
 				break;
 			case 3:
 				{
-					unsigned int Flags=StrToUInt(q);
+					unsigned int Flags=_tcstoul(q,NULL,10);
 					pFont->lfItalic=(Flags&FONT_FLAG_ITALIC)!=0;
 					pFont->lfUnderline=(Flags&FONT_FLAG_UNDERLINE)!=0;
 					pFont->lfStrikeOut=(Flags&FONT_FLAG_STRIKEOUT)!=0;
@@ -318,8 +318,8 @@ bool CSettings::Write(LPCTSTR pszValueName,const LOGFONT *pFont)
 		Flags|=FONT_FLAG_UNDERLINE;
 	if (pFont->lfStrikeOut)
 		Flags|=FONT_FLAG_STRIKEOUT;
-	::wsprintf(szData,TEXT("%s,%d,%d,%u"),
-			   pFont->lfFaceName,pFont->lfHeight,pFont->lfWeight,Flags);
+	_stprintf_s(szData,TEXT("%s,%d,%d,%u"),
+			    pFont->lfFaceName,pFont->lfHeight,pFont->lfWeight,Flags);
 	return Write(pszValueName,szData);
 }
 
@@ -344,13 +344,13 @@ bool CSettingsFile::Open(LPCTSTR pszFileName,unsigned int Flags)
 {
 	Close();
 
-	if (IsStringEmpty(pszFileName) || ::lstrlen(pszFileName)>=MAX_PATH
+	if (IsStringEmpty(pszFileName) || _tcslen(pszFileName)>=MAX_PATH
 			|| Flags==0) {
 		m_LastError=ERROR_INVALID_PARAMETER;
 		return false;
 	}
 
-	::lstrcpy(m_szFileName,pszFileName);
+	_tcscpy_s(m_szFileName,pszFileName);
 	m_OpenFlags=Flags;
 	m_LastError=ERROR_SUCCESS;
 
@@ -403,9 +403,9 @@ bool CSettingsFile::OpenSection(CSettings *pSettings,LPCTSTR pszSection)
 
 bool CSettingsFile::GetFileName(LPTSTR pszFileName,int MaxLength) const
 {
-	if (pszFileName==NULL || MaxLength<=::lstrlen(m_szFileName))
+	if (pszFileName==NULL || MaxLength<=(int)_tcslen(m_szFileName))
 		return false;
-	::lstrcpy(pszFileName,m_szFileName);
+	_tcscpy_s(pszFileName,MaxLength,m_szFileName);
 	return true;
 }
 

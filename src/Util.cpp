@@ -1,5 +1,4 @@
 ﻿#include <Windows.h>
-#include <Shlwapi.h>
 #include "Util.h"
 
 
@@ -9,7 +8,7 @@
 HWND ASFilterFindWindow()
 {
     TCHAR szName[128];
-    ::wsprintf(szName, TEXT("%s,%lu"), ASFLT_FILTER_NAME, ::GetCurrentProcessId());
+    _stprintf_s(szName, TEXT("%s,%lu"), ASFLT_FILTER_NAME, ::GetCurrentProcessId());
     return ::FindWindowEx(HWND_MESSAGE, nullptr, ASFLT_FILTER_NAME, szName);
 }
 
@@ -52,38 +51,34 @@ std::vector<TCHAR> GetPrivateProfileSectionBuffer(LPCTSTR lpAppName, LPCTSTR lpF
 // GetPrivateProfileSection()で取得したバッファから、キーに対応する文字列を取得する
 void GetBufferedProfileString(LPCTSTR lpBuff, LPCTSTR lpKeyName, LPCTSTR lpDefault, LPTSTR lpReturnedString, DWORD nSize)
 {
-    int nKeyLen = ::lstrlen(lpKeyName);
-    if (nKeyLen <= 126) {
-        TCHAR szKey[128];
-        ::lstrcpy(szKey, lpKeyName);
-        ::lstrcpy(szKey + (nKeyLen++), TEXT("="));
-        while (*lpBuff) {
-            int nLen = ::lstrlen(lpBuff);
-            if (!::StrCmpNI(lpBuff, szKey, nKeyLen)) {
-                if ((lpBuff[nKeyLen] == TEXT('\'') || lpBuff[nKeyLen] == TEXT('"')) &&
-                    nLen >= nKeyLen + 2 && lpBuff[nKeyLen] == lpBuff[nLen - 1])
-                {
-                    ::lstrcpyn(lpReturnedString, lpBuff + nKeyLen + 1, min(nLen-nKeyLen-1, static_cast<int>(nSize)));
-                }
-                else {
-                    ::lstrcpyn(lpReturnedString, lpBuff + nKeyLen, nSize);
-                }
-                return;
+    size_t nKeyLen = _tcslen(lpKeyName);
+    while (*lpBuff) {
+        size_t nLen = _tcslen(lpBuff);
+        if (!_tcsnicmp(lpBuff, lpKeyName, nKeyLen) && lpBuff[nKeyLen] == TEXT('=')) {
+            if ((lpBuff[nKeyLen + 1] == TEXT('\'') || lpBuff[nKeyLen + 1] == TEXT('"')) &&
+                nLen >= nKeyLen + 3 && lpBuff[nKeyLen + 1] == lpBuff[nLen - 1])
+            {
+                _tcsncpy_s(lpReturnedString, nSize, lpBuff + nKeyLen + 2, min(nLen - nKeyLen - 3, static_cast<size_t>(nSize - 1)));
             }
-            lpBuff += nLen + 1;
+            else {
+                _tcsncpy_s(lpReturnedString, nSize, lpBuff + nKeyLen + 1, _TRUNCATE);
+            }
+            return;
         }
+        lpBuff += nLen + 1;
     }
-    ::lstrcpyn(lpReturnedString, lpDefault, nSize);
+    _tcsncpy_s(lpReturnedString, nSize, lpDefault, _TRUNCATE);
 }
 
 
 // GetPrivateProfileSection()で取得したバッファから、キーに対応する数値を取得する
 int GetBufferedProfileInt(LPCTSTR lpBuff, LPCTSTR lpKeyName, int nDefault)
 {
-    TCHAR szVal[32];
-    GetBufferedProfileString(lpBuff, lpKeyName, TEXT(""), szVal, _countof(szVal));
-    int nRet;
-    return ::StrToIntEx(szVal, STIF_DEFAULT, &nRet) ? nRet : nDefault;
+    TCHAR sz[16];
+    GetBufferedProfileString(lpBuff, lpKeyName, TEXT(""), sz, _countof(sz));
+    LPTSTR endp;
+    int nRet = _tcstol(sz, &endp, 10);
+    return endp == sz ? nDefault : nRet;
 }
 
 
@@ -215,10 +210,10 @@ bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTST
     if (!hdcMem) return false;
     HGDIOBJ hgdiOld = ::SelectObject(hdcMem, hbm);
 
-    LPCTSTR p = pIdxList + ::StrCSpn(pIdxList, TEXT(",:-~'"));
+    LPCTSTR p = pIdxList + _tcscspn(pIdxList, TEXT(",:-~'"));
     if (!*p || *p == TEXT(',')) {
         // indexが1つだけ指定されている場合
-        int idx = ::StrToInt(pIdxList);
+        int idx = _tcstol(pIdxList, nullptr, 10);
         ::PatBlt(hdcDest, destX, destY, iconSize, iconSize, WHITENESS);
         DrawMonoColorIcon(hdcDest, destX, destY, hdcMem, min(max(idx,0),255), iconSize, false);
 
@@ -242,8 +237,8 @@ bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTST
                     if (*p) p++;
                 }
                 else {
-                    idx = ::StrToInt(p);
-                    p += ::StrCSpn(p, TEXT(",:-~'"));
+                    idx = _tcstol(p, nullptr, 10);
+                    p += _tcscspn(p, TEXT(",:-~'"));
                 }
                 width = DrawMonoColorIcon(hdcDest, x, destY, hdcMem, min(max(idx,0),255), iconSize, fInvert);
                 x += width == iconSize ? 0 : width - 1;
@@ -260,9 +255,9 @@ bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTST
 
 BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPCTSTR lpFileName)
 {
-    TCHAR szValue[32];
-    ::wsprintf(szValue, TEXT("%d"), value);
-    return ::WritePrivateProfileString(lpAppName, lpKeyName, szValue, lpFileName);
+    TCHAR sz[16];
+    _stprintf_s(sz, TEXT("%d"), value);
+    return ::WritePrivateProfileString(lpAppName, lpKeyName, sz, lpFileName);
 }
 
 
@@ -616,19 +611,31 @@ void extract_adaptation_field(ADAPTATION_FIELD *dst, const unsigned char *data)
 #endif
 
 
+bool CompareLogFont(const LOGFONT &lf1, const LOGFONT &lf2)
+{
+    return lf1.lfHeight == lf2.lfHeight &&
+           lf1.lfWidth == lf2.lfWidth &&
+           lf1.lfEscapement == lf2.lfEscapement &&
+           lf1.lfOrientation == lf2.lfOrientation &&
+           lf1.lfWeight == lf2.lfWeight &&
+           lf1.lfItalic == lf2.lfItalic &&
+           lf1.lfUnderline == lf2.lfUnderline &&
+           lf1.lfStrikeOut == lf2.lfStrikeOut &&
+           lf1.lfCharSet == lf2.lfCharSet &&
+           lf1.lfOutPrecision == lf2.lfOutPrecision &&
+           lf1.lfClipPrecision == lf2.lfClipPrecision &&
+           lf1.lfQuality == lf2.lfQuality &&
+           lf1.lfPitchAndFamily == lf2.lfPitchAndFamily &&
+           !_tcscmp(lf1.lfFaceName, lf2.lfFaceName);
+}
+
+
 #if 1 // From: TVTest_0.7.23_Src/Util.cpp
 COLORREF MixColor(COLORREF Color1,COLORREF Color2,BYTE Ratio)
 {
 	return RGB((GetRValue(Color1)*Ratio+GetRValue(Color2)*(255-Ratio))/255,
 			   (GetGValue(Color1)*Ratio+GetGValue(Color2)*(255-Ratio))/255,
 			   (GetBValue(Color1)*Ratio+GetBValue(Color2)*(255-Ratio))/255);
-}
-
-
-bool CompareLogFont(const LOGFONT *pFont1,const LOGFONT *pFont2)
-{
-	return memcmp(pFont1,pFont2,28/*offsetof(LOGFONT,lfFaceName)*/)==0
-		&& lstrcmp(pFont1->lfFaceName,pFont2->lfFaceName)==0;
 }
 
 

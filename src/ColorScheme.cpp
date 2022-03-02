@@ -134,7 +134,7 @@ COLORREF CColorScheme::GetColor(int Type) const
 COLORREF CColorScheme::GetColor(LPCTSTR pszText) const
 {
 	for (int i=0;i<NUM_COLORS;i++) {
-		if (::lstrcmpi(m_ColorInfoList[i].pszText,pszText)==0)
+		if (_tcsicmp(m_ColorInfoList[i].pszText,pszText)==0)
 			return m_ColorList[i];
 	}
 	return CLR_INVALID;
@@ -161,7 +161,7 @@ Theme::GradientType CColorScheme::GetGradientType(int Gradient) const
 Theme::GradientType CColorScheme::GetGradientType(LPCTSTR pszText) const
 {
 	for (int i=0;i<NUM_GRADIENTS;i++) {
-		if (::lstrcmpi(m_GradientInfoList[i].pszText,pszText)==0)
+		if (_tcsicmp(m_GradientInfoList[i].pszText,pszText)==0)
 			return m_GradientList[i].Type;
 	}
 	return Theme::GRADIENT_NORMAL;
@@ -325,20 +325,20 @@ bool CColorScheme::Load(LPCTSTR pszFileName,bool fLegacy)
 
 	for (i=0;i<NUM_GRADIENTS;i++) {
 		if (Settings.Read(m_GradientInfoList[i].pszText,szText,lengthof(szText))) {
-			if (szText[0]=='\0' || ::lstrcmpi(szText,TEXT("normal"))==0)
+			if (szText[0]=='\0' || _tcsicmp(szText,TEXT("normal"))==0)
 				m_GradientList[i].Type=Theme::GRADIENT_NORMAL;
-			else if (::lstrcmpi(szText,TEXT("glossy"))==0)
+			else if (_tcsicmp(szText,TEXT("glossy"))==0)
 				m_GradientList[i].Type=Theme::GRADIENT_GLOSSY;
-			else if (::lstrcmpi(szText,TEXT("interlaced"))==0)
+			else if (_tcsicmp(szText,TEXT("interlaced"))==0)
 				m_GradientList[i].Type=Theme::GRADIENT_INTERLACED;
 		}
 
 		TCHAR szName[128];
-		::wsprintf(szName,TEXT("%sDirection"),m_GradientInfoList[i].pszText);
+		_stprintf_s(szName,TEXT("%sDirection"),m_GradientInfoList[i].pszText);
 		m_GradientList[i].Direction=m_GradientInfoList[i].Direction;
 		if (Settings.Read(szName,szText,lengthof(szText))) {
 			for (int j=0;j<lengthof(GradientDirectionList);j++) {
-				if (::lstrcmpi(szText,GradientDirectionList[j])==0) {
+				if (_tcsicmp(szText,GradientDirectionList[j])==0) {
 					m_GradientList[i].Direction=(Theme::GradientDirection)j;
 					break;
 				}
@@ -353,14 +353,14 @@ bool CColorScheme::Load(LPCTSTR pszFileName,bool fLegacy)
 	if (Settings.Open(pszFileName,TEXT("Style"),CSettings::OPEN_READ)) {
 		for (i=0;i<NUM_BORDERS;i++) {
 			if (Settings.Read(m_BorderInfoList[i].pszText,szText,lengthof(szText))) {
-				if (::lstrcmpi(szText,TEXT("none"))==0) {
+				if (_tcsicmp(szText,TEXT("none"))==0) {
 					if (!m_BorderInfoList[i].fAlways)
 						m_BorderList[i]=Theme::BORDER_NONE;
-				} else if (::lstrcmpi(szText,TEXT("solid"))==0)
+				} else if (_tcsicmp(szText,TEXT("solid"))==0)
 					m_BorderList[i]=Theme::BORDER_SOLID;
-				else if (::lstrcmpi(szText,TEXT("sunken"))==0)
+				else if (_tcsicmp(szText,TEXT("sunken"))==0)
 					m_BorderList[i]=Theme::BORDER_SUNKEN;
-				else if (::lstrcmpi(szText,TEXT("raised"))==0)
+				else if (_tcsicmp(szText,TEXT("raised"))==0)
 					m_BorderList[i]=Theme::BORDER_RAISED;
 			}
 		}

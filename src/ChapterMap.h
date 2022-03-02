@@ -9,10 +9,10 @@ public:
     struct CHAPTER {
         // 最終要素のみにNULを必ず格納する
         std::vector<TCHAR> name;
-        CHAPTER(LPCTSTR name_ = TEXT("")) : name(name_, name_ + ::lstrlen(name_) + 1) {}
-        bool IsIn() const { return !::ChrCmpI(name[0], TEXT('i')); }
-        bool IsOut() const { return !::ChrCmpI(name[0], TEXT('o')); }
-        bool IsX() const { return !::ChrCmpI(name[IsIn() || IsOut() ? 1 : 0], TEXT('x')); }
+        CHAPTER(LPCTSTR name_ = TEXT("")) : name(name_, name_ + _tcslen(name_) + 1) {}
+        bool IsIn() const { return name[0] == TEXT('I') || name[0] == TEXT('i'); }
+        bool IsOut() const { return name[0] == TEXT('O') || name[0] == TEXT('o'); }
+        bool IsX() const { TCHAR c = name[IsIn() || IsOut() ? 1 : 0]; return c == TEXT('X') || c == TEXT('x'); }
         void SetIn(bool f) { if (f && !IsIn()) name.insert(name.begin(), TEXT('i')); else if (!f && IsIn()) name.erase(name.begin()); }
         void SetOut(bool f) { if (f && !IsOut()) name.insert(name.begin(), TEXT('o')); else if (!f && IsOut()) name.erase(name.begin()); }
         void SetX(bool f) {
