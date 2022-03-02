@@ -21,12 +21,12 @@ public:
     bool Finalize();
     // ITvtPlayController
     bool IsOpen() const { return m_hThread ? true : false; }
-    int GetPosition() { CBlockLock lock(&m_tsInfoLock); return m_infoPos; }
+    int GetPosition() { lock_recursive_mutex lock(m_tsInfoLock); return m_infoPos; }
     int GetApparentPosition() { return m_apparentPos>=0 ? m_apparentPos : GetPosition(); }
-    int GetDuration() { CBlockLock lock(&m_tsInfoLock); return m_infoDur; }
-    int GetTotTime() { CBlockLock lock(&m_tsInfoLock); return m_infoTot; }
-    int IsExtending() { CBlockLock lock(&m_tsInfoLock); return m_infoExtMode; }
-    bool IsPaused() { CBlockLock lock(&m_tsInfoLock); return m_fInfoPaused; }
+    int GetDuration() { lock_recursive_mutex lock(m_tsInfoLock); return m_infoDur; }
+    int GetTotTime() { lock_recursive_mutex lock(m_tsInfoLock); return m_infoTot; }
+    int IsExtending() { lock_recursive_mutex lock(m_tsInfoLock); return m_infoExtMode; }
+    bool IsPaused() { lock_recursive_mutex lock(m_tsInfoLock); return m_fInfoPaused; }
     CChapterMap& GetChapter() { return m_chapter; }
     bool IsAllRepeat() const { return m_fAllRepeat; }
     bool IsSingleRepeat() const { return m_fSingleRepeat; }

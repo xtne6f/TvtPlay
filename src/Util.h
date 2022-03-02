@@ -2,6 +2,7 @@
 #define INCLUDE_UTIL_H
 
 #include <vector>
+#include <tchar.h>
 
 // 高速鑑賞機能("字幕でゆっくり")をつけるときコメントをはずす
 //#define EN_SWC
@@ -126,15 +127,15 @@ private:
     CRITICAL_SECTION m_cs;
 };
 
-class CBlockLock
+class lock_recursive_mutex
 {
 public:
-    CBlockLock(recursive_mutex_ *mtx) : m_mtx(mtx) { m_mtx->lock(); }
-    ~CBlockLock() { m_mtx->unlock(); }
+    lock_recursive_mutex(recursive_mutex_ &mtx) : m_mtx(mtx) { m_mtx.lock(); }
+    ~lock_recursive_mutex() { m_mtx.unlock(); }
 private:
-    CBlockLock(const CBlockLock&);
-    CBlockLock &operator=(const CBlockLock&);
-    recursive_mutex_ *m_mtx;
+    lock_recursive_mutex(const lock_recursive_mutex&);
+    lock_recursive_mutex &operator=(const lock_recursive_mutex&);
+    recursive_mutex_ &m_mtx;
 };
 
 COLORREF MixColor(COLORREF Color1,COLORREF Color2,BYTE Ratio=128);

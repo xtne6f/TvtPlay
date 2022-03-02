@@ -27,7 +27,7 @@ int CPlaylist::PushBackListOrFile(LPCTSTR path, bool fMovePos)
     else {
         // TSファイルとして処理
         PLAY_INFO pi;
-        ::lstrcpyn(pi.path, fullPath, _countof(pi.path));
+        _tcsncpy_s(pi.path, fullPath, _TRUNCATE);
         pos = static_cast<int>(m_list.size());
         m_list.push_back(pi);
     }
@@ -43,14 +43,14 @@ int CPlaylist::PushBackList(LPCTSTR fullPath)
     if (!ret.empty()) {
         // 相対パスとの結合用
         TCHAR dirName[MAX_PATH];
-        ::lstrcpyn(dirName, fullPath, _countof(dirName));
+        _tcsncpy_s(dirName, fullPath, _TRUNCATE);
         ::PathRemoveFileSpec(dirName);
 
         for (TCHAR *p = ret.data(); *p;) {
             // 1行取得してpを進める
             TCHAR line[512];
-            int len = ::StrCSpn(p, TEXT("\r\n"));
-            ::lstrcpyn(line, p, min(len+1, _countof(line)));
+            size_t len = _tcscspn(p, TEXT("\r\n"));
+            _tcsncpy_s(line, p, min(len, _countof(line) - 1));
             p += len;
             if (*p == TEXT('\r') && *(p+1) == TEXT('\n')) ++p;
             if (*p) ++p;
@@ -59,7 +59,7 @@ int CPlaylist::PushBackList(LPCTSTR fullPath)
             ::StrTrim(line, TEXT(" \t"));
             if (line[0] != TEXT('#')) {
                 // 左右に"の対応があれば取り除く
-                if (line[0] == TEXT('"') && line[::lstrlen(line)-1] == TEXT('"')) ::StrTrim(line, TEXT("\""));
+                if (line[0] == TEXT('"') && line[_tcslen(line) - 1] == TEXT('"')) ::StrTrim(line, TEXT("\""));
                 // スラッシュ→バックスラッシュ
                 for (TCHAR *q=line; *q; ++q) if (*q==TEXT('/')) *q=TEXT('\\');
                 if (line[0]) {
@@ -70,7 +70,7 @@ int CPlaylist::PushBackList(LPCTSTR fullPath)
                     }
                     else {
                         // 絶対パス
-                        ::lstrcpyn(pi.path, line, _countof(pi.path));
+                        _tcsncpy_s(pi.path, line, _TRUNCATE);
                     }
                     if (::PathFileExists(pi.path)) {
                         if (pos < 0) pos = static_cast<int>(m_list.size());
@@ -114,7 +114,7 @@ void CPlaylist::Sort(SORT_MODE mode)
         sortList.push_back(&swapList[i]);
     }
     if (mode == SORT_ASC || mode == SORT_DESC) {
-        std::sort(sortList.begin(), sortList.end(), [](const PLAY_INFO *a, const PLAY_INFO *b) { return ::lstrcmpi(a->path, b->path) < 0; });
+        std::sort(sortList.begin(), sortList.end(), [](const PLAY_INFO *a, const PLAY_INFO *b) { return _tcsicmp(a->path, b->path) < 0; });
     }
     else if (mode == SORT_SHUFFLE) {
         std::srand(::GetTickCount());
@@ -189,7 +189,7 @@ int CPlaylist::ToString(TCHAR *pStr, int max, bool fFileNameOnly) const
         int strSize = 1;
         for (std::vector<PLAY_INFO>::const_iterator it = m_list.begin(); it != m_list.end(); ++it) {
             LPCTSTR path = fFileNameOnly ? ::PathFindFileName((*it).path) : (*it).path;
-            strSize += ::lstrlen(path) + 2;
+            strSize += static_cast<int>(_tcslen(path) + 2);
         }
         return strSize;
     }
@@ -199,9 +199,9 @@ int CPlaylist::ToString(TCHAR *pStr, int max, bool fFileNameOnly) const
         pStr[0] = 0;
         for (std::vector<PLAY_INFO>::const_iterator it = m_list.begin(); max-strPos-2 > 0 && it != m_list.end(); ++it) {
             LPCTSTR path = fFileNameOnly ? ::PathFindFileName((*it).path) : (*it).path;
-            ::lstrcpyn(pStr + strPos, path, max-strPos-2);
-            ::lstrcat(pStr + strPos, TEXT("\r\n"));
-            strPos += ::lstrlen(pStr + strPos);
+            _tcsncpy_s(pStr + strPos, max - strPos - 2, path, _TRUNCATE);
+            _tcscat_s(pStr + strPos, max - strPos, TEXT("\r\n"));
+            strPos += static_cast<int>(_tcslen(pStr + strPos));
         }
         return strPos + 1;
     }
@@ -211,11 +211,11 @@ int CPlaylist::ToString(TCHAR *pStr, int max, bool fFileNameOnly) const
 bool CPlaylist::IsPlayListFile(LPCTSTR path)
 {
     LPCTSTR ext = ::PathFindExtension(path);
-    return !::lstrcmpi(ext, TEXT(".m3u")) || !::lstrcmpi(ext, TEXT(".tslist"));
+    return !_tcsicmp(ext, TEXT(".m3u")) || !_tcsicmp(ext, TEXT(".tslist"));
 }
 
 bool CPlaylist::IsMediaFile(LPCTSTR path)
 {
     LPCTSTR ext = ::PathFindExtension(path);
-    return !::lstrcmpi(ext, TEXT(".ts")) || !::lstrcmpi(ext, TEXT(".m2t")) || !::lstrcmpi(ext, TEXT(".m2ts")) || !::lstrcmpi(ext, TEXT(".mp4"));
+    return !_tcsicmp(ext, TEXT(".ts")) || !_tcsicmp(ext, TEXT(".m2t")) || !_tcsicmp(ext, TEXT(".m2ts")) || !_tcsicmp(ext, TEXT(".mp4"));
 }

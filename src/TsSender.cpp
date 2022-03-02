@@ -194,7 +194,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
 {
     Close();
 
-    if (!::lstrcmpi(::PathFindExtension(path), TEXT(".mp4"))) {
+    if (!_tcsicmp(::PathFindExtension(path), TEXT(".mp4"))) {
         m_file.reset(new CReadOnlyMpeg4File());
         m_fShareWrite = false;
         m_fFixed = true;
@@ -362,7 +362,7 @@ void CTsSender::SetUdpAddress(LPCSTR addr, unsigned short port)
     m_pipeName[0] = 0;
 
     if (!addr[0]) CloseSocket();
-    ::lstrcpynA(m_udpAddr, addr, _countof(m_udpAddr));
+    strncpy_s(m_udpAddr, addr, _TRUNCATE);
     m_udpPort = port;
 }
 
@@ -373,9 +373,9 @@ void CTsSender::SetPipeName(LPCTSTR name)
     CloseSocket();
     m_udpAddr[0] = 0;
 
-    if (::lstrcmp(m_pipeName, name)) {
+    if (_tcscmp(m_pipeName, name)) {
         ClosePipe();
-        ::lstrcpyn(m_pipeName, name, _countof(m_pipeName));
+        _tcsncpy_s(m_pipeName, name, _TRUNCATE);
     }
 }
 
@@ -998,7 +998,7 @@ void CTsSender::OpenPipe()
     }
     if (m_hPipe != INVALID_HANDLE_VALUE) {
         TCHAR name[_countof(m_pipeName) + 4];
-        ::wsprintf(name, TEXT("%sCtrl"), m_pipeName);
+        _stprintf_s(name, TEXT("%sCtrl"), m_pipeName);
         if (::WaitNamedPipe(name, NMPWAIT_USE_DEFAULT_WAIT)) {
             // 制御用
             m_hCtrlPipe = ::CreateFile(name, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
@@ -1075,12 +1075,12 @@ int CTsSender::TransactMessage(LPCTSTR request, LPTSTR reply)
         DWORD read;
         BOOL fSuccess = ::TransactNamedPipe(m_hCtrlPipe,
                                             const_cast<LPTSTR>(request),
-                                            (::lstrlen(request) + 1) * sizeof(TCHAR),
+                                            static_cast<DWORD>((_tcslen(request) + 1) * sizeof(TCHAR)),
                                             buf, sizeof(buf), &read, nullptr);
         if (fSuccess && read >= sizeof(TCHAR)) {
             buf[read / sizeof(TCHAR) - 1] = 0;
             if (buf[0] == TEXT('A') && buf[1] == TEXT(' ')) {
-                if (reply) ::lstrcpy(reply, buf + 2);
+                if (reply) _tcscpy_s(reply, BON_PIPE_MESSAGE_MAX, buf + 2);
                 return read / sizeof(TCHAR) - 3;
             }
         }

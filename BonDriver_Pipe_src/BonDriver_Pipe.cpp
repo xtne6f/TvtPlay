@@ -100,7 +100,7 @@ const DWORD CBonDriverPipe::WaitTsStream(const DWORD dwTimeOut)
 
 const DWORD CBonDriverPipe::GetReadyCount()
 {
-    CBlockLock lock(&m_reqLock);
+    lock_recursive_mutex lock(m_reqLock);
 #ifdef EN_CTRL_PIPE
     // 制御パイプを使うときは～1秒程度までバッファを満たしておく手法も想定
     // このときステータスの数値が頻繁に変化するのはうっとうしいので引き下げておく
@@ -124,7 +124,7 @@ const BOOL CBonDriverPipe::GetTsStream(BYTE *pDst, DWORD *pdwSize, DWORD *pdwRem
 
 const BOOL CBonDriverPipe::GetTsStream(BYTE **ppDst, DWORD *pdwSize, DWORD *pdwRemain)
 {
-    CBlockLock lock(&m_reqLock);
+    lock_recursive_mutex lock(m_reqLock);
 
     if (m_dwReadyReqNum != 0) {
         // バッファからデータを取り出す
@@ -155,7 +155,7 @@ const BOOL CBonDriverPipe::GetTsStream(BYTE **ppDst, DWORD *pdwSize, DWORD *pdwR
 void CBonDriverPipe::PurgeTsStream()
 {
     ::OutputDebugString(TEXT("CBonDriverPipe::PurgeTsStream()\n"));
-    CBlockLock lock(&m_reqLock);
+    lock_recursive_mutex lock(m_reqLock);
 
     // 取り出し可能なデータをパージする
     while (m_dwReadyReqNum != 0) {
@@ -292,7 +292,7 @@ void CBonDriverPipe::ResetChannel()
     }
 
     // バッファクリア
-    CBlockLock lock(&m_reqLock);
+    lock_recursive_mutex lock(m_reqLock);
     m_pIoGetReq = m_pIoReqBuff;
     m_dwReadyReqNum = 0;
 
@@ -396,7 +396,7 @@ DWORD CBonDriverPipe::ReadPipeMain()
             // 可能なだけ非同期リクエストする
             while (dwBusyReqNum != REQRESERVNUM) {
                 {
-                    CBlockLock lock(&m_reqLock);
+                    lock_recursive_mutex lock(m_reqLock);
                     if (m_dwReadyReqNum + dwBusyReqNum >= ASYNCBUFFSIZE - 1/*GetTsStream()で返す分*/) {
                         // バッファが溢れるのでウェイト
                         state = WAITING;
@@ -444,7 +444,7 @@ DWORD CBonDriverPipe::ReadPipeMain()
             if (fSuccess && pIoDeq->dwSize) {
                 hEventStack[--dwBusyReqNum] = pIoDeq->hEvent;
                 pIoDeq = pIoDeq->pNext;
-                CBlockLock lock(&m_reqLock);
+                lock_recursive_mutex lock(m_reqLock);
                 ++m_dwReadyReqNum;
                 ::SetEvent(m_hOnStreamEvent);
                 break;
@@ -453,7 +453,7 @@ DWORD CBonDriverPipe::ReadPipeMain()
             break;
         case PURGING:
             {
-                CBlockLock lock(&m_reqLock);
+                lock_recursive_mutex lock(m_reqLock);
                 while (m_dwReadyReqNum != 0) {
                     m_pIoGetReq = m_pIoGetReq->pNext;
                     --m_dwReadyReqNum;
@@ -474,7 +474,7 @@ DWORD CBonDriverPipe::ReadPipeMain()
                 }
                 hEventStack[--dwBusyReqNum] = pIoDeq->hEvent;
                 pIoDeq = pIoDeq->pNext;
-                CBlockLock lock(&m_reqLock);
+                lock_recursive_mutex lock(m_reqLock);
                 m_pIoGetReq = m_pIoGetReq->pNext;
             }
             state = READING;
@@ -488,7 +488,7 @@ DWORD CBonDriverPipe::ReadPipeMain()
                 pIoDeq->dwSize = 0;
                 hEventStack[--dwBusyReqNum] = pIoDeq->hEvent;
                 pIoDeq = pIoDeq->pNext;
-                CBlockLock lock(&m_reqLock);
+                lock_recursive_mutex lock(m_reqLock);
                 ++m_dwReadyReqNum;
                 ::SetEvent(m_hOnStreamEvent);
             }
@@ -644,7 +644,7 @@ DWORD CBonDriverPipe::ProcessPipeMessage(LPCTSTR pszRequest, LPTSTR pszReply)
         ::lstrcpy(pszReply, m_fPause ? TEXT("A 1") : TEXT("A 0"));
     }
     else if (!::lstrcmp(pszRequest, TEXT("GET_READY_STATE"))) {
-        CBlockLock lock(&m_reqLock);
+        lock_recursive_mutex lock(m_reqLock);
         ::wsprintf(pszReply, TEXT("A %c %04u %04u"),
                    m_dwReadyReqNum == 0 ? TEXT('E') :
                    m_dwReadyReqNum < ASYNCBUFFSIZE / ASYNCBUFFTIME ? TEXT('L') :

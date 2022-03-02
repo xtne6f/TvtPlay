@@ -50,12 +50,12 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
     // 動画ファイルと同じ階層の.chapter[.txt][s.txt]へのパスを生成
     TCHAR chPath[MAX_PATH], ogmPath[MAX_PATH], ogm2Path[MAX_PATH];
     chPath[0] = ogmPath[0] = ogm2Path[0] = 0;
-    int len = ::lstrlen(pathWoExt);
+    size_t len = _tcslen(pathWoExt);
     if (len < _countof(chPath) - 8) {
         // PathAddExtension()を使ってはいけない!
-        len = ::wsprintf(chPath, TEXT("%s.chapter"), pathWoExt);
-        if (len <= _countof(ogmPath) - 4) ::wsprintf(ogmPath, TEXT("%s.txt"), chPath);
-        if (len <= _countof(ogm2Path) - 5) ::wsprintf(ogm2Path, TEXT("%ss.txt"), chPath);
+        len = _stprintf_s(chPath, TEXT("%s.chapter"), pathWoExt);
+        if (len <= _countof(ogmPath) - 4) _stprintf_s(ogmPath, TEXT("%s.txt"), chPath);
+        if (len <= _countof(ogm2Path) - 5) _stprintf_s(ogm2Path, TEXT("%ss.txt"), chPath);
     }
     else {
         // 少なくとも.chapterへのパスは生成できなければならない
@@ -67,17 +67,17 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
     subChPath[0] = subOgmPath[0] = subOgm2Path[0] = 0;
     if (subDirName[0]) {
         TCHAR subPathWoExt[MAX_PATH];
-        ::lstrcpy(subPathWoExt, pathWoExt);
+        _tcscpy_s(subPathWoExt, pathWoExt);
         if (::PathRemoveFileSpec(subPathWoExt) &&
             ::PathAppend(subPathWoExt, subDirName) &&
             ::PathIsDirectory(subPathWoExt) &&
             ::PathAppend(subPathWoExt, ::PathFindFileName(pathWoExt)))
         {
-            len = ::lstrlen(subPathWoExt);
+            len = _tcslen(subPathWoExt);
             if (len < _countof(subChPath) - 8) {
-                len = ::wsprintf(subChPath, TEXT("%s.chapter"), subPathWoExt);
-                if (len <= _countof(subOgmPath) - 4) ::wsprintf(subOgmPath, TEXT("%s.txt"), subChPath);
-                if (len <= _countof(subOgm2Path) - 5) ::wsprintf(subOgm2Path, TEXT("%ss.txt"), subChPath);
+                len = _stprintf_s(subChPath, TEXT("%s.chapter"), subPathWoExt);
+                if (len <= _countof(subOgmPath) - 4) _stprintf_s(subOgmPath, TEXT("%s.txt"), subChPath);
+                if (len <= _countof(subOgm2Path) - 5) _stprintf_s(subOgm2Path, TEXT("%ss.txt"), subChPath);
             }
         }
     }
@@ -94,11 +94,11 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
             }
             ::Sleep(200);
         }
-        ::lstrcpy(m_path, chReadPath);
+        _tcscpy_s(m_path, chReadPath);
 
         // 変更監視のためにディレクトリを開く
         TCHAR tmpPath[MAX_PATH];
-        ::lstrcpy(tmpPath, m_path);
+        _tcscpy_s(tmpPath, m_path);
         if (::PathRemoveFileSpec(tmpPath)) {
             m_hDir = ::CreateFile(tmpPath, FILE_LIST_DIRECTORY,
                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -109,7 +109,7 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
     }
     else {
         m_fWritable = true;
-        ::lstrcpy(m_path, subChPath[0] ? subChPath : chPath);
+        _tcscpy_s(m_path, subChPath[0] ? subChPath : chPath);
 
         LPCTSTR ogmReadPath = subOgmPath[0] && ::PathFileExists(subOgmPath) ? subOgmPath :
                               ogmPath[0] && ::PathFileExists(ogmPath) ? ogmPath :
@@ -124,7 +124,12 @@ bool CChapterMap::Open(LPCTSTR path, LPCTSTR subDirName)
         }
         else {
             // もしあればファイル名からロード
-            TCHAR *pCmd = ::StrStrI(::PathFindFileName(m_path), TEXT("c-"));
+            LPCTSTR pCmd = ::PathFindFileName(m_path);
+            LPCTSTR pCmdLower = _tcsstr(pCmd, TEXT("c-"));
+            pCmd = _tcsstr(pCmd, TEXT("C-"));
+            if (pCmdLower && (!pCmd || pCmd > pCmdLower)) {
+                pCmd = pCmdLower;
+            }
             if (pCmd) InsertCommand(pCmd);
         }
     }
@@ -172,10 +177,10 @@ bool CChapterMap::Sync()
                 for (BYTE *pBuf = m_buf;;) {
                     FILE_NOTIFY_INFORMATION *pInfo = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(pBuf);
                     TCHAR tmpName[MAX_PATH];
-                    ::lstrcpyn(tmpName, pInfo->FileName,
-                               min(_countof(tmpName), pInfo->FileNameLength / sizeof(WCHAR) + 1));
-                    if (longName[0] && !::lstrcmpi(tmpName, longName) ||
-                        shortName[0] && !::lstrcmpi(tmpName, shortName))
+                    _tcsncpy_s(tmpName, pInfo->FileName,
+                               min(_countof(tmpName) - 1, pInfo->FileNameLength / sizeof(WCHAR)));
+                    if (longName[0] && !_tcsicmp(tmpName, longName) ||
+                        shortName[0] && !_tcsicmp(tmpName, shortName))
                     {
                         m_retryCount = RETRY_LIMIT;
                         break;
@@ -291,7 +296,7 @@ bool CChapterMap::Save() const
     cmd.push_back(TEXT('-'));
     for (std::map<int, CHAPTER>::const_iterator it = m_map.begin(); it != m_map.end(); ++it) {
         TCHAR str[16];
-        cmd.insert(cmd.end(), str, str + ::wsprintf(str, TEXT("%d"), it->first >= CHAPTER_POS_MAX ? 0 : fShortStyle ? it->first / 100 : it->first));
+        cmd.insert(cmd.end(), str, str + _stprintf_s(str, TEXT("%d"), it->first >= CHAPTER_POS_MAX ? 0 : fShortStyle ? it->first / 100 : it->first));
         cmd.push_back(it->first >= CHAPTER_POS_MAX ? TEXT('e') : fShortStyle ? TEXT('d') : TEXT('c'));
         cmd.insert(cmd.end(), it->second.name.begin(), it->second.name.end() - 1);
         // ハイフンは使用できないので全角マイナスに置換
@@ -318,21 +323,25 @@ bool CChapterMap::InsertCommand(LPCTSTR p)
     // ・例1: "c-c" (仕様を満たす最小コマンド)
     // ・例2: "c-1234cName1-3456c-2345c2ndName-0e-c"
     m_map.clear();
-    if (!::StrCmpNI(p, TEXT("c-"), 2)) {
+    if (!_tcsnicmp(p, TEXT("c-"), 2)) {
         p += 2;
         std::pair<int, CHAPTER> ch;
         for (;;) {
-            if (!::ChrCmpI(*p, TEXT('c'))) return true;
-            if (!::StrToIntEx(p, STIF_DEFAULT, &ch.first)) break;
+            if (*p == TEXT('C') || *p == TEXT('c')) return true;
+            TCHAR *endp;
+            ch.first = _tcstol(p, &endp, 10);
+            if (p == endp) break;
             while (TEXT('0') <= *p && *p <= TEXT('9')) ++p;
+            if (p != endp) break;
 
-            LPCTSTR q = ::StrChr(p, TEXT('-'));
+            LPCTSTR q = _tcschr(p, TEXT('-'));
             if (!q || q==p) break;
 
-            TCHAR c = (TCHAR)::CharLower((LPTSTR)(*p));
-            if (c==TEXT('c') || c==TEXT('d') || c==TEXT('e')) {
-                if (c==TEXT('e')) ch.first = CHAPTER_POS_MAX;
-                else if (c==TEXT('d')) ch.first *= 100;
+            if ((TEXT('C') <= *p && *p <= TEXT('E')) ||
+                (TEXT('c') <= *p && *p <= TEXT('e')))
+            {
+                if (*p == TEXT('E') || *p == TEXT('e')) ch.first = CHAPTER_POS_MAX;
+                else if (*p == TEXT('D') || *p == TEXT('d')) ch.first *= 100;
                 if (ch.first >= 0) {
                     ch.first = min(ch.first, CHAPTER_POS_MAX);
                     ch.second.name.assign(p+1, q);
@@ -361,7 +370,7 @@ bool CChapterMap::InsertOgmStyleCommand(LPCTSTR p)
     std::vector<TCHAR> line;
     while (*p) {
         // 1行取得してpを進める
-        int len = ::StrCSpn(p, TEXT("\r\n"));
+        size_t len = _tcscspn(p, TEXT("\r\n"));
         line.assign(p, p + len);
         line.push_back(TEXT('\0'));
         p += len;
@@ -369,13 +378,13 @@ bool CChapterMap::InsertOgmStyleCommand(LPCTSTR p)
         if (*p) ++p;
         // 左右の空白文字を取り除く
         ::StrTrim(line.data(), TEXT(" \t"));
-        line.resize(::lstrlen(line.data()) + 1);
+        line.resize(_tcslen(line.data()) + 1);
 
-        if (!::StrCmpNI(line.data(), TEXT("CHAPTER"), 7)) {
+        if (!_tcsnicmp(line.data(), TEXT("CHAPTER"), 7)) {
             line.erase(line.begin(), line.begin() + 7);
-            if (idStr[0] && !::StrCmpNI(line.data(), idStr, ::lstrlen(idStr))) {
+            if (idStr[0] && !_tcsnicmp(line.data(), idStr, _tcslen(idStr))) {
                 // "CHAPTER[0-9]*NAME="
-                ch.second.name.assign(line.begin() + ::lstrlen(idStr), line.end());
+                ch.second.name.assign(line.begin() + _tcslen(idStr), line.end());
                 m_map.insert(ch);
                 idStr[0] = 0;
             }
@@ -386,12 +395,13 @@ bool CChapterMap::InsertOgmStyleCommand(LPCTSTR p)
                 if (*q == TEXT('=')) {
                     idStr[0] = 0;
                     // "CHAPTER[0-9]*=HH:MM:SS.sss"
-                    if (::lstrlen(q) >= 13 && q[3]==TEXT(':') && q[6]==TEXT(':') && q[9]==TEXT('.')) {
-                        ch.first = ::StrToInt(q+1)*3600000 + ::StrToInt(q+4)*60000 + ::StrToInt(q+7)*1000 + ::StrToInt(q+10);
+                    if (_tcslen(q) >= 13 && q[3]==TEXT(':') && q[6]==TEXT(':') && q[9]==TEXT('.')) {
+                        ch.first = _tcstol(q + 1, nullptr, 10) * 3600000 + _tcstol(q + 4, nullptr, 10) * 60000 +
+                                   _tcstol(q + 7, nullptr, 10) * 1000 + _tcstol(q + 10, nullptr, 10);
                         if (ch.first >= 0) {
                             ch.first = min(ch.first, CHAPTER_POS_MAX);
-                            ::lstrcpyn(idStr, line.data(), min(static_cast<int>(q-line.data()+1), _countof(idStr)-5));
-                            ::lstrcat(idStr, TEXT("NAME="));
+                            _tcsncpy_s(idStr, line.data(), min(q - line.data(), _countof(idStr) - 6));
+                            _tcscat_s(idStr, TEXT("NAME="));
                         }
                     }
                 }

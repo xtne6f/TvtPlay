@@ -1,5 +1,4 @@
 ﻿#include <Windows.h>
-#include <Shlwapi.h>
 #include <vector>
 #include <tchar.h>
 #include "Util.h"
@@ -75,7 +74,7 @@ bool CCaptionAnalyzer::Initialize(LPCTSTR captionDllPath, LPCTSTR blacklistPath,
                 const std::basic_regex<TCHAR> rePattern(TEXT("m?(.)(.+?)\\1s"));
                 std::match_results<LPCTSTR> m;
                 for (const TCHAR *p = patterns.data(); *p;) {
-                    int len = ::StrCSpn(p, TEXT("\r\n"));
+                    size_t len = _tcscspn(p, TEXT("\r\n"));
                     if (std::regex_match(p, &p[len], m, rePattern)) {
                         std::basic_regex<TCHAR> re;
                         try {
@@ -204,24 +203,24 @@ void CCaptionAnalyzer::AddPacket(BYTE *pPacket)
                     else {
                         // データユニットを連結
                         char utf8[CAPTION_MAX * 3]; // 入力文字すべて3バイト表現と仮定
-                        int utf8Count = 0;
+                        size_t utf8Count = 0;
                         utf8[0] = 0;
                         for (DWORD j = 0; j < pList->dwListCount; ++j) {
                             // 中型でも標準でもなければ文字サイズを出力
                             DWORD mode = pList->pstCharList[j].wCharSizeMode;
                             bool fPrintMode = mode != CP_STR_MEDIUM && mode != CP_STR_NORMAL && mode < _countof(CP_STRING_SIZE_NAME);
 
-                            if (fPrintMode && utf8Count < (int)_countof(utf8) - 16) {
-                                utf8Count += ::wsprintfA(utf8 + utf8Count, "\\<%s>", CP_STRING_SIZE_NAME[mode]);
+                            if (fPrintMode && utf8Count < _countof(utf8) - 16) {
+                                utf8Count += sprintf_s(utf8 + utf8Count, _countof(utf8) - utf8Count, "\\<%s>", CP_STRING_SIZE_NAME[mode]);
                             }
                             if (pList->pstCharList[j].pszDecode) {
-                                int len = ::lstrlenA(pList->pstCharList[j].pszDecode);
-                                int copyLen = min(len, (int)_countof(utf8) - utf8Count - 1);
-                                ::lstrcpynA(utf8 + utf8Count, pList->pstCharList[j].pszDecode, copyLen + 1);
+                                size_t len = strlen(pList->pstCharList[j].pszDecode);
+                                size_t copyLen = min(len, _countof(utf8) - utf8Count - 1);
+                                strncpy_s(utf8 + utf8Count, _countof(utf8) - utf8Count, pList->pstCharList[j].pszDecode, copyLen);
                                 utf8Count += copyLen;
                             }
-                            if (fPrintMode && utf8Count < (int)_countof(utf8) - 16) {
-                                utf8Count += ::wsprintfA(utf8 + utf8Count, "\\</%s>", CP_STRING_SIZE_NAME[mode]);
+                            if (fPrintMode && utf8Count < _countof(utf8) - 16) {
+                                utf8Count += sprintf_s(utf8 + utf8Count, _countof(utf8) - utf8Count, "\\</%s>", CP_STRING_SIZE_NAME[mode]);
                             }
                         }
                         // UTF-16に変換
