@@ -71,8 +71,6 @@ static const int INFO_VERSION = 23;
 
 static const TCHAR SETTINGS[] = TEXT("Settings");
 static const TCHAR TVTPLAY_FRAME_WINDOW_CLASS[] = TEXT("TvtPlay Frame");
-static const char UDP_ADDR[] = "127.0.0.1";
-static const TCHAR PIPE_NAME[] = TEXT("\\\\.\\pipe\\BonDriver_Pipe%02d");
 
 enum {
     TIMER_ID_AUTO_HIDE = 1,
@@ -2602,20 +2600,10 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
             if (msg.message == WM_QUIT) break;
             switch (msg.message) {
             case WM_TS_SET_UDP:
-                if (1234 <= msg.lParam && msg.lParam <= 1243)
-                    pThis->m_tsSender.SetUdpAddress(UDP_ADDR, static_cast<unsigned short>(msg.lParam));
-                else
-                    pThis->m_tsSender.SetUdpAddress("", 0);
+                pThis->m_tsSender.SetUdpPort(static_cast<unsigned short>(1234 <= msg.lParam && msg.lParam <= 1243 ? msg.lParam : 0));
                 break;
             case WM_TS_SET_PIPE:
-                if (0 <= msg.lParam && msg.lParam <= 9) {
-                    TCHAR name[MAX_PATH];
-                    _stprintf_s(name, PIPE_NAME, static_cast<int>(msg.lParam));
-                    pThis->m_tsSender.SetPipeName(name);
-                }
-                else {
-                    pThis->m_tsSender.SetPipeName(TEXT(""));
-                }
+                pThis->m_tsSender.SetPipeNumber(0 <= msg.lParam && msg.lParam <= 9 ? static_cast<int>(msg.lParam) : -1);
                 break;
             case WM_TS_PAUSE:
                 if (msg.wParam) {

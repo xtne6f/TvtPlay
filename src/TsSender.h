@@ -27,7 +27,6 @@ private:
 // SetupQpc()、Send()、Send()呼び出し後のSeek*()
 class CTsSender
 {
-    static const int MAX_URI = 256;
     static const int BUFFER_LEN = 1536;
     static const int BON_UDP_TSDATASIZE = 48128;
     static const int TS_SUPPOSED_RATE = 2 * 1024 * 1024;
@@ -43,8 +42,8 @@ public:
     bool Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, bool fUnderrunCtrl, bool fUseQpc, int pcrDisconThresholdMsec);
     DWORD GetInitialPcr() { return m_initPcr; }
     void SetupQpc();
-    void SetUdpAddress(LPCSTR addr, unsigned short port);
-    void SetPipeName(LPCTSTR name);
+    void SetUdpPort(unsigned short port);
+    void SetPipeNumber(int n);
     void SetModTimestamp(bool fModTimestamp);
     void Close();
     int Send();
@@ -87,10 +86,9 @@ private:
     CTsTimestampShifter m_tsShifter;
 
     SOCKET m_sock;
-    CHAR m_udpAddr[MAX_URI];
     unsigned short m_udpPort;
     HANDLE m_hPipe, m_hCtrlPipe;
-    TCHAR m_pipeName[MAX_PATH];
+    int m_pipeNumber;
 
     DWORD m_baseTick, m_renewSizeTick, m_renewDurTick, m_renewFsrTick;
     DWORD m_pcr, m_basePcr, m_initPcr, m_prevPcr;
