@@ -98,8 +98,8 @@ namespace soundtouch
         ///   However, if you still prefer to select the sample format here 
         ///   also in GNU environment, then please #undef the INTEGER_SAMPLE
         ///   and FLOAT_SAMPLE defines first as in comments above.
-        //#define SOUNDTOUCH_INTEGER_SAMPLES     1    //< 16bit integer samples
-        #define SOUNDTOUCH_FLOAT_SAMPLES       1    //< 32bit float samples
+        #define SOUNDTOUCH_INTEGER_SAMPLES     1    //< 16bit integer samples
+        //#define SOUNDTOUCH_FLOAT_SAMPLES       1    //< 32bit float samples
      
     #endif
 
@@ -143,8 +143,12 @@ namespace soundtouch
         #endif // SOUNDTOUCH_FLOAT_SAMPLES
 
         #ifdef SOUNDTOUCH_ALLOW_X86_OPTIMIZATIONS
-            // Allow MMX optimizations
-            #define SOUNDTOUCH_ALLOW_MMX   1
+            // Allow SSE2 optimizations
+            #define SOUNDTOUCH_ALLOW_SSE2      1
+            #ifndef _M_X64
+                // Allow MMX optimizations
+                #define SOUNDTOUCH_ALLOW_MMX   1
+            #endif
         #endif
 
     #else

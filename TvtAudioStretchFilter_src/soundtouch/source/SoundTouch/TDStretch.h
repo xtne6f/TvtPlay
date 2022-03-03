@@ -277,5 +277,18 @@ public:
 
 #endif /// SOUNDTOUCH_ALLOW_SSE
 
+
+#ifdef SOUNDTOUCH_ALLOW_SSE2
+    /// Class that implements SSE2 optimized routines for 16bit integer samples type.
+    class TDStretchSSE2 : public TDStretch
+    {
+    protected:
+        double calcCrossCorr(const short *mixingPos, const short *compare, double &norm);
+        double calcCrossCorrAccumulate(const short *mixingPos, const short *compare, double &norm);
+        virtual void overlapStereo(short *output, const short *input) const;
+    };
+
+#endif /// SOUNDTOUCH_ALLOW_SSE2
+
 }
 #endif  /// TDStretch_H
