@@ -9,25 +9,22 @@ extern HINSTANCE g_hinstDLL;
 bool CReadOnlyMpeg4File::Open(LPCTSTR path, int flags)
 {
     Close();
-    TCHAR iniPath[MAX_PATH];
-    if ((flags & OPEN_FLAG_NORMAL) && !(flags & OPEN_FLAG_SHARE_WRITE) &&
-        ::GetModuleFileName(g_hinstDLL, iniPath, _countof(iniPath)) &&
-        ::PathRenameExtension(iniPath, TEXT(".ini")) &&
-        ::GetPrivateProfileInt(TEXT("MP4"), TEXT("Enabled"), 1, iniPath))
-    {
+    if ((flags & OPEN_FLAG_NORMAL) && !(flags & OPEN_FLAG_SHARE_WRITE) && LoadSettings()) {
         m_hFile = ::CreateFile(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE,
                                nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (m_hFile == INVALID_HANDLE_VALUE || !InitializeTable()) {
+        if (m_hFile != INVALID_HANDLE_VALUE) {
+            LoadCaption(path);
+            if (InitializeTable()) {
+                InitializeMetaInfo(path);
+                m_blockInfo = m_blockList.begin();
+                m_blockCache.clear();
+                m_pointer = 0;
+                return true;
+            }
             Close();
         }
-        else {
-            InitializeMetaInfo(path, iniPath);
-            m_blockInfo = m_blockList.begin();
-            m_blockCache.clear();
-            m_pointer = 0;
-        }
     }
-    return m_hFile != INVALID_HANDLE_VALUE;
+    return false;
 }
 
 void CReadOnlyMpeg4File::Close()
@@ -90,45 +87,55 @@ __int64 CReadOnlyMpeg4File::GetSize() const
     return -1;
 }
 
-void CReadOnlyMpeg4File::InitializeMetaInfo(LPCTSTR path, LPCTSTR iniPath)
+bool CReadOnlyMpeg4File::LoadSettings()
 {
+    TCHAR iniPath[MAX_PATH];
+    if (!::GetModuleFileName(g_hinstDLL, iniPath, _countof(iniPath)) ||
+        !::PathRenameExtension(iniPath, TEXT(".ini")))
+    {
+        return false;
+    }
     // プラグイン設定の[MP4]セクション
     std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(TEXT("MP4"), iniPath);
+    GetBufferedProfileString(buf.data(), TEXT("Meta"), TEXT("metadata.ini"), m_metaName, _countof(m_metaName));
+    GetBufferedProfileString(buf.data(), TEXT("VttExtension"), TEXT(".vtt"), m_vttExtension, _countof(m_vttExtension));
+    GetBufferedProfileString(buf.data(), TEXT("BroadcastID"), TEXT("0x000100020003"), m_iniBroadcastID, _countof(m_iniBroadcastID));
+    GetBufferedProfileString(buf.data(), TEXT("Time"), TEXT(""), m_iniTime, _countof(m_iniTime));
     if (!buf[0]) {
         WritePrivateProfileInt(TEXT("MP4"), TEXT("Enabled"), 1, iniPath);
-        ::WritePrivateProfileString(TEXT("MP4"), TEXT("Meta"), TEXT("metadata.ini"), iniPath);
-        ::WritePrivateProfileString(TEXT("MP4"), TEXT("BroadcastID"), TEXT("0x000100020003"), iniPath);
+        ::WritePrivateProfileString(TEXT("MP4"), TEXT("Meta"), m_metaName, iniPath);
+        ::WritePrivateProfileString(TEXT("MP4"), TEXT("VttExtension"), m_vttExtension, iniPath);
+        ::WritePrivateProfileString(TEXT("MP4"), TEXT("BroadcastID"), m_iniBroadcastID, iniPath);
         ::WritePrivateProfileString(TEXT("MP4"), TEXT("Time"), TEXT(""), iniPath);
     }
-    TCHAR metaName[MAX_PATH];
-    GetBufferedProfileString(buf.data(), TEXT("Meta"), TEXT("metadata.ini"), metaName, _countof(metaName));
-    TCHAR szBroadcastID[15];
-    GetBufferedProfileString(buf.data(), TEXT("BroadcastID"), TEXT("0x000100020003"), szBroadcastID, _countof(szBroadcastID));
-    TCHAR szTime[20];
-    GetBufferedProfileString(buf.data(), TEXT("Time"), TEXT(""), szTime, _countof(szTime));
-    if (metaName[0] && _tcslen(path) < MAX_PATH) {
+    return GetBufferedProfileInt(buf.data(), TEXT("Enabled"), 1) != 0;
+}
+
+void CReadOnlyMpeg4File::InitializeMetaInfo(LPCTSTR path)
+{
+    if (m_metaName[0] && _tcslen(path) < MAX_PATH) {
         TCHAR metaPath[MAX_PATH];
         _tcscpy_s(metaPath, path);
-        if (::PathRemoveFileSpec(metaPath) && ::PathAppend(metaPath, metaName)) {
+        if (::PathRemoveFileSpec(metaPath) && ::PathAppend(metaPath, m_metaName)) {
             // "Meta"設定の[*]セクションで上書き
-            buf = GetPrivateProfileSectionBuffer(TEXT("*"), metaPath);
-            TCHAR szBroadcastID_[15];
-            GetBufferedProfileString(buf.data(), TEXT("BroadcastID"), szBroadcastID, szBroadcastID_, _countof(szBroadcastID_));
-            TCHAR szTime_[20];
-            GetBufferedProfileString(buf.data(), TEXT("Time"), szTime, szTime_, _countof(szTime_));
+            std::vector<TCHAR> buf = GetPrivateProfileSectionBuffer(TEXT("*"), metaPath);
+            TCHAR szBroadcastID[15];
+            GetBufferedProfileString(buf.data(), TEXT("BroadcastID"), m_iniBroadcastID, szBroadcastID, _countof(szBroadcastID));
+            TCHAR szTime[20];
+            GetBufferedProfileString(buf.data(), TEXT("Time"), m_iniTime, szTime, _countof(szTime));
             // "Meta"設定の[ファイル名]セクションで上書き
             buf = GetPrivateProfileSectionBuffer(::PathFindFileName(path), metaPath);
-            GetBufferedProfileString(buf.data(), TEXT("BroadcastID"), szBroadcastID_, szBroadcastID, _countof(szBroadcastID));
-            GetBufferedProfileString(buf.data(), TEXT("Time"), szTime_, szTime, _countof(szTime));
+            GetBufferedProfileString(buf.data(), TEXT("BroadcastID"), szBroadcastID, m_iniBroadcastID, _countof(m_iniBroadcastID));
+            GetBufferedProfileString(buf.data(), TEXT("Time"), szTime, m_iniTime, _countof(m_iniTime));
         }
     }
     LARGE_INTEGER broadcastID = {};
-    ::StrToInt64Ex(szBroadcastID, STIF_SUPPORT_HEX, &broadcastID.QuadPart);
+    ::StrToInt64Ex(m_iniBroadcastID, STIF_SUPPORT_HEX, &broadcastID.QuadPart);
     m_nid = max(LOWORD(broadcastID.HighPart), 1);
     m_tsid = max(HIWORD(broadcastID.LowPart), 1);
     m_sid = max(LOWORD(broadcastID.LowPart), 1);
     m_totStart.QuadPart = 125911908000000000LL; // 2000-01-01T09:00:00
-    if (!szTime[0]) {
+    if (!m_iniTime[0]) {
         // ファイルの更新日時をTOTとする
         FILETIME ft;
         if (::GetFileTime(m_hFile, nullptr, nullptr, &ft)) {
@@ -137,23 +144,172 @@ void CReadOnlyMpeg4File::InitializeMetaInfo(LPCTSTR path, LPCTSTR iniPath)
             m_totStart.QuadPart += 9 * 36000000000LL;
         }
     }
-    else if (_tcslen(szTime) == 19 &&
-             szTime[4] == TEXT('-') && szTime[7] == TEXT('-') &&
-             szTime[10] == TEXT('T') && szTime[13] == TEXT(':') && szTime[16] == TEXT(':'))
+    else if (_tcslen(m_iniTime) == 19 &&
+             m_iniTime[4] == TEXT('-') && m_iniTime[7] == TEXT('-') &&
+             m_iniTime[10] == TEXT('T') && m_iniTime[13] == TEXT(':') && m_iniTime[16] == TEXT(':'))
     {
         SYSTEMTIME st = {};
-        st.wYear = static_cast<WORD>(_tcstol(&szTime[0], nullptr, 10));
-        st.wMonth = static_cast<WORD>(_tcstol(&szTime[5], nullptr, 10));
-        st.wDay = static_cast<WORD>(_tcstol(&szTime[8], nullptr, 10));
-        st.wHour = static_cast<WORD>(_tcstol(&szTime[11], nullptr, 10));
-        st.wMinute = static_cast<WORD>(_tcstol(&szTime[14], nullptr, 10));
-        st.wSecond = static_cast<WORD>(_tcstol(&szTime[17], nullptr, 10));
+        st.wYear = static_cast<WORD>(_tcstol(&m_iniTime[0], nullptr, 10));
+        st.wMonth = static_cast<WORD>(_tcstol(&m_iniTime[5], nullptr, 10));
+        st.wDay = static_cast<WORD>(_tcstol(&m_iniTime[8], nullptr, 10));
+        st.wHour = static_cast<WORD>(_tcstol(&m_iniTime[11], nullptr, 10));
+        st.wMinute = static_cast<WORD>(_tcstol(&m_iniTime[14], nullptr, 10));
+        st.wSecond = static_cast<WORD>(_tcstol(&m_iniTime[17], nullptr, 10));
         FILETIME ft;
         if (::SystemTimeToFileTime(&st, &ft)) {
             m_totStart.LowPart = ft.dwLowDateTime;
             m_totStart.HighPart = ft.dwHighDateTime;
         }
     }
+}
+
+void CReadOnlyMpeg4File::LoadCaption(LPCTSTR path)
+{
+    m_captionList.clear();
+
+    TCHAR vttPath[MAX_PATH];
+    if (!m_vttExtension[0] || _tcslen(path) >= _countof(vttPath)) {
+        return;
+    }
+    _tcscpy_s(vttPath, path);
+    FILE *fp;
+    if (!::PathRenameExtension(vttPath, m_vttExtension) || _tfopen_s(&fp, vttPath, TEXT("rN")) != 0) {
+        return;
+    }
+    __int64 currentQueMsec = 0;
+    DWORD captionNumPerSec = 0;
+    BYTE currentDgiGroup = 0;
+    size_t captionManagementIndex = 0;
+    enum { VTT_SIGNATURE, VTT_FIND_KIND, VTT_IGNORE, VTT_BODY, VTT_CUE_ID, VTT_CUE_TIME, VTT_CUE } state = VTT_SIGNATURE;
+    std::vector<BYTE> decodeBuf;
+    std::vector<char> buf(VTT_LINE_MAX);
+    size_t readFileCount = 0;
+
+    while (fgets(buf.data(), static_cast<int>(buf.size()), fp)) {
+        size_t bufLen = strlen(buf.data());
+        readFileCount += bufLen;
+        if (bufLen == 0 || bufLen >= buf.size() - 1 || readFileCount >= READ_FILE_MAX_SIZE) {
+            break;
+        }
+        if (buf[bufLen - 1] == '\n') {
+            buf[--bufLen] = '\0';
+        }
+
+        if (state == VTT_SIGNATURE) {
+            size_t i = strncmp(buf.data(), "\xEF\xBB\xBF", 3) == 0 ? 3 : 0;
+            if (strncmp(&buf[i], "WEBVTT", 6) != 0 || (bufLen != i + 6 && buf[i + 6] != ' ' && buf[i + 6] != '\t')) {
+                // WebVTTでない
+                break;
+            }
+            state = VTT_FIND_KIND;
+        }
+        else if (state == VTT_FIND_KIND) {
+            if (bufLen == 0) {
+                // "Kind: metadata"でない
+                break;
+            }
+            if (strncmp(buf.data(), "Kind:", 5) == 0 && strstr(&buf[5], "metadata")) {
+                state = VTT_IGNORE;
+            }
+        }
+        else if (state == VTT_IGNORE) {
+            if (bufLen == 0) {
+                state = VTT_BODY;
+            }
+        }
+        else if (state == VTT_BODY) {
+            if ((strncmp(buf.data(), "NOTE", 4) == 0 && (bufLen == 4 || buf[4] == ' ' || buf[4] == '\t')) ||
+                (strncmp(buf.data(), "STYLE", 5) == 0 && (bufLen == 5 || buf[5] == ' ' || buf[5] == '\t')) ||
+                (strncmp(buf.data(), "REGION", 6) == 0 && (bufLen == 6 || buf[6] == ' ' || buf[6] == '\t')))
+            {
+                state = VTT_IGNORE;
+            }
+            else if (strstr(buf.data(), "-->")) {
+                state = VTT_CUE_TIME;
+            }
+            else if (bufLen != 0) {
+                state = VTT_CUE_ID;
+            }
+        }
+        else if (state == VTT_CUE_ID) {
+            if (bufLen == 0) {
+                state = VTT_BODY;
+            }
+            else if (strstr(buf.data(), "-->")) {
+                state = VTT_CUE_TIME;
+            }
+            else {
+                state = VTT_IGNORE;
+            }
+        }
+        else if (state == VTT_CUE) {
+            if (bufLen == 0) {
+                state = VTT_BODY;
+            }
+            else if (strncmp(buf.data(), "<v b24caption", 13) == 0 && '0' <= buf[13] && buf[13] <= '8' && buf[14] == '>') {
+                buf[15 + strcspn(&buf[15], "<")] = '\0';
+                // 秒あたりの追加数を制限する
+                if (captionNumPerSec < CAPTION_MAX_PER_SEC && DecodeB24Caption(decodeBuf, &buf[15])) {
+                    // 組情報を上書き
+                    decodeBuf[0] = currentDgiGroup | (decodeBuf[0] & 0x7F);
+                    if ((decodeBuf[0] & 0x7C) == 0) {
+                        // 字幕管理
+                        if (!m_captionList.empty() && decodeBuf != m_captionList[captionManagementIndex].second) {
+                            // 内容が変化したので組を変更
+                            currentDgiGroup = currentDgiGroup == 0 ? 0x80 : 0;
+                            decodeBuf[0] = currentDgiGroup | (decodeBuf[0] & 0x7F);
+                        }
+                        captionManagementIndex = m_captionList.size();
+                        m_captionList.push_back(std::make_pair(currentQueMsec, decodeBuf));
+                    }
+                    else if (!m_captionList.empty()) {
+                        // 字幕データ
+                        if (m_captionList[captionManagementIndex].first + CAPTION_MANAGEMENT_RESEND_MSEC < currentQueMsec) {
+                            // 字幕管理を再送
+                            m_captionList.push_back(std::make_pair(currentQueMsec, m_captionList[captionManagementIndex].second));
+                            captionManagementIndex = m_captionList.size() - 1;
+                        }
+                        m_captionList.push_back(std::make_pair(currentQueMsec, decodeBuf));
+                    }
+                    ++captionNumPerSec;
+                }
+            }
+        }
+
+        if (state == VTT_CUE_TIME) {
+            state = VTT_IGNORE;
+            if (bufLen >= 12 && buf[2] == ':' && (buf[5] == '.' || (buf[5] == ':' && buf[8] == '.'))) {
+                int t1 = strtol(&buf[0], nullptr, 10);
+                int t2 = strtol(&buf[3], nullptr, 10);
+                int t3 = strtol(&buf[6], nullptr, 10);
+                int t;
+                if (buf[5] == '.') {
+                    // mm:ss.ttt
+                    t = ((t1 * 60) + t2) * 1000 + t3;
+                }
+                else {
+                    // hh:mm:ss.ttt
+                    t = (((t1 * 60) + t2) * 60 + t3) * 1000 + strtol(&buf[9], nullptr, 10);
+                }
+                if (t >= currentQueMsec) {
+                    if (t / 1000 > currentQueMsec / 1000) {
+                        captionNumPerSec = 0;
+                    }
+                    if (!m_captionList.empty()) {
+                        while (currentQueMsec + CAPTION_MANAGEMENT_RESEND_MSEC * 2 < t) {
+                            // 字幕管理を再送
+                            currentQueMsec += CAPTION_MANAGEMENT_RESEND_MSEC;
+                            m_captionList.push_back(std::make_pair(currentQueMsec, m_captionList[captionManagementIndex].second));
+                            captionManagementIndex = m_captionList.size() - 1;
+                        }
+                    }
+                    currentQueMsec = t;
+                    state = VTT_CUE;
+                }
+            }
+        }
+    }
+    fclose(fp);
 }
 
 bool CReadOnlyMpeg4File::InitializeTable()
@@ -452,8 +608,9 @@ bool CReadOnlyMpeg4File::InitializeBlockList()
     BLOCK_100MSEC block = {};
     size_t indexV = 0;
     size_t indexA[2] = {};
+    auto itCaption = m_captionList.cbegin();
 
-    for (;;) {
+    while (m_blockList.size() < BLOCK_LIST_SIZE_MAX) {
         m_blockList.push_back(block);
         if (indexV >= m_stsoV.size() && indexA[0] >= m_stsoA[0].size() && indexA[1] >= m_stsoA[1].size()) {
             break;
@@ -480,7 +637,7 @@ bool CReadOnlyMpeg4File::InitializeBlockList()
                 // PES header
                 n += 14;
             }
-            for (int i = 0; i < n; i += min(n - i, 184), ++size, ++block.counterV);
+            for (; n > 0; n -= 184, ++size, ++block.counterV);
         }
         for (int a = 0; a < 2; ++a) {
             for (; indexA[a] < m_stsoA[a].size(); ++indexA[a]) {
@@ -495,9 +652,19 @@ bool CReadOnlyMpeg4File::InitializeBlockList()
                     // PES header
                     n += 14;
                 }
-                for (int i = 0; i < n; i += min(n - i, 184), ++size, ++block.counterA[a]);
+                for (; n > 0; n -= 184, ++size, ++block.counterA[a]);
             }
         }
+
+        // 放送では字幕は映像や音声にたいして早めに送られるのでそれに似せる
+        __int64 captionEndTime = static_cast<__int64>(m_blockList.size()) * 100 + CAPTION_FORWARD_MSEC;
+        for (; itCaption != m_captionList.end() && itCaption->first < captionEndTime; ++itCaption) {
+            int n = static_cast<int>(itCaption->second.size());
+            // 同期型PES(STD-B24)の先頭 + サイズフィールド + CRC16 + PES header
+            n += 3 + 2 + 2 + 14;
+            for (; n > 0; n -= 184, ++size, ++block.counterC);
+        }
+
         // NUL
         size = max(size, BLOCK_SIZE_MIN);
 
@@ -520,6 +687,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
     size_t blockIndex = m_blockInfo - m_blockList.begin();
     BYTE counterV = m_blockInfo->counterV;
     BYTE counterA[2] = { m_blockInfo->counterA[0], m_blockInfo->counterA[1] };
+    BYTE counterC = m_blockInfo->counterC;
     size_t indexV = m_sttsV[0] < 0 ? static_cast<size_t>((static_cast<__int64>(blockIndex) * m_timeScaleV / 10 + m_sttsV[1] - 1) / m_sttsV[1]) :
         std::lower_bound(m_sttsV.begin(), m_sttsV.end(), static_cast<__int64>(blockIndex) * m_timeScaleV / 10) - m_sttsV.begin();
     size_t indexA[2] = {};
@@ -527,6 +695,9 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
         indexA[a] = m_sttsA[a][0] < 0 ? static_cast<size_t>((static_cast<__int64>(blockIndex) * m_timeScaleA[a] / 10 + m_sttsA[a][1] - 1) / m_sttsA[a][1]) :
             std::lower_bound(m_sttsA[a].begin(), m_sttsA[a].end(), static_cast<__int64>(blockIndex) * m_timeScaleA[a] / 10) - m_sttsA[a].begin();
     }
+    auto itCaption = std::lower_bound(m_captionList.cbegin(), m_captionList.cend(),
+        std::make_pair(static_cast<__int64>(blockIndex) * 100 + CAPTION_FORWARD_MSEC, std::vector<BYTE>()),
+        [](const std::pair<__int64, std::vector<BYTE>> &a, const std::pair<__int64, std::vector<BYTE>> &b) { return a.first < b.first; });
 
     // PAT
     m_blockCache.insert(m_blockCache.end(), 188, 0xFF);
@@ -554,7 +725,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
     packet = &m_blockCache.back() - 187;
     CreateHeader(packet, 1, 1, blockIndex & 0x0F, 0x01F0);
     packet[4] = 0;
-    CreatePmt(packet + 5, m_sid, !m_stsoA[1].empty());
+    CreatePmt(packet + 5, m_sid, !m_stsoA[1].empty(), !m_captionList.empty());
 
     // PCR
     m_blockCache.insert(m_blockCache.end(), 188, 0xFF);
@@ -615,7 +786,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
             }
             // PES header
             sample.insert(sample.begin(), 14, 0xFF);
-            CreatePesHeader(sample.data(), 0xE0, 0, static_cast<DWORD>(45000 * (sampleTime + m_cttsV[indexV]) / m_timeScaleV + 22500), stuffingSize);
+            CreatePesHeader(sample.data(), 0xE0, true, 0, static_cast<DWORD>(45000 * (sampleTime + m_cttsV[indexV]) / m_timeScaleV + 22500), stuffingSize);
             n += 14;
         }
         for (int i = 0; i < n; ++counterV) {
@@ -651,7 +822,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
                 sample[18] |= n >> 3 & 0xFF;
                 sample[19] |= n << 5 & 0xFF;
                 // PES header
-                CreatePesHeader(sample.data(), 0xC0, (n + 8) & 0xFFFF, static_cast<DWORD>(45000 * sampleTime / m_timeScaleA[a] + 22500), 0);
+                CreatePesHeader(sample.data(), 0xC0, true, (n + 8) & 0xFFFF, static_cast<DWORD>(45000 * sampleTime / m_timeScaleA[a] + 22500), 0);
                 n += 14;
             }
             for (int i = 0; i < n; ++counterA[a]) {
@@ -669,6 +840,38 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
                 ::memcpy(packet + pos, &sample[i], 188 - pos);
                 i += 188 - pos;
             }
+        }
+    }
+
+    __int64 captionEndTime = static_cast<__int64>(blockIndex + 1) * 100 + CAPTION_FORWARD_MSEC;
+    for (; itCaption != m_captionList.end() && itCaption->first < captionEndTime; ++itCaption) {
+        sample.assign(17, 0xFF);
+        // 同期型PES(STD-B24)
+        sample[14] = 0x80;
+        sample[15] = 0xFF;
+        sample[16] = 0xF0;
+        sample.insert(sample.end(), itCaption->second.begin(), itCaption->second.begin() + 3);
+        sample.push_back(HIBYTE(itCaption->second.size() - 3));
+        sample.push_back(LOBYTE(itCaption->second.size() - 3));
+        sample.insert(sample.end(), itCaption->second.begin() + 3, itCaption->second.end());
+        WORD crc = CalcCrc16Ccitt(sample.data() + 17, sample.size() - 17);
+        sample.push_back(HIBYTE(crc));
+        sample.push_back(LOBYTE(crc));
+        CreatePesHeader(sample.data(), 0xBD, false, static_cast<WORD>(sample.size() - 6), static_cast<DWORD>(45 * itCaption->first + 22500), 0);
+        for (size_t i = 0; i < sample.size(); ++counterC) {
+            m_blockCache.insert(m_blockCache.end(), 188, 0xFF);
+            packet = &m_blockCache.back() - 187;
+            CreateHeader(packet, i == 0, sample.size() - i < 184 ? 3 : 1, counterC, 0x0130);
+            int pos = 4;
+            if (sample.size() - i < 184) {
+                packet[4] = (187 - (sample.size() - i + 4)) & 0xFF;
+                if (packet[4] > 0) {
+                    packet[5] = 0x00;
+                }
+                pos += packet[4] + 1;
+            }
+            ::memcpy(packet + pos, &sample[i], 188 - pos);
+            i += 188 - pos;
         }
     }
 
@@ -884,12 +1087,11 @@ size_t CReadOnlyMpeg4File::CreateTot(BYTE *data, SYSTEMTIME st)
     return 14;
 }
 
-size_t CReadOnlyMpeg4File::CreatePmt(BYTE *data, WORD sid, bool fAudio2)
+size_t CReadOnlyMpeg4File::CreatePmt(BYTE *data, WORD sid, bool fAudio2, bool fCaption)
 {
-    BYTE x = fAudio2 ? 5 : 0;
     data[0] = 0x02;
     data[1] = 0xB0;
-    data[2] = 23 + x;
+    data[2] = 23 + (fAudio2 ? 5 : 0) + (fCaption ? 8 : 0);
     data[3] = HIBYTE(sid);
     data[4] = LOBYTE(sid);
     data[5] = 0xC1;
@@ -909,19 +1111,30 @@ size_t CReadOnlyMpeg4File::CreatePmt(BYTE *data, WORD sid, bool fAudio2)
     data[19] = 0x10; // 0x0110
     data[20] = 0xF0;
     data[21] = 0;
+    size_t x = 22;
     if (fAudio2) {
-        data[22] = 0x0F; // ADTS transport
-        data[23] = 0xE1;
-        data[24] = 0x11; // 0x0111
-        data[25] = 0xF0;
-        data[26] = 0;
+        data[x++] = 0x0F; // ADTS transport
+        data[x++] = 0xE1;
+        data[x++] = 0x11; // 0x0111
+        data[x++] = 0xF0;
+        data[x++] = 0;
     }
-    DWORD crc = CalcCrc32(data, 22 + x);
-    data[22 + x] = HIBYTE(HIWORD(crc));
-    data[23 + x] = LOBYTE(HIWORD(crc));
-    data[24 + x] = HIBYTE(crc);
-    data[25 + x] = LOBYTE(crc);
-    return 26 + x;
+    if (fCaption) {
+        data[x++] = 0x06; // PES Private Data
+        data[x++] = 0xE1;
+        data[x++] = 0x30; // 0x0130
+        data[x++] = 0xF0;
+        data[x++] = 3;
+        data[x++] = 0x52; // ストリーム識別記述子
+        data[x++] = 1;
+        data[x++] = 0x30;
+    }
+    DWORD crc = CalcCrc32(data, x);
+    data[x++] = HIBYTE(HIWORD(crc));
+    data[x++] = LOBYTE(HIWORD(crc));
+    data[x++] = HIBYTE(crc);
+    data[x++] = LOBYTE(crc);
+    return x;
 }
 
 size_t CReadOnlyMpeg4File::CreateHeader(BYTE *data, BYTE unitStart, BYTE adaptation, BYTE counter, WORD pid)
@@ -946,7 +1159,7 @@ size_t CReadOnlyMpeg4File::CreatePcrAdaptation(BYTE *data, DWORD pcr45khz)
     return 8;
 }
 
-size_t CReadOnlyMpeg4File::CreatePesHeader(BYTE *data, BYTE streamID, WORD packetLength, DWORD pts45khz, BYTE stuffingSize)
+size_t CReadOnlyMpeg4File::CreatePesHeader(BYTE *data, BYTE streamID, bool fDataAlignment, WORD packetLength, DWORD pts45khz, BYTE stuffingSize)
 {
     data[0] = 0;
     data[1] = 0;
@@ -954,7 +1167,7 @@ size_t CReadOnlyMpeg4File::CreatePesHeader(BYTE *data, BYTE streamID, WORD packe
     data[3] = streamID;
     data[4] = HIBYTE(packetLength);
     data[5] = LOBYTE(packetLength);
-    data[6] = 0x84;
+    data[6] = fDataAlignment ? 0x84 : 0x80;
     data[7] = 0x80;
     data[8] = (5 + stuffingSize) & 0xFF;
     data[9] = (pts45khz >> 28 | 0x21) & 0xFF;
@@ -1011,4 +1224,125 @@ DWORD CReadOnlyMpeg4File::CalcCrc32(const BYTE *data, size_t len, DWORD crc)
         crc = (crc << 8) ^ c;
     }
     return crc;
+}
+
+WORD CReadOnlyMpeg4File::CalcCrc16Ccitt(const BYTE *data, size_t len, WORD crc)
+{
+    for (size_t i = 0; i < len; ++i) {
+        WORD c = ((crc >> 8) ^ data[i]) << 8;
+        for (int j = 0; j < 8; ++j) {
+            c = (c << 1) ^ (c & 0x8000 ? 0x1021 : 0);
+        }
+        crc = (crc << 8) ^ c;
+    }
+    return crc;
+}
+
+bool CReadOnlyMpeg4File::DecodeBase64(std::vector<BYTE> &dest, const char *src, size_t srcSize)
+{
+    if (srcSize % 4 != 0) {
+        return false;
+    }
+    for (size_t i = 0; i + 3 < srcSize; i += 4) {
+        BYTE b[4];
+        for (size_t j = 0; j < 4; ++j) {
+            char c = src[i + j];
+            b[j] = 'A' <= c && c <= 'Z' ? c - 'A' :
+                   'a' <= c && c <= 'z' ? c - 'a' + 26 :
+                   '0' <= c && c <= '9' ? c - '0' + 52 :
+                   c == '+' ? 62 :
+                   c == '/' ? 63 :
+                   c == '=' ? 64 : 65;
+            if (b[j] > 64) {
+                return false;
+            }
+        }
+        dest.push_back((b[0] << 2) | ((b[1] & 0x30) >> 4));
+        if (b[2] < 64) {
+            dest.push_back(((b[1] & 0xF) << 4) | ((b[2] & 0x3C) >> 2));
+            if (b[3] < 64) {
+                dest.push_back(((b[2] & 0x3) << 6) | (b[3] & 0x3F));
+            }
+        }
+    }
+    return true;
+}
+
+bool CReadOnlyMpeg4File::DecodeB24Caption(std::vector<BYTE> &dest, const char *src)
+{
+    dest.clear();
+    size_t bracePos[8];
+    size_t braceCount = 0;
+    while (*src) {
+        if (*src == '%') {
+            // tsreadex仕様のエスケープされた字幕データをデコード
+            ++src;
+            if (!src[0] || !src[1]) {
+                return false;
+            }
+            char c = *(src++);
+            char d = *(src++);
+            if (c == '^') {
+                // キャレット記法
+                dest.push_back(0xC2);
+                dest.push_back(static_cast<BYTE>(d + 0x40));
+            }
+            else if (c == '=') {
+                // 24bitサイズフィールド
+                if (d == '{' && braceCount < _countof(bracePos)) {
+                    dest.resize(dest.size() + 3);
+                    bracePos[braceCount++] = dest.size();
+                }
+                else if (d == '}' && braceCount > 0) {
+                    size_t pos = bracePos[--braceCount];
+                    size_t sz = dest.size() - pos;
+                    dest[pos - 3] = static_cast<BYTE>(sz >> 16);
+                    dest[pos - 2] = static_cast<BYTE>(sz >> 8);
+                    dest[pos - 1] = static_cast<BYTE>(sz);
+                }
+                else {
+                    // ネストが深すぎるなど
+                    return false;
+                }
+            }
+            else if (c == '+') {
+                // Base64
+                if (d != '{') {
+                    return false;
+                }
+                const char *p = strchr(src, '%');
+                if (!p || p[1] != '+' || p[2] != '}' || !DecodeBase64(dest, src, p - src)) {
+                    return false;
+                }
+                src = p + 3;
+            }
+            else {
+                // HEX
+                dest.push_back(static_cast<BYTE>(((c >= 'a' ? c - 'a' + 10 : c >= 'A' ? c - 'A' + 10 : c - '0') << 4) |
+                                                  (d >= 'a' ? d - 'a' + 10 : d >= 'A' ? d - 'A' + 10 : d - '0')));
+            }
+        }
+        else if (*src == '&') {
+            // WebVTTの文字実体参照のうち主要なものをデコード
+            ++src;
+            static const char ent[5][6] = { "amp;", "lt;", "gt;", "quot;", "apos;" };
+            static const BYTE ref[5] = { '&', '<', '>', '"', '\'' };
+            size_t i = 0;
+            for (; i < _countof(ref); ++i) {
+                if (strncmp(src, ent[i], strlen(ent[i])) == 0) {
+                    dest.push_back(ref[i]);
+                    src += strlen(ent[i]);
+                    break;
+                }
+            }
+            if (i >= _countof(ref)) {
+                dest.push_back('&');
+            }
+        }
+        else {
+            dest.push_back(static_cast<BYTE>(*(src++)));
+        }
+    }
+    // PESに格納できるサイズであること
+    return 3 <= dest.size() && dest.size() <= 65520 && braceCount == 0;
 }

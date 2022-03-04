@@ -2,6 +2,7 @@
 #define INCLUDE_READ_ONLY_MPEG4_FILE_H
 
 #include "ReadOnlyFile.h"
+#include <utility>
 #include <vector>
 
 #ifndef MASK_OFF_SPS_CS45_FLAGS
@@ -13,8 +14,13 @@ class CReadOnlyMpeg4File : public IReadOnlyFile
     static const DWORD READ_BOX_SIZE_MAX = 64 * 1024 * 1024;
     static const DWORD BLOCK_SIZE_MIN = 256;
     static const DWORD BLOCK_SIZE_MAX = 65536;
+    static const DWORD BLOCK_LIST_SIZE_MAX = 1000000;
     static const DWORD VIDEO_SAMPLE_MAX = 2 * 1024 * 1024;
     static const DWORD AUDIO_SAMPLE_MAX = 8184;
+    static const DWORD VTT_LINE_MAX = 32768;
+    static const DWORD CAPTION_MAX_PER_SEC = 20;
+    static const DWORD CAPTION_FORWARD_MSEC = 500;
+    static const DWORD CAPTION_MANAGEMENT_RESEND_MSEC = 5000;
 public:
     CReadOnlyMpeg4File() : m_hFile(INVALID_HANDLE_VALUE) {}
     ~CReadOnlyMpeg4File() { Close(); }
@@ -28,11 +34,14 @@ private:
         DWORD pos;
         BYTE counterV;
         BYTE counterA[2];
+        BYTE counterC;
     };
     static inline DWORD ArrayToDWORD(const BYTE *data) {
         return MAKEWORD(data[3], data[2]) | static_cast<DWORD>(MAKEWORD(data[1], data[0])) << 16;
     }
-    void InitializeMetaInfo(LPCTSTR path, LPCTSTR iniPath);
+    bool LoadSettings();
+    void InitializeMetaInfo(LPCTSTR path);
+    void LoadCaption(LPCTSTR path);
     bool InitializeTable();
     bool ReadVideoSampleDesc(char index, std::vector<BYTE> &spsPps, std::vector<BYTE> &buf) const;
     bool ReadAudioSampleDesc(char index, BYTE *adtsHeader, std::vector<BYTE> &buf) const;
@@ -47,17 +56,25 @@ private:
     static size_t CreateSdt(BYTE *data, WORD nid, WORD tsid, WORD sid);
     static size_t CreateEmptyEitPf(BYTE *data, WORD nid, WORD tsid, WORD sid);
     static size_t CreateTot(BYTE *data, SYSTEMTIME st);
-    static size_t CreatePmt(BYTE *data, WORD sid, bool fAudio2);
+    static size_t CreatePmt(BYTE *data, WORD sid, bool fAudio2, bool fCaption);
     static size_t CreateHeader(BYTE *data, BYTE unitStart, BYTE adaptation, BYTE counter, WORD pid);
     static size_t CreatePcrAdaptation(BYTE *data, DWORD pcr45khz);
-    static size_t CreatePesHeader(BYTE *data, BYTE streamID, WORD packetLength, DWORD pts45khz, BYTE stuffingSize);
+    static size_t CreatePesHeader(BYTE *data, BYTE streamID, bool fDataAlignment, WORD packetLength, DWORD pts45khz, BYTE stuffingSize);
     static size_t CreateAdtsHeader(BYTE *data, int profile, int freq, int ch, int bufferSize);
     static size_t NalFileToByte(std::vector<BYTE> &data, bool &fIdr);
     static DWORD CalcCrc32(const BYTE *data, size_t len, DWORD crc = 0xFFFFFFFF);
+    static WORD CalcCrc16Ccitt(const BYTE *data, size_t len, WORD crc = 0);
+    static bool DecodeBase64(std::vector<BYTE> &dest, const char *src, size_t srcSize);
+    static bool DecodeB24Caption(std::vector<BYTE> &dest, const char *src);
 
     HANDLE m_hFile;
+    TCHAR m_metaName[MAX_PATH];
+    TCHAR m_vttExtension[16];
+    TCHAR m_iniBroadcastID[15];
+    TCHAR m_iniTime[20];
     WORD m_nid, m_tsid, m_sid;
     LARGE_INTEGER m_totStart;
+    std::vector<std::pair<__int64, std::vector<BYTE>>> m_captionList;
     std::vector<__int64> m_stsoV, m_stsoA[2];
     std::vector<DWORD> m_stszV, m_stszA[2];
     std::vector<__int64> m_sttsV, m_sttsA[2];
