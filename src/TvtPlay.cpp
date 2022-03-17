@@ -2292,6 +2292,13 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
             }
         }
         break;
+    case TVTest::EVENT_FILTERGRAPH_FINALIZED:
+        // フィルタグラフの終了処理終了
+        if (pThis->m_pApp->IsPluginEnabled()) {
+            // つぎの初期化後にフィルタの再生速度を再設定するため
+            pThis->Stretch(pThis->GetStretchID());
+        }
+        break;
     }
     return 0;
 }
