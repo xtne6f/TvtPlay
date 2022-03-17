@@ -176,24 +176,34 @@ void CReadOnlyMpeg4File::LoadCaption(LPCTSTR path)
     if (!::PathRenameExtension(vttPath, m_vttExtension) || _tfopen_s(&fp, vttPath, TEXT("rN")) != 0) {
         return;
     }
+
+    static const char B24CAPTION_MAGIC[] = "b24caption-2aaf6fcf-6388-4e59-88ff-46e1555d0edd";
+    bool fMagic = false;
     __int64 currentQueMsec = 0;
     DWORD captionNumPerSec = 0;
     BYTE currentDgiGroup = 0;
     size_t captionManagementIndex = 0;
-    enum { VTT_SIGNATURE, VTT_FIND_KIND, VTT_IGNORE, VTT_BODY, VTT_CUE_ID, VTT_CUE_TIME, VTT_CUE } state = VTT_SIGNATURE;
+    enum { VTT_SIGNATURE, VTT_IGNORE, VTT_BODY, VTT_CUE_ID, VTT_CUE_TIME, VTT_CUE } state = VTT_SIGNATURE;
     std::vector<BYTE> decodeBuf;
-    std::vector<char> buf(VTT_LINE_MAX);
+    std::vector<char> buf;
+    size_t bufLen = 0;
     size_t readFileCount = 0;
 
-    while (fgets(buf.data(), static_cast<int>(buf.size()), fp)) {
-        size_t bufLen = strlen(buf.data());
-        readFileCount += bufLen;
-        if (bufLen == 0 || bufLen >= buf.size() - 1 || readFileCount >= READ_FILE_MAX_SIZE) {
-            break;
+    while (readFileCount < READ_FILE_MAX_SIZE) {
+        if (buf.size() < bufLen + 1024) {
+            buf.resize(bufLen + 1024);
         }
-        if (buf[bufLen - 1] == '\n') {
-            buf[--bufLen] = '\0';
+        bool fEof = !fgets(buf.data() + bufLen, 1024, fp);
+        if (!fEof) {
+            size_t len = strlen(buf.data() + bufLen);
+            readFileCount += len;
+            bufLen += len;
+            if (bufLen == 0 || buf[bufLen - 1] != '\n') {
+                continue;
+            }
+            --bufLen;
         }
+        buf[bufLen] = '\0';
 
         if (state == VTT_SIGNATURE) {
             size_t i = strncmp(buf.data(), "\xEF\xBB\xBF", 3) == 0 ? 3 : 0;
@@ -201,20 +211,15 @@ void CReadOnlyMpeg4File::LoadCaption(LPCTSTR path)
                 // WebVTTでない
                 break;
             }
-            state = VTT_FIND_KIND;
-        }
-        else if (state == VTT_FIND_KIND) {
-            if (bufLen == 0) {
-                // "Kind: metadata"でない
-                break;
-            }
-            if (strncmp(buf.data(), "Kind:", 5) == 0 && strstr(&buf[5], "metadata")) {
-                state = VTT_IGNORE;
-            }
+            state = VTT_IGNORE;
+            fMagic = fMagic || strstr(buf.data(), B24CAPTION_MAGIC);
         }
         else if (state == VTT_IGNORE) {
             if (bufLen == 0) {
                 state = VTT_BODY;
+            }
+            else {
+                fMagic = fMagic || strstr(buf.data(), B24CAPTION_MAGIC);
             }
         }
         else if (state == VTT_BODY) {
@@ -223,12 +228,14 @@ void CReadOnlyMpeg4File::LoadCaption(LPCTSTR path)
                 (strncmp(buf.data(), "REGION", 6) == 0 && (bufLen == 6 || buf[6] == ' ' || buf[6] == '\t')))
             {
                 state = VTT_IGNORE;
-            }
-            else if (strstr(buf.data(), "-->")) {
-                state = VTT_CUE_TIME;
+                fMagic = fMagic || strstr(buf.data(), B24CAPTION_MAGIC);
             }
             else if (bufLen != 0) {
-                state = VTT_CUE_ID;
+                if (!fMagic) {
+                    // 最初のキューまでにマジック文字列がなかった
+                    break;
+                }
+                state = strstr(buf.data(), "-->") ? VTT_CUE_TIME : VTT_CUE_ID;
             }
         }
         else if (state == VTT_CUE_ID) {
@@ -247,7 +254,10 @@ void CReadOnlyMpeg4File::LoadCaption(LPCTSTR path)
                 state = VTT_BODY;
             }
             else if (strncmp(buf.data(), "<v b24caption", 13) == 0 && '0' <= buf[13] && buf[13] <= '8' && buf[14] == '>') {
-                buf[15 + strcspn(&buf[15], "<")] = '\0';
+                char *tagEnd = strstr(&buf[15], "</v>");
+                if (tagEnd) {
+                    *tagEnd = '\0';
+                }
                 // 秒あたりの追加数を制限する
                 if (captionNumPerSec < CAPTION_MAX_PER_SEC && DecodeB24Caption(decodeBuf, &buf[15])) {
                     // 組情報を上書き
@@ -308,6 +318,11 @@ void CReadOnlyMpeg4File::LoadCaption(LPCTSTR path)
                 }
             }
         }
+
+        if (fEof) {
+            break;
+        }
+        bufLen = 0;
     }
     fclose(fp);
 }
@@ -1273,8 +1288,18 @@ bool CReadOnlyMpeg4File::DecodeB24Caption(std::vector<BYTE> &dest, const char *s
     dest.clear();
     size_t bracePos[8];
     size_t braceCount = 0;
+    bool fIgnoreTag = false;
     while (*src) {
-        if (*src == '%') {
+        if (fIgnoreTag) {
+            fIgnoreTag = *src != '>';
+            ++src;
+        }
+        else if (*src == '<') {
+            // '>'まで無視
+            fIgnoreTag = true;
+            ++src;
+        }
+        else if (*src == '%') {
             // tsreadex仕様のエスケープされた字幕データをデコード
             ++src;
             if (!src[0] || !src[1]) {

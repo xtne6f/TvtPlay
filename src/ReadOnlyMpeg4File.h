@@ -17,7 +17,6 @@ class CReadOnlyMpeg4File : public IReadOnlyFile
     static const DWORD BLOCK_LIST_SIZE_MAX = 1000000;
     static const DWORD VIDEO_SAMPLE_MAX = 2 * 1024 * 1024;
     static const DWORD AUDIO_SAMPLE_MAX = 8184;
-    static const DWORD VTT_LINE_MAX = 32768;
     static const DWORD CAPTION_MAX_PER_SEC = 20;
     static const DWORD CAPTION_FORWARD_MSEC = 500;
     static const DWORD CAPTION_MANAGEMENT_RESEND_MSEC = 5000;
