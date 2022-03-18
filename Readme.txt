@@ -1,6 +1,6 @@
 ﻿TVTestのBonDriver_UDPやBonDriver_Pipeを使ってファイル再生するプラグインです。
 使い方などはTvtPlay_Readme.txtを参照してください。
-バイナリは上部コメント欄。
+バイナリはReleases欄。
 
 ◇branch:work
 ・更新はこのブランチに最速で適用します
