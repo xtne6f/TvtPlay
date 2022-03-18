@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2019-08-16
+// 最終更新: 2022-03-18
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -31,7 +31,7 @@
 #define INFO_DESCRIPTION_SUFFIX L"+)"
 
 static const WCHAR INFO_PLUGIN_NAME[] = L"TvtPlay";
-static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.2.6" INFO_DESCRIPTION_SUFFIX;
+static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.2.7" INFO_DESCRIPTION_SUFFIX;
 static const int INFO_VERSION = 23;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
@@ -69,8 +69,6 @@ static const int INFO_VERSION = 23;
 
 static const TCHAR SETTINGS[] = TEXT("Settings");
 static const TCHAR TVTPLAY_FRAME_WINDOW_CLASS[] = TEXT("TvtPlay Frame");
-static const char UDP_ADDR[] = "127.0.0.1";
-static const TCHAR PIPE_NAME[] = TEXT("\\\\.\\pipe\\BonDriver_Pipe%02d");
 
 enum {
     TIMER_ID_RESET_DROP = 2,
@@ -2013,6 +2011,13 @@ LRESULT CALLBACK CTvtPlay::EventCallback(UINT Event, LPARAM lParam1, LPARAM lPar
             }
         }
         break;
+    case TVTest::EVENT_FILTERGRAPH_FINALIZED:
+        // フィルタグラフの終了処理終了
+        if (pThis->m_pApp->IsPluginEnabled()) {
+            // つぎの初期化後にフィルタの再生速度を再設定するため
+            pThis->Stretch(pThis->GetStretchID());
+        }
+        break;
     case TVTest::EVENT_STATUSITEM_DRAW:
         // ステータス項目の描画
         {
@@ -2353,20 +2358,10 @@ unsigned int __stdcall CTvtPlay::TsSenderThread(LPVOID pParam)
             if (msg.message == WM_QUIT) break;
             switch (msg.message) {
             case WM_TS_SET_UDP:
-                if (1234 <= msg.lParam && msg.lParam <= 1243)
-                    pThis->m_tsSender.SetUdpAddress(UDP_ADDR, static_cast<unsigned short>(msg.lParam));
-                else
-                    pThis->m_tsSender.SetUdpAddress("", 0);
+                pThis->m_tsSender.SetUdpPort(static_cast<unsigned short>(1234 <= msg.lParam && msg.lParam <= 1243 ? msg.lParam : 0));
                 break;
             case WM_TS_SET_PIPE:
-                if (0 <= msg.lParam && msg.lParam <= 9) {
-                    TCHAR name[MAX_PATH];
-                    _stprintf_s(name, PIPE_NAME, static_cast<int>(msg.lParam));
-                    pThis->m_tsSender.SetPipeName(name);
-                }
-                else {
-                    pThis->m_tsSender.SetPipeName(TEXT(""));
-                }
+                pThis->m_tsSender.SetPipeNumber(0 <= msg.lParam && msg.lParam <= 9 ? static_cast<int>(msg.lParam) : -1);
                 break;
             case WM_TS_PAUSE:
                 if (msg.wParam) {

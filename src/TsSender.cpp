@@ -148,6 +148,7 @@ CTsSender::CTsSender()
     , m_udpPort(0)
     , m_hPipe(INVALID_HANDLE_VALUE)
     , m_hCtrlPipe(INVALID_HANDLE_VALUE)
+    , m_pipeNumber(-1)
     , m_baseTick(0)
     , m_renewSizeTick(0)
     , m_renewDurTick(0)
@@ -179,8 +180,6 @@ CTsSender::CTsSender()
     , m_adjFreq(0)
     , m_adjBase(0)
 {
-    m_udpAddr[0] = 0;
-    m_pipeName[0] = 0;
 }
 
 
@@ -355,27 +354,26 @@ void CTsSender::SetupQpc()
 }
 
 
-void CTsSender::SetUdpAddress(LPCSTR addr, unsigned short port)
+void CTsSender::SetUdpPort(unsigned short port)
 {
     // パイプ転送を停止
     ClosePipe();
-    m_pipeName[0] = 0;
+    m_pipeNumber = -1;
 
-    if (!addr[0]) CloseSocket();
-    strncpy_s(m_udpAddr, addr, _TRUNCATE);
+    if (port == 0) CloseSocket();
     m_udpPort = port;
 }
 
 
-void CTsSender::SetPipeName(LPCTSTR name)
+void CTsSender::SetPipeNumber(int n)
 {
     // UDP転送を停止
     CloseSocket();
-    m_udpAddr[0] = 0;
+    m_udpPort = 0;
 
-    if (_tcscmp(m_pipeName, name)) {
+    if (m_pipeNumber != n) {
         ClosePipe();
-        _tcsncpy_s(m_pipeName, name, _TRUNCATE);
+        m_pipeNumber = n;
     }
 }
 
@@ -394,8 +392,8 @@ void CTsSender::Close()
     m_file.reset();
     CloseSocket();
     ClosePipe();
-    m_udpAddr[0] = 0;
-    m_pipeName[0] = 0;
+    m_udpPort = 0;
+    m_pipeNumber = -1;
     m_tsShifter.Reset();
 }
 
@@ -989,16 +987,17 @@ void CTsSender::CloseSocket()
 
 void CTsSender::OpenPipe()
 {
-    if (!m_pipeName[0]) return;
+    if (m_pipeNumber < 0) return;
     ClosePipe();
 
-    if (::WaitNamedPipe(m_pipeName, NMPWAIT_USE_DEFAULT_WAIT)) {
+    TCHAR name[64];
+    _stprintf_s(name, TEXT("\\\\.\\pipe\\BonDriver_Pipe%02d"), m_pipeNumber);
+    if (::WaitNamedPipe(name, NMPWAIT_USE_DEFAULT_WAIT)) {
         // TSデータ書き込み用
-        m_hPipe = ::CreateFile(m_pipeName, GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+        m_hPipe = ::CreateFile(name, GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
     }
     if (m_hPipe != INVALID_HANDLE_VALUE) {
-        TCHAR name[_countof(m_pipeName) + 4];
-        _stprintf_s(name, TEXT("%sCtrl"), m_pipeName);
+        _tcscat_s(name, TEXT("Ctrl"));
         if (::WaitNamedPipe(name, NMPWAIT_USE_DEFAULT_WAIT)) {
             // 制御用
             m_hCtrlPipe = ::CreateFile(name, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
@@ -1033,14 +1032,14 @@ void CTsSender::CloseCtrlPipe()
 
 void CTsSender::SendData(BYTE *pData, int dataSize)
 {
-    if (m_udpAddr[0]) {
+    if (m_udpPort != 0) {
         if (m_sock == INVALID_SOCKET) OpenSocket();
         if (m_sock != INVALID_SOCKET) {
             // UDP転送
             sockaddr_in addr = {};
             addr.sin_family = AF_INET;
             addr.sin_port = htons(m_udpPort);
-            addr.sin_addr.S_un.S_addr = inet_addr(m_udpAddr);
+            addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
             // BonDriver_UDPのキューサイズ以下に分割して送る
             int sendUnit = (BON_UDP_TSDATASIZE-1880) / m_unitSize * m_unitSize;
             for (BYTE *p = pData; p < pData + dataSize; p += sendUnit) {
@@ -1054,7 +1053,7 @@ void CTsSender::SendData(BYTE *pData, int dataSize)
             }
         }
     }
-    if (m_pipeName[0]) {
+    if (m_pipeNumber >= 0) {
         if (m_hPipe == INVALID_HANDLE_VALUE) OpenPipe();
         if (m_hPipe != INVALID_HANDLE_VALUE) {
             // パイプ転送
@@ -1070,7 +1069,7 @@ void CTsSender::SendData(BYTE *pData, int dataSize)
 // 戻り値: 0(失敗)または受け取った応答文字数
 int CTsSender::TransactMessage(LPCTSTR request, LPTSTR reply)
 {
-    if (m_pipeName[0] && m_hCtrlPipe != INVALID_HANDLE_VALUE) {
+    if (m_pipeNumber >= 0 && m_hCtrlPipe != INVALID_HANDLE_VALUE) {
         TCHAR buf[BON_PIPE_MESSAGE_MAX];
         DWORD read;
         BOOL fSuccess = ::TransactNamedPipe(m_hCtrlPipe,

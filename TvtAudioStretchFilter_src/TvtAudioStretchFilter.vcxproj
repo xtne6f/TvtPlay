@@ -82,26 +82,26 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
     <TargetExt>.ax</TargetExt>
-    <IncludePath>..\..\soundtouch\include;..\..\baseclasses;$(IncludePath)</IncludePath>
-    <LibraryPath>..\..\soundtouch\lib;..\..\baseclasses\$(Configuration);$(LibraryPath)</LibraryPath>
+    <IncludePath>.\soundtouch\include;.\baseclasses;$(IncludePath)</IncludePath>
+    <LibraryPath>.\soundtouch\lib;.\baseclasses\$(Configuration);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <TargetExt>.ax</TargetExt>
-    <IncludePath>..\..\soundtouch\include;..\..\baseclasses;$(IncludePath)</IncludePath>
-    <LibraryPath>..\..\soundtouch\lib;..\..\baseclasses\$(Platform)\$(Configuration);$(LibraryPath)</LibraryPath>
+    <IncludePath>.\soundtouch\include;.\baseclasses;$(IncludePath)</IncludePath>
+    <LibraryPath>.\soundtouch\lib;.\baseclasses\$(Platform)\$(Configuration);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <TargetExt>.ax</TargetExt>
-    <IncludePath>..\..\soundtouch\include;..\..\baseclasses;$(IncludePath)</IncludePath>
-    <LibraryPath>..\..\soundtouch\lib;..\..\baseclasses\$(Configuration);$(LibraryPath)</LibraryPath>
+    <IncludePath>.\soundtouch\include;.\baseclasses;$(IncludePath)</IncludePath>
+    <LibraryPath>.\soundtouch\lib;.\baseclasses\$(Configuration);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
     <TargetExt>.ax</TargetExt>
-    <IncludePath>..\..\soundtouch\include;..\..\baseclasses;$(IncludePath)</IncludePath>
-    <LibraryPath>..\..\soundtouch\lib;..\..\baseclasses\$(Platform)\$(Configuration);$(LibraryPath)</LibraryPath>
+    <IncludePath>.\soundtouch\include;.\baseclasses;$(IncludePath)</IncludePath>
+    <LibraryPath>.\soundtouch\lib;.\baseclasses\$(Platform)\$(Configuration);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

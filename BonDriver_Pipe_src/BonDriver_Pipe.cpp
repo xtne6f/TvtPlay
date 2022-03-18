@@ -193,7 +193,7 @@ LPCTSTR CBonDriverPipe::EnumChannelName(const DWORD dwSpace, const DWORD dwChann
     // チャンネル名を返す
     if (dwSpace == 0 && dwChannel < PIPE_NODE_NUM) {
         static TCHAR szBuff[32];
-        ::wsprintf(szBuff, TEXT("Pipe番号 %u"), dwChannel);
+        ::wsprintf(szBuff, TEXT("Pipe # %u"), dwChannel);
         return szBuff;
     }
     return NULL;

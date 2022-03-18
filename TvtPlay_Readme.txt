@@ -1,13 +1,14 @@
-﻿TVTest TvtPlay Plugin ver.2.6 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.2.7 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
-TVTest付属のBonDriver_UDPまたは専用のBonDriver_Pipeを使ってローカルTSファイルを
+TVTest付属のBonDriver_UDPまたは添付のBonDriver_Pipeを使ってローカルTSファイルを
 再生するプラグインです。
 
 ■動作環境
-・Windows XP以降
+・Vista以降
 ・TVTest/TVH264 ver.0.7.16 以降。ver.0.8.1 以降を推奨
-・Microsoft Visual C++ 2015 再頒布可能パッケージ Update 3 (x86/x64)
+・必要ランタイム: 2015、2017、および 2019 用 Visual C++ 再頒布可能パッケージ
+  ・ビルド環境: Visual Studio Express 2017 for Windows Desktop
 
 ■初期導入FAQ
 ○このReadme長いんだけど？
@@ -40,9 +41,9 @@ BonDriver_Pipe.dllとTvtAudioStretchFilter.axも置きかえてください。�
 TvtPlay.iniは基本的にそのまま引き継げます。
 
 ■使い方
-TVTestのPluginsフォルダにTvtPlay.tvtpを入れてください。BonDriver_Pipe.dllは使用
-しないならば捨ててください(後述の「BonDriver_Pipe.dllについて」を参照)。なお、
-TvtPlay.tvtp_x64はx64版のTVTest利用者向けです。
+TVTestのPluginsフォルダにTvtPlay.tvtpを入れてください。BonDriver_Pipe.dllは
+TVTest.exeのあるフォルダに入れてください。"x64"フォルダにあるものは64bit版の
+TVTest向けです。
 "plus"フォルダにあるTvtPlay.tvtpはTVTest0.9.0以降専用です。
 
 TVTest起動オプションの最後に拡張子.ts .m2t .m2ts .mp4 .m3u .tslist いずれかのフ
@@ -65,10 +66,10 @@ TVTest起動オプションの最後に拡張子.ts .m2t .m2ts .mp4 .m3u .tslist
 
 倍速再生を利用する方は音声フィルタの設定が必要です。倍速再生はBonDriver_Pipe.dll
 の使用をお勧めします。同梱のDirectShowフィルタTvtAudioStretchFilter.axを適当なフ
-ォルダ(ただし64bit版OSはSystem32以外)に入れ、コマンドプロンプトから管理者権限で
-regsvr32 {フィルタのパス} と入力してください(この辺は「DirectShowフィルタ 登録」
-あたりでググってください)。無事登録されていれば、TVTestの設定->再生->音声フィル
-タにこのフィルタが現れるので、これを選択してください。
+ォルダに入れ、コマンドプロンプトから管理者権限でregsvr32 {フィルタのパス} と入力
+してください(この辺は「DirectShowフィルタ 登録」あたりでググってください)。無事
+登録されていれば、TVTestの設定->再生->音声フィルタにこのフィルタが現れるので、こ
+れを選択してください。
 
 *** 以下、必要に応じてお読みください ***
 
@@ -347,6 +348,13 @@ Button[00-17]
 [MP4]セクション【ver.2.4～】
 Enabled
     MP4再生機能(後述)を有効にする[=1]かどうか
+VttExtension【ver.2.7～】
+    同時に読み込むWebVTTファイルの拡張子
+    # デフォルトは[=.vtt]です。空文字のときは無効にします。
+    # https://github.com/xtne6f/b24tovtt が出力したWebVTTを利用できます。MP4ファ
+    # イルと同名でこの拡張子のファイルがあれば読み込みます。
+    # https://github.com/xtne6f/TVCaptionMod2 ver.2.5以降など、UCS(UTF-8)形式字
+    # 幕に対応したプラグインなどで字幕表示できます。
 BroadcastID
     ファイルの放送IDを指定
     # NetworkID=0x0001,TransportStreamID=0x0002,ServiceID=0x0003としたいときは
