@@ -17,9 +17,7 @@ class CReadOnlyMpeg4File : public IReadOnlyFile
     static const DWORD BLOCK_LIST_SIZE_MAX = 1000000;
     static const DWORD VIDEO_SAMPLE_MAX = 2 * 1024 * 1024;
     static const DWORD AUDIO_SAMPLE_MAX = 8184;
-    static const DWORD CAPTION_MAX_PER_SEC = 20;
     static const DWORD CAPTION_FORWARD_MSEC = 500;
-    static const DWORD CAPTION_MANAGEMENT_RESEND_MSEC = 5000;
 public:
     CReadOnlyMpeg4File() : m_hFile(INVALID_HANDLE_VALUE) {}
     ~CReadOnlyMpeg4File() { Close(); }
@@ -62,9 +60,6 @@ private:
     static size_t CreateAdtsHeader(BYTE *data, int profile, int freq, int ch, int bufferSize);
     static size_t NalFileToByte(std::vector<BYTE> &data, bool &fIdr);
     static DWORD CalcCrc32(const BYTE *data, size_t len, DWORD crc = 0xFFFFFFFF);
-    static WORD CalcCrc16Ccitt(const BYTE *data, size_t len, WORD crc = 0);
-    static bool DecodeBase64(std::vector<BYTE> &dest, const char *src, size_t srcSize);
-    static bool DecodeB24Caption(std::vector<BYTE> &dest, const char *src);
 
     HANDLE m_hFile;
     TCHAR m_metaName[MAX_PATH];

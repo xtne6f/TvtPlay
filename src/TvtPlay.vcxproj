@@ -167,6 +167,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Aero.h" />
+    <ClInclude Include="B24CaptionUtil.h" />
     <ClInclude Include="BufferedFileReader.h" />
     <ClInclude Include="BasicWindow.h" />
     <ClInclude Include="CaptionAnalyzer.h" />
@@ -189,6 +190,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Aero.cpp" />
+    <ClCompile Include="B24CaptionUtil.cpp" />
     <ClCompile Include="BufferedFileReader.cpp" />
     <ClCompile Include="BasicWindow.cpp" />
     <ClCompile Include="CaptionAnalyzer.cpp" />
