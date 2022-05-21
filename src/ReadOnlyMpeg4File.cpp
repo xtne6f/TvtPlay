@@ -7,7 +7,7 @@
 
 extern HINSTANCE g_hinstDLL;
 
-bool CReadOnlyMpeg4File::Open(LPCTSTR path, int flags)
+bool CReadOnlyMpeg4File::Open(LPCTSTR path, int flags, LPCTSTR &errorMessage)
 {
     Close();
     if ((flags & OPEN_FLAG_NORMAL) && !(flags & OPEN_FLAG_SHARE_WRITE) && LoadSettings()) {
@@ -16,7 +16,7 @@ bool CReadOnlyMpeg4File::Open(LPCTSTR path, int flags)
         if (m_hFile != INVALID_HANDLE_VALUE) {
             LoadCaption(path);
             OpenPsiData(path);
-            if (InitializeTable()) {
+            if (InitializeTable(errorMessage)) {
                 InitializeMetaInfo(path);
                 m_blockInfo = m_blockList.begin();
                 m_blockCache.clear();
@@ -196,7 +196,7 @@ void CReadOnlyMpeg4File::OpenPsiData(LPCTSTR path)
     m_psiDataReader.Open(psiDataPath);
 }
 
-bool CReadOnlyMpeg4File::InitializeTable()
+bool CReadOnlyMpeg4File::InitializeTable(LPCTSTR &errorMessage)
 {
     std::vector<BYTE> buf;
     m_stsoV.clear();
@@ -234,8 +234,16 @@ bool CReadOnlyMpeg4File::InitializeTable()
             }
         }
     }
+    if (m_stsoV.empty()) {
+        errorMessage = TEXT("CReadOnlyMpeg4File: No video track");
+        return false;
+    }
     // 音声2は必須でない
-    return !m_stsoV.empty() && !m_stsoA[0].empty() && InitializeBlockList();
+    if (m_stsoA[0].empty()) {
+        errorMessage = TEXT("CReadOnlyMpeg4File: No audio track");
+        return false;
+    }
+    return InitializeBlockList(errorMessage);
 }
 
 bool CReadOnlyMpeg4File::ReadVideoSampleDesc(char index, std::vector<BYTE> &spsPps, std::vector<BYTE> &buf) const
@@ -486,7 +494,7 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
     return true;
 }
 
-bool CReadOnlyMpeg4File::InitializeBlockList()
+bool CReadOnlyMpeg4File::InitializeBlockList(LPCTSTR &errorMessage)
 {
     m_blockList.clear();
     BLOCK_100MSEC block = {};
@@ -563,7 +571,6 @@ bool CReadOnlyMpeg4File::InitializeBlockList()
         m_blockList.back().pos = static_cast<DWORD>(size);
     }
 
-    LPCTSTR errorMessage = nullptr;
     if (!InitializePsiCounterInfo(errorMessage)) {
         return false;
     }

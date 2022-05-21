@@ -1503,7 +1503,15 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset, int stretchID)
 {
     Close();
 
-    if (!m_tsSender.Open(fileName, m_salt, m_readBufSizeKB*1024, m_fConvTo188, m_fUnderrunCtrl, m_fUseQpc, m_pcrThresholdMsec)) return false;
+    LPCTSTR errorMessage = nullptr;
+    if (!m_tsSender.Open(fileName, m_salt, m_readBufSizeKB*1024, m_fConvTo188, m_fUnderrunCtrl, m_fUseQpc,
+                         m_pcrThresholdMsec, errorMessage))
+    {
+        if (errorMessage) {
+            m_pApp->AddLog(errorMessage, TVTest::LOG_TYPE_ERROR);
+        }
+        return false;
+    }
 
     bool fSeeked = false;
     if (offset >= 0) {

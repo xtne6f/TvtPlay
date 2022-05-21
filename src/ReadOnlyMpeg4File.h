@@ -30,7 +30,7 @@ class CReadOnlyMpeg4File : public IReadOnlyFile
 public:
     CReadOnlyMpeg4File() : m_hFile(INVALID_HANDLE_VALUE) {}
     ~CReadOnlyMpeg4File() { Close(); }
-    bool Open(LPCTSTR path, int flags);
+    bool Open(LPCTSTR path, int flags, LPCTSTR &errorMessage);
     void Close();
     int Read(BYTE *pBuf, int numToRead);
     __int64 SetPointer(__int64 distanceToMove, MOVE_METHOD moveMethod);
@@ -54,12 +54,12 @@ private:
     void InitializeMetaInfo(LPCTSTR path);
     void LoadCaption(LPCTSTR path);
     void OpenPsiData(LPCTSTR path);
-    bool InitializeTable();
+    bool InitializeTable(LPCTSTR &errorMessage);
     bool ReadVideoSampleDesc(char index, std::vector<BYTE> &spsPps, std::vector<BYTE> &buf) const;
     bool ReadAudioSampleDesc(char index, BYTE *adtsHeader, std::vector<BYTE> &buf) const;
     bool ReadSampleTable(char index, std::vector<__int64> &stso, std::vector<DWORD> &stsz,
                          std::vector<__int64> &stts, std::vector<DWORD> *ctts, std::vector<BYTE> &buf) const;
-    bool InitializeBlockList();
+    bool InitializeBlockList(LPCTSTR &errorMessage);
     bool ReadCurrentBlock();
     bool InitializePsiCounterInfo(LPCTSTR &errorMessage);
     int ReadBox(LPCSTR path, std::vector<BYTE> &data) const;
