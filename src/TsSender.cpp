@@ -170,7 +170,8 @@ CTsSender::CTsSender()
     , m_duration(0)
     , m_totBase(0)
     , m_totBasePcr(0)
-    , m_hash(0)
+    , m_hash(-1)
+    , m_oldHash(-1)
     , m_speedNum(100)
     , m_speedDen(100)
     , m_initStore(INITIAL_STORE_MSEC)
@@ -236,8 +237,9 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     m_fUnderrunCtrl = fUnderrunCtrl;
 
     // 識別情報としてファイル先頭の56bitハッシュ値をとる
-    m_hash = CalcHash(buf, min(readBytes, 2048), salt);
-    if (m_hash < 0) goto ERROR_EXIT;
+    m_hash = CalcHash(buf, readBytes, salt, &m_oldHash);
+    // 旧仕様のハッシュ値と区別するため
+    m_hash |= 1LL << 56;
 
     // PCRの連続性を調べることでレート制御リセットの参考とする
     // PCRの挿入間隔は規定により100msを超えない

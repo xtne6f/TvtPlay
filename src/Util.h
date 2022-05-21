@@ -28,7 +28,7 @@ std::vector<WCHAR> ReadUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, bool fN
 bool WriteUtfFileToEnd(LPCTSTR fileName, DWORD dwShareMode, const WCHAR *pStr);
 bool ComposeMonoColorIcon(HDC hdcDest, int destX, int destY, HBITMAP hbm, LPCTSTR pIdxList, int iconSize);
 BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPCTSTR lpFileName);
-LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt);
+LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt, LONGLONG *pHead2kbHash);
 
 static const DWORD PCR_PER_MSEC = 45;
 

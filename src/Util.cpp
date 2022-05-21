@@ -263,10 +263,13 @@ BOOL WritePrivateProfileInt(LPCTSTR lpAppName, LPCTSTR lpKeyName, int value, LPC
 
 // MD5ハッシュ値を計算して先頭56bitを返す
 // 失敗時は負を返す
-LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt)
+LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt, LONGLONG *pHead2kbHash)
 {
     HCRYPTPROV hProv;
     LONGLONG llRet = -1;
+    if (pHead2kbHash) {
+        *pHead2kbHash = -1;
+    }
     if (::CryptAcquireContext(&hProv, nullptr, nullptr, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
         HCRYPTHASH hHash;
         if (::CryptCreateHash(hProv, CALG_MD5, 0, 0, &hHash)) {
@@ -278,6 +281,18 @@ LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt)
                 ::CryptGetHashParam(hHash, HP_HASHVAL, pbHash, &dwHashLen, 0)) {
                 llRet = ((LONGLONG)pbHash[0]<<48) | ((LONGLONG)pbHash[1]<<40) | ((LONGLONG)pbHash[2]<<32) |
                         ((LONGLONG)pbHash[3]<<24) | (pbHash[4]<<16) | (pbHash[5]<<8) | pbHash[6];
+            }
+            ::CryptDestroyHash(hHash);
+        }
+        if (pHead2kbHash && ::CryptCreateHash(hProv, CALG_MD5, 0, 0, &hHash)) {
+            // 先頭2KBのハッシュ値も返す
+            BYTE pbHash[16];
+            DWORD dwHashLen = 16;
+            if (::CryptHashData(hHash, (LPBYTE)&dwSalt, sizeof(dwSalt), 0) &&
+                ::CryptHashData(hHash, pbData, min(dwDataLen, 2048), 0) &&
+                ::CryptGetHashParam(hHash, HP_HASHVAL, pbHash, &dwHashLen, 0)) {
+                *pHead2kbHash = ((LONGLONG)pbHash[0]<<48) | ((LONGLONG)pbHash[1]<<40) | ((LONGLONG)pbHash[2]<<32) |
+                                ((LONGLONG)pbHash[3]<<24) | (pbHash[4]<<16) | (pbHash[5]<<8) | pbHash[6];
             }
             ::CryptDestroyHash(hHash);
         }

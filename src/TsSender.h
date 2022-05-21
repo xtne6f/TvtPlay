@@ -59,6 +59,7 @@ public:
     bool IsFixed(bool *pfSpecialExt = nullptr) const { if (pfSpecialExt) *pfSpecialExt=m_fSpecialExtending; return m_fFixed; }
     void GetSpeed(int *pNum, int *pDen) const { *pNum=m_speedNum; *pDen=m_speedDen; }
     __int64 GetFileHash() const { return m_hash; }
+    __int64 GetOldFileHash() const { return m_oldHash; }
     int GetDuration() const;
     int GetPosition() const;
     int GetBroadcastTime() const;
@@ -104,7 +105,8 @@ private:
     int m_duration;
     int m_totBase;
     DWORD m_totBasePcr;
-    __int64 m_hash;
+    LONGLONG m_hash;
+    LONGLONG m_oldHash;
     int m_speedNum, m_speedDen;
     DWORD m_initStore;
     bool m_fSpecialExtending;
