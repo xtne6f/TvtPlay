@@ -175,6 +175,7 @@
     <ClInclude Include="ColorScheme.h" />
     <ClInclude Include="DrawUtil.h" />
     <ClInclude Include="Playlist.h" />
+    <ClInclude Include="PsiArchiveReader.h" />
     <ClInclude Include="ReadOnlyFile.h" />
     <ClInclude Include="ReadOnlyMpeg4File.h" />
     <ClInclude Include="resource.h" />
@@ -198,6 +199,7 @@
     <ClCompile Include="ColorScheme.cpp" />
     <ClCompile Include="DrawUtil.cpp" />
     <ClCompile Include="Playlist.cpp" />
+    <ClCompile Include="PsiArchiveReader.cpp" />
     <ClCompile Include="ReadOnlyFile.cpp" />
     <ClCompile Include="ReadOnlyMpeg4File.cpp" />
     <ClCompile Include="Settings.cpp" />
