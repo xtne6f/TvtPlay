@@ -775,6 +775,15 @@ TDStretch * TDStretch::newInstance()
 
     // Check if MMX/SSE instruction set extensions supported by CPU
 
+#ifdef SOUNDTOUCH_ALLOW_SSE2
+    // SSE2 routines available only with integer sample types
+    if (uExtensions & SUPPORT_SSE2)
+    {
+        return ::new TDStretchSSE2;
+    }
+    else
+#endif // SOUNDTOUCH_ALLOW_SSE2
+
 #ifdef SOUNDTOUCH_ALLOW_MMX
     // MMX routines available only with integer sample types
     if (uExtensions & SUPPORT_MMX)

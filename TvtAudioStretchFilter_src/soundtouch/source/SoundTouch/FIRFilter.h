@@ -135,6 +135,25 @@ public:
 
 #endif // SOUNDTOUCH_ALLOW_SSE
 
+
+#ifdef SOUNDTOUCH_ALLOW_SSE2
+    /// Class that implements SSE2 optimized functions exclusive for 16bit integer samples type.
+    class FIRFilterSSE2 : public FIRFilter
+    {
+    protected:
+        short *filterCoeffsUnalign;
+        short *filterCoeffsAlign;
+
+        virtual uint evaluateFilterStereo(short *dest, const short *src, uint numSamples) const;
+    public:
+        FIRFilterSSE2();
+        ~FIRFilterSSE2();
+
+        virtual void setCoefficients(const short *coeffs, uint newLength, uint uResultDivFactor);
+    };
+
+#endif // SOUNDTOUCH_ALLOW_SSE2
+
 }
 
 #endif  // FIRFilter_H
