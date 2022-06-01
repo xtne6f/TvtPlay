@@ -166,11 +166,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="B24CaptionUtil.h" />
     <ClInclude Include="BufferedFileReader.h" />
     <ClInclude Include="CaptionAnalyzer.h" />
     <ClInclude Include="ChapterMap.h" />
     <ClInclude Include="DrawUtil.h" />
     <ClInclude Include="Playlist.h" />
+    <ClInclude Include="PsiArchiveReader.h" />
     <ClInclude Include="ReadOnlyFile.h" />
     <ClInclude Include="ReadOnlyMpeg4File.h" />
     <ClInclude Include="resource.h" />
@@ -182,11 +184,13 @@
     <ClInclude Include="Util.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="B24CaptionUtil.cpp" />
     <ClCompile Include="BufferedFileReader.cpp" />
     <ClCompile Include="CaptionAnalyzer.cpp" />
     <ClCompile Include="ChapterMap.cpp" />
     <ClCompile Include="DrawUtil.cpp" />
     <ClCompile Include="Playlist.cpp" />
+    <ClCompile Include="PsiArchiveReader.cpp" />
     <ClCompile Include="ReadOnlyFile.cpp" />
     <ClCompile Include="ReadOnlyMpeg4File.cpp" />
     <ClCompile Include="TvtPlayUtil.cpp" />

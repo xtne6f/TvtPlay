@@ -170,7 +170,8 @@ CTsSender::CTsSender()
     , m_duration(0)
     , m_totBase(0)
     , m_totBasePcr(0)
-    , m_hash(0)
+    , m_hash(-1)
+    , m_oldHash(-1)
     , m_speedNum(100)
     , m_speedDen(100)
     , m_initStore(INITIAL_STORE_MSEC)
@@ -189,7 +190,8 @@ CTsSender::~CTsSender()
 }
 
 
-bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, bool fUnderrunCtrl, bool fUseQpc, int pcrDisconThresholdMsec)
+bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, bool fUnderrunCtrl, bool fUseQpc,
+                     int pcrDisconThresholdMsec, LPCTSTR &errorMessage)
 {
     Close();
 
@@ -197,7 +199,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
         m_file.reset(new CReadOnlyMpeg4File());
         m_fShareWrite = false;
         m_fFixed = true;
-        if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL)) {
+        if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL, errorMessage)) {
             m_file.reset();
             return false;
         }
@@ -207,11 +209,12 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
         m_file.reset(new CReadOnlyLocalFile());
         m_fShareWrite = false;
         m_fFixed = true;
-        if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL)) {
+        if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL, errorMessage)) {
+            errorMessage = nullptr;
             // 録画中かもしれない。書き込み共有で開く
             m_fShareWrite = true;
             m_fFixed = false;
-            if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL | IReadOnlyFile::OPEN_FLAG_SHARE_WRITE)) {
+            if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL | IReadOnlyFile::OPEN_FLAG_SHARE_WRITE, errorMessage)) {
                 m_file.reset();
                 return false;
             }
@@ -234,8 +237,9 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     m_fUnderrunCtrl = fUnderrunCtrl;
 
     // 識別情報としてファイル先頭の56bitハッシュ値をとる
-    m_hash = CalcHash(buf, min(readBytes, 2048), salt);
-    if (m_hash < 0) goto ERROR_EXIT;
+    m_hash = CalcHash(buf, readBytes, salt, &m_oldHash);
+    // 旧仕様のハッシュ値と区別するため
+    m_hash |= 1LL << 56;
 
     // PCRの連続性を調べることでレート制御リセットの参考とする
     // PCRの挿入間隔は規定により100msを超えない
@@ -268,7 +272,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
 
     // ファイル先頭のPCRを取得
     if (!SeekToBegin()) {
-        OutputDebugString(TEXT("CTsSender::Open(): SeekToBegin() Error\n"));
+        errorMessage = TEXT("CTsSender::Open(): SeekToBegin() Error");
         goto ERROR_EXIT;
     }
     m_initPcr = m_pcr;
@@ -316,7 +320,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     }
 
     if (!SeekToBegin()) {
-        OutputDebugString(TEXT("CTsSender::Open(): SeekToBegin()-2 Error\n"));
+        errorMessage = TEXT("CTsSender::Open(): SeekToBegin()-2 Error");
         goto ERROR_EXIT;
     }
 

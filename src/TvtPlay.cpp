@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2022-03-18
+// 最終更新: 2022-06-01
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -31,7 +31,7 @@
 #define INFO_DESCRIPTION_SUFFIX L"+)"
 
 static const WCHAR INFO_PLUGIN_NAME[] = L"TvtPlay";
-static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.2.7" INFO_DESCRIPTION_SUFFIX;
+static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.2.8" INFO_DESCRIPTION_SUFFIX;
 static const int INFO_VERSION = 23;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
@@ -587,16 +587,18 @@ void CTvtPlay::SaveFileInfoSetting(const std::list<HASH_INFO> &hashList) const
 }
 
 // ファイル固有情報を更新する
-void CTvtPlay::UpdateFileInfoSetting(const HASH_INFO &hashInfo) const
+void CTvtPlay::UpdateFileInfoSetting(const HASH_INFO &hashInfo, LONGLONG oldHash) const
 {
     std::list<HASH_INFO> hashList;
     if (LoadFileInfoSetting(hashList)) {
         // リストから削除
         std::list<HASH_INFO>::iterator it = hashList.begin();
-        for (; it != hashList.end(); ++it) {
-            if (it->hash == hashInfo.hash) {
-                hashList.erase(it);
-                break;
+        while (it != hashList.end()) {
+            if (it->hash == hashInfo.hash || it->hash == oldHash) {
+                it = hashList.erase(it);
+            }
+            else {
+                ++it;
             }
         }
         // レジューム情報が有効なときだけ追加(TODO: HASH_INFOを拡張するときはこの部分の再考が必要)
@@ -1366,7 +1368,15 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset, int stretchID)
 {
     Close();
 
-    if (!m_tsSender.Open(fileName, m_salt, m_readBufSizeKB*1024, m_fConvTo188, m_fUnderrunCtrl, m_fUseQpc, m_pcrThresholdMsec)) return false;
+    LPCTSTR errorMessage = nullptr;
+    if (!m_tsSender.Open(fileName, m_salt, m_readBufSizeKB*1024, m_fConvTo188, m_fUnderrunCtrl, m_fUseQpc,
+                         m_pcrThresholdMsec, errorMessage))
+    {
+        if (errorMessage) {
+            m_pApp->AddLog(errorMessage, TVTest::LOG_TYPE_ERROR);
+        }
+        return false;
+    }
 
     bool fSeeked = false;
     if (offset >= 0) {
@@ -1380,13 +1390,12 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset, int stretchID)
         // レジューム情報があればその地点までシーク
         std::list<HASH_INFO> hashList;
         LoadFileInfoSetting(hashList);
-        LONGLONG hash = m_tsSender.GetFileHash();
         std::list<HASH_INFO>::const_iterator it = hashList.begin();
         for (; it != hashList.end(); ++it) {
-            if ((*it).hash == hash) {
+            if (it->hash == m_tsSender.GetFileHash() || it->hash == m_tsSender.GetOldFileHash()) {
                 // 先頭or終端から5秒の範囲はレジュームしない
-                if (5000 < (*it).resumePos && (*it).resumePos < m_tsSender.GetDuration() - 5000) {
-                    m_tsSender.Seek((*it).resumePos - 3000);
+                if (5000 < it->resumePos && it->resumePos < m_tsSender.GetDuration() - 5000) {
+                    m_tsSender.Seek(it->resumePos - 3000);
                     fSeeked = true;
                 }
                 break;
@@ -1499,10 +1508,12 @@ void CTvtPlay::Close()
 
         HASH_INFO hashInfo = {};
         hashInfo.hash = m_tsSender.GetFileHash();
-        int pos = m_tsSender.GetPosition();
-        // 先頭or終端から5秒の範囲はレジューム情報を記録しない
-        hashInfo.resumePos = pos <= 5000 || m_tsSender.IsFixed() && m_tsSender.GetDuration()-5000 <= pos ? -1 : pos;
-        UpdateFileInfoSetting(hashInfo);
+        if (hashInfo.hash >= 0) {
+            int pos = m_tsSender.GetPosition();
+            // 先頭or終端から5秒の範囲はレジューム情報を記録しない
+            hashInfo.resumePos = pos <= 5000 || (m_tsSender.IsFixed() && m_tsSender.GetDuration() - 5000 <= pos) ? -1 : pos;
+            UpdateFileInfoSetting(hashInfo, m_tsSender.GetOldFileHash());
+        }
 
         ::KillTimer(m_hwndFrame, TIMER_ID_UPDATE_HASH_LIST);
         ::KillTimer(m_hwndFrame, TIMER_ID_SYNC_CHAPTER);
@@ -2169,10 +2180,12 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             if (pThis->IsOpen()) {
                 HASH_INFO hashInfo = {};
                 hashInfo.hash = pThis->m_tsSender.GetFileHash();
-                int pos = pThis->GetPosition();
-                // 先頭or終端から5秒の範囲はレジューム情報を記録しない
-                hashInfo.resumePos = pos <= 5000 || !pThis->IsExtending() && pThis->GetDuration()-5000 <= pos ? -1 : pos;
-                pThis->UpdateFileInfoSetting(hashInfo);
+                if (hashInfo.hash >= 0) {
+                    int pos = pThis->GetPosition();
+                    // 先頭or終端から5秒の範囲はレジューム情報を記録しない
+                    hashInfo.resumePos = pos <= 5000 || (!pThis->IsExtending() && pThis->GetDuration() - 5000 <= pos) ? -1 : pos;
+                    pThis->UpdateFileInfoSetting(hashInfo, pThis->m_tsSender.GetOldFileHash());
+                }
             }
             return 0;
         case TIMER_ID_SYNC_CHAPTER:
