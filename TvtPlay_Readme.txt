@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.2.7 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.2.8 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは添付のBonDriver_Pipeを使ってローカルTSファイルを
@@ -355,6 +355,12 @@ VttExtension【ver.2.7～】
     # イルと同名でこの拡張子のファイルがあれば読み込みます。
     # https://github.com/xtne6f/TVCaptionMod2 ver.2.5以降など、UCS(UTF-8)形式字
     # 幕に対応したプラグインなどで字幕表示できます。
+PsiDataExtension【ver.2.8～】
+    同時に読み込むPSI/SIデータファイルの拡張子
+    # デフォルトは[=.psc]です。空文字のときは無効にします。
+    # MP4再生時に番組情報や放送時刻、データ放送といった情報を再現できます。
+    # https://github.com/xtne6f/psisiarc が出力した書庫を利用できます。
+    # BroadcastIDやTimeキーの指定は無視されます。
 BroadcastID
     ファイルの放送IDを指定
     # NetworkID=0x0001,TransportStreamID=0x0002,ServiceID=0x0003としたいときは
@@ -495,7 +501,9 @@ http://www.marumo.ne.jp/junk/tsselect-0.1.8.lzh)よりソースコードを改�
 TvtAudioStretchFilterフィルタは、再生レート制御のために、SoundTouchライブラリver
 .1.9.2(http://www.surina.net/soundtouch/)を利用し、TvtPlayスレ2>>774のSSE2最適化
 パッチ(http://toro.2ch.net/test/read.cgi/avi/1348364114/774 )を少し補正したもの
-を適用しています。
+を適用しています。自ビルドする場合は、TvtAudioStretchFilter.slnをビルドする前に
+baseclasses/BaseClasses_VC14.sln と soundtouch/source/SoundTouch/SoundTouch.sln
+をビルドしてください。
 デフォルトのアイコン画像"Buttons.bmp"は、「HDUS関係ファイル置き場」(
 http://2sen.dip.jp/dtv/)のup0598.zip「非公式 TvtPlayシークボタンカスタマイズ用ア
 イコン 修正2」のデザインをもとに作成しています。61～65番のアイコンはup0635.zip
