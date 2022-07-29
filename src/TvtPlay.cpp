@@ -124,6 +124,7 @@ CTvtPlay::CTvtPlay()
     , m_fShowOpenDialog(false)
     , m_fRaisePriority(false)
     , m_hwndFrame(NULL)
+    , m_fAutoClose(false)
     , m_fAutoHide(false)
     , m_fAutoHideActive(false)
     , m_fHoveredFromOutside(false)
@@ -359,6 +360,7 @@ void CTvtPlay::LoadSettings()
         m_pcrThresholdMsec  = GetBufferedProfileInt(pBuf, TEXT("TsPcrDiscontinuityThreshold"), 400);
         m_fShowOpenDialog   = GetBufferedProfileInt(pBuf, TEXT("ShowOpenDialog"), 0) != 0;
         m_fRaisePriority    = GetBufferedProfileInt(pBuf, TEXT("RaiseMainThreadPriority"), 0) != 0;
+        m_fAutoClose        = GetBufferedProfileInt(pBuf, TEXT("AutoClose"), 0) != 0;
         m_fAutoHide         = GetBufferedProfileInt(pBuf, TEXT("AutoHide"), 0) != 0;
         m_statusRow         = GetBufferedProfileInt(pBuf, TEXT("RowPos"), 0);
         m_statusRowFull     = GetBufferedProfileInt(pBuf, TEXT("RowPosFull"), 0);
@@ -577,6 +579,7 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
         WritePrivateProfileInt(SETTINGS, TEXT("ShowOpenDialog"), m_fShowOpenDialog, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("RaiseMainThreadPriority"), m_fRaisePriority, m_szIniFileName);
     }
+    WritePrivateProfileInt(SETTINGS, TEXT("AutoClose"), m_fAutoClose, m_szIniFileName);
     WritePrivateProfileInt(SETTINGS, TEXT("AutoHide"), m_fAutoHide, m_szIniFileName);
     if (fWriteDefault) {
         WritePrivateProfileInt(SETTINGS, TEXT("RowPos"), m_statusRow, m_szIniFileName);
@@ -905,6 +908,7 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
         }
         ::AppendMenu(hmenu, MF_STRING|(m_fPosDrawTot?MF_CHECKED:MF_UNCHECKED), 2, TEXT("放送時刻を表示する"));
         ::AppendMenu(hmenu, MF_STRING|(m_fModTimestamp?MF_CHECKED:MF_UNCHECKED), 3, TEXT("ラップアラウンドを回避する"));
+        ::AppendMenu(hmenu, MF_STRING|(m_fAutoClose?MF_CHECKED:MF_UNCHECKED), 4, TEXT("再生終了時に自動終了する"));
 #ifdef EN_SWC
         HMENU hSubMenu = ::CreatePopupMenu();
         if (hSubMenu) {
@@ -941,6 +945,10 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
     else if (selID == 3) {
         m_fModTimestamp = !m_fModTimestamp;
         SetModTimestamp(m_fModTimestamp);
+        SaveSettings();
+    }
+    else if (selID == 4) {
+        m_fAutoClose = !m_fAutoClose;
         SaveSettings();
     }
 #ifdef EN_SWC
@@ -2278,7 +2286,10 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
         break;
     case WM_QUERY_CLOSE_NEXT:
         pThis->Close();
-        if (pThis->m_playlist.Next(pThis->IsAllRepeat())) pThis->OpenCurrent();
+        if (pThis->m_playlist.Next(pThis->IsAllRepeat()))
+            pThis->OpenCurrent();
+        else if (pThis->m_fAutoClose)
+            pThis->m_pApp->Close();
         break;
     case WM_QUERY_SEEK_BGN:
         pThis->SeekToBegin();

@@ -102,6 +102,7 @@ private:
 
     // コントロール
     HWND m_hwndFrame;
+    bool m_fAutoClose;
     bool m_fAutoHide, m_fAutoHideActive;
     bool m_fHoveredFromOutside;
     int m_statusRow, m_statusRowFull;
