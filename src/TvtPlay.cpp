@@ -31,7 +31,7 @@
 #include "TVTestPlugin.h"
 #include "TvtPlay.h"
 
-static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay";
+static LPCWSTR INFO_PLUGIN_NAME = L"TvtPlay_v.1.8.r2";
 static LPCWSTR INFO_DESCRIPTION = L"ファイル再生機能を追加 (ver.1.8r2)";
 static const int INFO_VERSION = 21;
 
