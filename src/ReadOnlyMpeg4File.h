@@ -55,7 +55,7 @@ private:
     void LoadCaption(LPCTSTR path);
     void OpenPsiData(LPCTSTR path);
     bool InitializeTable(LPCTSTR &errorMessage);
-    bool ReadVideoSampleDesc(char index, std::vector<BYTE> &spsPps, std::vector<BYTE> &buf) const;
+    bool ReadVideoSampleDesc(char index, bool &fHevc, std::vector<BYTE> &spsPps, std::vector<BYTE> &buf) const;
     bool ReadAudioSampleDesc(char index, BYTE *adtsHeader, std::vector<BYTE> &buf) const;
     bool ReadSampleTable(char index, std::vector<__int64> &stso, std::vector<DWORD> &stsz,
                          std::vector<__int64> &stts, std::vector<DWORD> *ctts, std::vector<BYTE> &buf) const;
@@ -72,15 +72,15 @@ private:
     static size_t CreateSdt(BYTE *data, WORD nid, WORD tsid, WORD sid);
     static size_t CreateEmptyEitPf(BYTE *data, WORD nid, WORD tsid, WORD sid);
     static size_t CreateTot(BYTE *data, SYSTEMTIME st);
-    static size_t CreatePmt(BYTE *data, WORD sid, bool fAudio2, bool fCaption);
+    static size_t CreatePmt(BYTE *data, WORD sid, bool fHevc, bool fAudio2, bool fCaption);
     static bool AddPmtPacketsFromPmt(std::vector<BYTE> &buf, const std::vector<BYTE> &pmt, const std::map<WORD, PSI_COUNTER_INFO> &pidMap,
-                                     bool fAudio2, bool fCaption);
-    static size_t CreatePmt2ndLoop(BYTE *data, bool fAudio2, bool fCaption);
+                                     bool fHevc, bool fAudio2, bool fCaption);
+    static size_t CreatePmt2ndLoop(BYTE *data, bool fHevc, bool fAudio2, bool fCaption);
     static size_t CreateHeader(BYTE *data, BYTE unitStart, BYTE adaptation, BYTE counter, WORD pid);
     static size_t CreatePcrAdaptation(BYTE *data, DWORD pcr45khz);
     static size_t CreatePesHeader(BYTE *data, BYTE streamID, bool fDataAlignment, WORD packetLength, DWORD pts45khz, BYTE stuffingSize);
     static size_t CreateAdtsHeader(BYTE *data, int profile, int freq, int ch, int bufferSize);
-    static size_t NalFileToByte(std::vector<BYTE> &data, bool &fIdr);
+    static size_t NalFileToByte(std::vector<BYTE> &data, bool &fIdr, bool fHevc);
     static DWORD CalcCrc32(const BYTE *data, size_t len, DWORD crc = 0xFFFFFFFF);
 
     HANDLE m_hFile;
@@ -97,6 +97,7 @@ private:
     std::vector<__int64> m_sttsV, m_sttsA[2];
     std::vector<DWORD> m_cttsV;
     DWORD m_timeScaleV, m_timeScaleA[2];
+    bool m_fHevc;
     std::vector<BYTE> m_spsPps;
     BYTE m_adtsHeader[2][7];
     std::vector<BLOCK_100MSEC> m_blockList;
