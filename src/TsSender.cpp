@@ -931,7 +931,9 @@ bool CTsSender::Seek(__int64 distanceToMove, IReadOnlyFile::MOVE_METHOD moveMeth
     __int64 lastPos = m_reader.GetFilePosition();
     if (lastPos < 0) return false;
 
-    if (m_file->SetPointer(distanceToMove, moveMethod) < 0) return false;
+    // 同期済みのファイルがなるべく同期済みのままになるよう移動量をパケット単位にする
+    __int64 moveUnits = distanceToMove < 0 ? -(-distanceToMove / m_unitSize) : distanceToMove / m_unitSize;
+    if (m_file->SetPointer(moveUnits * m_unitSize, moveMethod) < 0) return false;
 
     m_curr = m_head = m_tail = nullptr;
     m_fEnPcr = false;
