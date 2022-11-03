@@ -34,7 +34,7 @@
 
 static const WCHAR INFO_PLUGIN_NAME[] = L"TvtPlay";
 static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.2.8" INFO_DESCRIPTION_SUFFIX;
-static const int INFO_VERSION = 23;
+static const int INFO_VERSION = 24;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
 #define WM_QUERY_CLOSE_NEXT (WM_APP + 2)
@@ -150,6 +150,7 @@ CTvtPlay::CTvtPlay()
     , m_fSeekDrawOfs(false)
     , m_fSeekDrawTot(false)
     , m_fPosDrawTot(false)
+    , m_fAutoClose(false)
     , m_seekItemMinWidth(0)
     , m_posItemWidth(0)
     , m_timeoutOnCmd(0)
@@ -403,6 +404,7 @@ void CTvtPlay::LoadSettings()
         m_fSeekDrawOfs      = GetBufferedProfileInt(pBuf, TEXT("DispOffset"), 0) != 0;
         m_fSeekDrawTot      = GetBufferedProfileInt(pBuf, TEXT("DispTot"), 0) != 0;
         m_fPosDrawTot       = GetBufferedProfileInt(pBuf, TEXT("DispTotOnStatus"), 0) != 0;
+        m_fAutoClose        = GetBufferedProfileInt(pBuf, TEXT("AutoClose"), 0) != 0;
         m_seekItemMinWidth  = GetBufferedProfileInt(pBuf, TEXT("SeekItemMinWidth"), 128);
         m_posItemWidth      = GetBufferedProfileInt(pBuf, TEXT("StatusItemWidth"), -1);
         m_timeoutOnCmd      = GetBufferedProfileInt(pBuf, TEXT("TimeoutOnCommand"), 2000);
@@ -615,6 +617,7 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
         WritePrivateProfileInt(SETTINGS, TEXT("DispTot"), m_fSeekDrawTot, m_szIniFileName);
     }
     WritePrivateProfileInt(SETTINGS, TEXT("DispTotOnStatus"), m_fPosDrawTot, m_szIniFileName);
+    WritePrivateProfileInt(SETTINGS, TEXT("AutoClose"), m_fAutoClose, m_szIniFileName);
     if (fWriteDefault) {
         WritePrivateProfileInt(SETTINGS, TEXT("SeekItemMinWidth"), m_seekItemMinWidth, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("StatusItemWidth"), m_posItemWidth, m_szIniFileName);
@@ -947,6 +950,7 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
         ::CheckMenuItem(hmenu, IDM_POS_DRAW_TOT, m_fPosDrawTot ? MF_CHECKED : MF_UNCHECKED);
         ::CheckMenuItem(hmenu, IDM_MOD_TIMESTAMP, m_modTimestampMode==1 ? MF_CHECKED : MF_UNCHECKED);
         ::CheckMenuItem(hmenu, IDM_MOD_TIMESTAMP2, m_modTimestampMode==2 ? MF_CHECKED : MF_UNCHECKED);
+        ::CheckMenuItem(hmenu, IDM_AUTO_CLOSE, m_fAutoClose ? MF_CHECKED : MF_UNCHECKED);
         if (m_statusRow == 0 && !IsAppMaximized() || m_pApp->GetFullscreen()) {
             ::DeleteMenu(hmenu, IDM_SHOW_ALWAYS, 0);
         }
@@ -1008,6 +1012,10 @@ void CTvtPlay::SetupWithPopup(const POINT &pt, UINT flags)
     case IDM_MOD_TIMESTAMP2:
         m_modTimestampMode = m_modTimestampMode != 2 ? 2 : 0;
         SetModTimestamp(false);
+        SaveSettings();
+        break;
+    case IDM_AUTO_CLOSE:
+        m_fAutoClose = !m_fAutoClose;
         SaveSettings();
         break;
     default:
@@ -2451,7 +2459,10 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
         return 0;
     case WM_QUERY_CLOSE_NEXT:
         pThis->Close();
-        if (pThis->m_playlist.Next(pThis->IsAllRepeat())) pThis->OpenCurrent();
+        if (pThis->m_playlist.Next(pThis->IsAllRepeat()))
+            pThis->OpenCurrent();
+        else if (pThis->m_fAutoClose)
+            pThis->m_pApp->Close();
         return 0;
     case WM_QUERY_SEEK_BGN:
         pThis->SeekToBegin();

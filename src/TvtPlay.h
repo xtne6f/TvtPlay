@@ -115,6 +115,7 @@ private:
     int m_statusRow, m_statusRowFull;
     int m_statusHeight;
     bool m_fSeekDrawOfs, m_fSeekDrawTot, m_fPosDrawTot;
+    bool m_fAutoClose;
     int m_seekItemMinWidth, m_posItemWidth;
     int m_timeoutOnCmd, m_timeoutOnMove;
     int m_seekItemOrder, m_posItemOrder;
