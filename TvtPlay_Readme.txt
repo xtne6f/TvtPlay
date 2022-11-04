@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.2.8 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.2.9 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは添付のBonDriver_Pipeを使ってローカルTSファイルを
@@ -7,7 +7,7 @@ TVTest付属のBonDriver_UDPまたは添付のBonDriver_Pipeを使ってロー�
 ■動作環境
 ・Vista以降
 ・TVTest/TVH264 ver.0.7.16 以降。ver.0.8.1 以降を推奨
-・必要ランタイム: 2015、2017、および 2019 用 Visual C++ 再頒布可能パッケージ
+・必要ランタイム: 2015-2022 Visual C++ 再頒布可能パッケージ
   ・ビルド環境: Visual Studio Express 2017 for Windows Desktop
 
 ■初期導入FAQ
@@ -261,6 +261,9 @@ DispTot【ver.0.5～】
 DispTotOnStatus【ver.0.5～】
     再生位置の表示の隣に放送時刻を表示する[=1]かどうか
     # この設定は再生位置の表示部分を右クリックで変更できます【ver.1.2～】。
+AutoClose【ver.2.9～】
+    再生終了時にTVTestを閉じる[=1]かどうか
+    # この設定は再生位置の表示部分を右クリックで変更できます。
 SeekItemMinWidth【ver.1.6～】
     シークバーの最小ピクセル幅
 StatusItemWidth【ver.0.5～】
@@ -400,10 +403,11 @@ Meta
 MP4ファイルをトランスポートストリームに変換してTVTestに送ることができます。H.264
 に対応したTVTest(おそらく0.9.0以降に限定)はこれを再生できます。今のところ以下の
 制限があります:
-・形式は1映像(H.264)+1～2音声(AAC)のみ
+・形式は1映像(H.264/H.265)+1～2音声(AAC)のみ
 ・PAR情報は無視
-ほか、特殊な(一般的でない)構造のMP4は再生できないかもしれません。また、キーフレ
-ームの少ない映像はシーク後の乱れが長く続きます。
+ほか、特殊な(一般的でない)構造のMP4は再生できないかもしれません。とくにH.265につ
+いてCodecIDが"hev1"のものは今のところ未対応です。また、キーフレームの少ない映像
+はシーク後の乱れが長く続きます。
 
 ■ドロップカウントについて
 シークを行うとTVTestステータスバーのドロップカウントは増加します。これはTSパケッ
@@ -513,6 +517,8 @@ http://2sen.dip.jp/dtv/)のup0598.zip「非公式 TvtPlayシークボタンカ�
 http://toro.2ch.net/test/read.cgi/avi/1348364114/115 )を使用しています。
 プレイリストのシャッフル機能はmike氏(https://github.com/mike2 )のコミットを使用
 しています。
+「再生終了時にTVTestを閉じる」機能はTvtPlayスレ3>>820のパッチ(
+https://pastebin.com/EdQp47C9 )を調整したものです。
 また、おもにTVTest ver.0.7.23からソースコードを流用しています。特に以下のファイ
 ルはほぼ改変なしに流用しています:
   "Aero.cpp"
