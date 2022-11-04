@@ -211,7 +211,7 @@ bool CReadOnlyMpeg4File::InitializeTable(LPCTSTR &errorMessage)
             }
         }
         if (timeScale != 0) {
-            if (m_stsoV.empty() && ReadVideoSampleDesc(i, m_spsPps, buf)) {
+            if (m_stsoV.empty() && ReadVideoSampleDesc(i, m_fHevc, m_spsPps, buf)) {
                 m_timeScaleV = timeScale;
                 if (!ReadSampleTable(i, m_stsoV, m_stszV, m_sttsV, &m_cttsV, buf) ||
                     std::find_if(m_stszV.begin(), m_stszV.end(), [](DWORD a) { return a > VIDEO_SAMPLE_MAX; }) != m_stszV.end()) {
@@ -246,15 +246,19 @@ bool CReadOnlyMpeg4File::InitializeTable(LPCTSTR &errorMessage)
     return InitializeBlockList(errorMessage);
 }
 
-bool CReadOnlyMpeg4File::ReadVideoSampleDesc(char index, std::vector<BYTE> &spsPps, std::vector<BYTE> &buf) const
+bool CReadOnlyMpeg4File::ReadVideoSampleDesc(char index, bool &fHevc, std::vector<BYTE> &spsPps, std::vector<BYTE> &buf) const
 {
+    const DWORD DATA_FORMAT_AVC1 = 0x61766331;
+    const DWORD DATA_FORMAT_HVC1 = 0x68766331;
     char path[] = "/moov0/trak?/mdia0/minf0/stbl0/stsd0";
     path[11] = index;
     if (ReadBox(path, buf) >= 16) {
         size_t boxLen = ArrayToDWORD(&buf[8]);
+        DWORD dataFormat = ArrayToDWORD(&buf[12]);
+        // TODO: "hev1"は未対応
         if (ArrayToDWORD(&buf[0]) == 0 &&
             ArrayToDWORD(&buf[4]) == 1 &&
-            ArrayToDWORD(&buf[12]) == 0x61766331 && // Data format == "avc1"
+            (dataFormat == DATA_FORMAT_AVC1 || dataFormat == DATA_FORMAT_HVC1) &&
             boxLen >= 86 && // Sample description size
             boxLen <= buf.size() - 8)
         {
@@ -267,7 +271,7 @@ bool CReadOnlyMpeg4File::ReadVideoSampleDesc(char index, std::vector<BYTE> &spsP
                 }
                 // TODO: PAR情報は無視
                 // Type == "avcC"
-                if (ArrayToDWORD(&buf[4]) == 0x61766343) {
+                if (ArrayToDWORD(&buf[4]) == 0x61766343 && dataFormat == DATA_FORMAT_AVC1) {
                     buf.resize(boxLen);
                     if (15 < buf.size() && (buf[13] & 0x1F) == 1) {
                         size_t spsLen = MAKEWORD(buf[15], buf[14]);
@@ -286,8 +290,45 @@ bool CReadOnlyMpeg4File::ReadVideoSampleDesc(char index, std::vector<BYTE> &spsP
                                 spsPps.insert(spsPps.end(), 3, 0);
                                 spsPps.push_back(1);
                                 spsPps.insert(spsPps.end(), buf.begin() + 19 + spsLen, buf.begin() + 19 + spsLen + ppsLen);
+                                fHevc = false;
                                 return true;
                             }
+                        }
+                    }
+                    break;
+                }
+                // Type == "hvcC"
+                else if (ArrayToDWORD(&buf[4]) == 0x68766343 && dataFormat == DATA_FORMAT_HVC1) {
+                    buf.resize(boxLen);
+                    if (30 < buf.size()) {
+                        int numArray = buf[30];
+                        static const int NALU_TYPES[] = { 0x20, 0x21, 0x22 }; // VPS, SPS, PPS
+                        spsPps.clear();
+                        bool fFoundAll = true;
+                        for (size_t naluTypeIndex = 0; fFoundAll && naluTypeIndex < _countof(NALU_TYPES); ++naluTypeIndex) {
+                            fFoundAll = false;
+                            size_t pos = 31;
+                            for (int i = 0; !fFoundAll && i < numArray && pos + 2 < buf.size(); ++i) {
+                                int naluType = buf[pos] & 0x3F;
+                                int numNalu = MAKEWORD(buf[pos + 2], buf[pos + 1]);
+                                pos += 3;
+                                for (int j = 0; j < numNalu && pos + 1 < buf.size(); ++j) {
+                                    size_t naluLen = MAKEWORD(buf[pos + 1], buf[pos]);
+                                    pos += 2;
+                                    if (naluType == NALU_TYPES[naluTypeIndex] && numNalu == 1 && pos + naluLen <= buf.size()) {
+                                        spsPps.insert(spsPps.end(), 3, 0);
+                                        spsPps.push_back(1);
+                                        spsPps.insert(spsPps.end(), buf.begin() + pos, buf.begin() + pos + naluLen);
+                                        fFoundAll = true;
+                                        break;
+                                    }
+                                    pos += naluLen;
+                                }
+                            }
+                        }
+                        if (fFoundAll) {
+                            fHevc = true;
+                            return true;
                         }
                     }
                     break;
@@ -532,7 +573,7 @@ bool CReadOnlyMpeg4File::InitializeBlockList(LPCTSTR &errorMessage)
             int n = ReadSample(indexV, m_stsoV, m_stszV, nullptr);
             if (n > 0) {
                 // (AUD or stuffing) + SPS + PPS
-                n += 6 + static_cast<int>(m_spsPps.size());
+                n += (m_fHevc ? 7 : 6) + static_cast<int>(m_spsPps.size());
                 // PES header
                 n += 14;
             }
@@ -641,7 +682,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
                     AddTsPacketsFromPsi(m_blockCache, psi.data(), psi.size(), it->second.currentCounter, it->second.mappedPid);
                     if (!fPmtAdded && pid == pmtPid) {
                         // PMT
-                        fPmtAdded = AddPmtPacketsFromPmt(m_blockCache, psi, m_psiCounterInfoMap, !m_stsoA[1].empty(), !m_captionList.empty());
+                        fPmtAdded = AddPmtPacketsFromPmt(m_blockCache, psi, m_psiCounterInfoMap, m_fHevc, !m_stsoA[1].empty(), !m_captionList.empty());
                     }
                 }
             }
@@ -675,7 +716,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
         packet = &m_blockCache.back() - 187;
         CreateHeader(packet, 1, 1, blockIndex & 0x0F, PMT_PID);
         packet[4] = 0;
-        CreatePmt(packet + 5, m_sid, !m_stsoA[1].empty(), !m_captionList.empty());
+        CreatePmt(packet + 5, m_sid, m_fHevc, !m_stsoA[1].empty(), !m_captionList.empty());
 
         if (blockIndex % 10 == 9) {
             // EIT
@@ -717,11 +758,11 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
         int n = ReadSample(indexV, m_stsoV, m_stszV, &sample);
         if (n > 0) {
             bool fIdr;
-            size_t firstAudTail = NalFileToByte(sample, fIdr);
+            size_t firstAudTail = NalFileToByte(sample, fIdr, m_fHevc);
             // SPS + PPS
             sample.insert(sample.begin() + firstAudTail, m_spsPps.begin(), m_spsPps.end());
             n += static_cast<int>(m_spsPps.size());
-            BYTE stuffingSize = 6;
+            BYTE stuffingSize = m_fHevc ? 7 : 6;
             sample.insert(sample.begin(), stuffingSize, 0xFF);
             n += stuffingSize;
             // AUDがないときは付加しておく(規格に厳密ではない)
@@ -730,8 +771,15 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
                 sample[1] = 0;
                 sample[2] = 0;
                 sample[3] = 1;
-                sample[4] = 0x09;
-                sample[5] = fIdr ? 0x10 : 0x30;
+                if (m_fHevc) {
+                    sample[4] = 0x46;
+                    sample[5] = 0x01;
+                    sample[6] = 0x50;
+                }
+                else {
+                    sample[4] = 0x09;
+                    sample[5] = fIdr ? 0x10 : 0x30;
+                }
                 // 帳尻合わせ
                 stuffingSize = 0;
             }
@@ -1175,7 +1223,7 @@ size_t CReadOnlyMpeg4File::CreateTot(BYTE *data, SYSTEMTIME st)
     return 14;
 }
 
-size_t CReadOnlyMpeg4File::CreatePmt(BYTE *data, WORD sid, bool fAudio2, bool fCaption)
+size_t CReadOnlyMpeg4File::CreatePmt(BYTE *data, WORD sid, bool fHevc, bool fAudio2, bool fCaption)
 {
     data[0] = 0x02;
     data[3] = HIBYTE(sid);
@@ -1187,7 +1235,7 @@ size_t CReadOnlyMpeg4File::CreatePmt(BYTE *data, WORD sid, bool fAudio2, bool fC
     data[9] = LOBYTE(PCR_PID);
     data[10] = 0xF0;
     data[11] = 0;
-    size_t x = 12 + CreatePmt2ndLoop(data + 12, fAudio2, fCaption);
+    size_t x = 12 + CreatePmt2ndLoop(data + 12, fHevc, fAudio2, fCaption);
     data[1] = HIBYTE(x + 4 - 3) | 0xB0;
     data[2] = LOBYTE(x + 4 - 3);
     DWORD crc = CalcCrc32(data, x);
@@ -1199,7 +1247,7 @@ size_t CReadOnlyMpeg4File::CreatePmt(BYTE *data, WORD sid, bool fAudio2, bool fC
 }
 
 bool CReadOnlyMpeg4File::AddPmtPacketsFromPmt(std::vector<BYTE> &buf, const std::vector<BYTE> &pmt, const std::map<WORD, PSI_COUNTER_INFO> &pidMap,
-                                              bool fAudio2, bool fCaption)
+                                              bool fHevc, bool fAudio2, bool fCaption)
 {
     if (pmt.size() < 12 || pmt[0] != 0x02) {
         return false;
@@ -1215,7 +1263,7 @@ bool CReadOnlyMpeg4File::AddPmtPacketsFromPmt(std::vector<BYTE> &buf, const std:
     data[9] = LOBYTE(PCR_PID);
     data[10] = 0xF0;
     data[11] = 0;
-    size_t x = 12 + CreatePmt2ndLoop(data + 12, fAudio2, fCaption);
+    size_t x = 12 + CreatePmt2ndLoop(data + 12, fHevc, fAudio2, fCaption);
 
     WORD programInfoLength = MAKEWORD(pmt[11], pmt[10] & 0x03);
     for (size_t pos = 12 + programInfoLength; pos + 4 < pmt.size() - 4; ) {
@@ -1243,10 +1291,10 @@ bool CReadOnlyMpeg4File::AddPmtPacketsFromPmt(std::vector<BYTE> &buf, const std:
     return Add16TsPacketsFromPsi(buf, data, x, PMT_PID);
 }
 
-size_t CReadOnlyMpeg4File::CreatePmt2ndLoop(BYTE *data, bool fAudio2, bool fCaption)
+size_t CReadOnlyMpeg4File::CreatePmt2ndLoop(BYTE *data, bool fHevc, bool fAudio2, bool fCaption)
 {
     size_t x = 0;
-    data[x++] = 0x1B; // AVC video
+    data[x++] = fHevc ? H_265_VIDEO : AVC_VIDEO;
     data[x++] = HIBYTE(VIDEO_PID) | 0xE0;
     data[x++] = LOBYTE(VIDEO_PID);
     data[x++] = 0xF0;
@@ -1254,7 +1302,7 @@ size_t CReadOnlyMpeg4File::CreatePmt2ndLoop(BYTE *data, bool fAudio2, bool fCapt
     data[x++] = 0x52; // ストリーム識別記述子
     data[x++] = 1;
     data[x++] = 0x00; // 部分受信階層の場合を考慮すると厳密ではない
-    data[x++] = 0x0F; // ADTS transport
+    data[x++] = ADTS_TRANSPORT;
     data[x++] = HIBYTE(AUDIO1_PID) | 0xE0;
     data[x++] = LOBYTE(AUDIO1_PID);
     data[x++] = 0xF0;
@@ -1263,7 +1311,7 @@ size_t CReadOnlyMpeg4File::CreatePmt2ndLoop(BYTE *data, bool fAudio2, bool fCapt
     data[x++] = 1;
     data[x++] = 0x10;
     if (fAudio2) {
-        data[x++] = 0x0F; // ADTS transport
+        data[x++] = ADTS_TRANSPORT;
         data[x++] = HIBYTE(AUDIO1_PID + 1) | 0xE0;
         data[x++] = LOBYTE(AUDIO1_PID + 1);
         data[x++] = 0xF0;
@@ -1273,7 +1321,7 @@ size_t CReadOnlyMpeg4File::CreatePmt2ndLoop(BYTE *data, bool fAudio2, bool fCapt
         data[x++] = 0x11;
     }
     if (fCaption) {
-        data[x++] = 0x06; // PES Private Data
+        data[x++] = PES_PRIVATE_DATA;
         data[x++] = HIBYTE(CAPTION_PID) | 0xE0;
         data[x++] = LOBYTE(CAPTION_PID);
         data[x++] = 0xF0;
@@ -1338,7 +1386,7 @@ size_t CReadOnlyMpeg4File::CreateAdtsHeader(BYTE *data, int profile, int freq, i
     return 7;
 }
 
-size_t CReadOnlyMpeg4File::NalFileToByte(std::vector<BYTE> &data, bool &fIdr)
+size_t CReadOnlyMpeg4File::NalFileToByte(std::vector<BYTE> &data, bool &fIdr, bool fHevc)
 {
     fIdr = false;
     size_t firstAudTail = 0;
@@ -1351,11 +1399,14 @@ size_t CReadOnlyMpeg4File::NalFileToByte(std::vector<BYTE> &data, bool &fIdr)
         if (len > data.size() - i) {
             break;
         }
-        if (len >= 1 && (data[i] & 0x1F) == 0x05) {
-            fIdr = true;
-        }
-        if (firstAudTail == 0 && len >= 1 && (data[i] & 0x1F) == 0x09) {
-            firstAudTail = i + len;
+        if (len >= 1) {
+            int naluType = fHevc ? (data[i] >> 1) & 0x3F : data[i] & 0x1F;
+            if ((fHevc && (naluType == 19 || naluType == 20)) || (!fHevc && naluType == 5)) {
+                fIdr = true;
+            }
+            if (firstAudTail == 0 && ((fHevc && naluType == 35) || (!fHevc && naluType == 9))) {
+                firstAudTail = i + len;
+            }
         }
         i += len;
     }

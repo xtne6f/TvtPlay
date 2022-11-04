@@ -32,6 +32,17 @@ LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt, LONGLONG *
 
 static const DWORD PCR_PER_MSEC = 45;
 
+// 地上波+BSで指定可能なID(ARIB TR-B14):0x01,0x02,0x06,0x0D,0x0F,0x1B
+#define H_262_VIDEO         0x02
+#define PES_PRIVATE_DATA    0x06
+#define ADTS_TRANSPORT      0x0F
+#define AVC_VIDEO           0x1B
+#define H_265_VIDEO         0x24
+// for スカパーSD
+#define MPEG2_AUDIO         0x04
+// for Blu-ray
+#define PS_BD_AC3_AUDIO     0x81
+
 typedef struct {
 	int           sync;
 	int           transport_error_indicator;

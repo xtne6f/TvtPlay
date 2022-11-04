@@ -106,6 +106,7 @@ private:
     // コントロール
     HWND m_hwndFrame;
     bool m_fSeekDrawOfs, m_fSeekDrawTot, m_fPosDrawTot;
+    bool m_fAutoClose;
     int m_seekItemMinWidth, m_posItemWidth;
     int m_seekItemOrder, m_posItemOrder;
     DWORD m_lastDropCount;

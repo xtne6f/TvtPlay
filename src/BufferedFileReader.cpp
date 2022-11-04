@@ -14,12 +14,12 @@ CBufferedFileReader::~CBufferedFileReader()
 }
 
 // ファイルを設定する
-void CBufferedFileReader::SetFile(IReadOnlyFile *file, bool fFileSizeFixed)
+void CBufferedFileReader::SetFile(IReadOnlyFile *file)
 {
     SetupBuffer(0, 0, 0);
     m_file = file;
     if (m_file) {
-        m_fileSize = fFileSizeFixed ? m_file->GetSize() : -1;
+        m_fileSize = m_file->IsShareWrite() ? -1 : m_file->GetSize();
     }
 }
 

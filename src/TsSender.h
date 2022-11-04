@@ -95,7 +95,7 @@ private:
     DWORD m_baseTick, m_renewSizeTick, m_renewDurTick, m_renewFsrTick;
     DWORD m_pcr, m_basePcr, m_initPcr, m_prevPcr;
     int m_rateCtrlMsec;
-    bool m_fEnPcr, m_fShareWrite, m_fFixed, m_fPause;
+    bool m_fEnPcr, m_fFixed, m_fPause;
     bool m_fPurged;
     bool m_fForceSyncRead;
     int m_pcrPid, m_pcrPids[PCR_PIDS_MAX];
