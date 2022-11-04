@@ -159,7 +159,6 @@ CTsSender::CTsSender()
     , m_prevPcr(0)
     , m_rateCtrlMsec(0)
     , m_fEnPcr(false)
-    , m_fShareWrite(false)
     , m_fFixed(false)
     , m_fPause(false)
     , m_fPurged(false)
@@ -195,9 +194,9 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
 {
     Close();
 
-    if (!_tcsicmp(::PathFindExtension(path), TEXT(".mp4"))) {
+    bool fMpeg4 = !_tcsicmp(::PathFindExtension(path), TEXT(".mp4"));
+    if (fMpeg4) {
         m_file.reset(new CReadOnlyMpeg4File());
-        m_fShareWrite = false;
         m_fFixed = true;
         if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL, errorMessage)) {
             m_file.reset();
@@ -207,12 +206,10 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     if (m_file == nullptr) {
         // まず読み込み共有で開いてみる
         m_file.reset(new CReadOnlyLocalFile());
-        m_fShareWrite = false;
         m_fFixed = true;
         if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL, errorMessage)) {
             errorMessage = nullptr;
             // 録画中かもしれない。書き込み共有で開く
-            m_fShareWrite = true;
             m_fFixed = false;
             if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL | IReadOnlyFile::OPEN_FLAG_SHARE_WRITE, errorMessage)) {
                 m_file.reset();
@@ -220,14 +217,14 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
             }
         }
     }
-    m_reader.SetFile(m_file.get(), m_fFixed);
+    m_reader.SetFile(m_file.get());
 
     // TSパケットの単位を決定
     BYTE buf[8192];
     int readBytes = m_file->Read(buf, sizeof(buf));
     if (readBytes < 0) goto ERROR_EXIT;
     m_unitSize = select_unit_size(buf, buf + readBytes);
-    if (m_unitSize < 188 || 320 < m_unitSize) goto ERROR_EXIT;
+    if (m_unitSize < 188 || 320 < m_unitSize || (fMpeg4 && m_unitSize != 188)) goto ERROR_EXIT;
 
     // 転送時にパケットを188Byteに詰めるかどうか
     // TimestampedTS(192Byte)の場合のみ変換する
@@ -290,7 +287,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
             break;
         }
     }
-    if (m_duration <= 0 && m_fShareWrite &&
+    if (m_duration <= 0 && m_file->IsShareWrite() &&
         SeekToBoundary(fileSize / 2, fileSize, buf, sizeof(buf) / 2))
     {
         // 書き込み共有かつファイル末尾が正常でない場合
@@ -325,7 +322,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     }
 
     // 追っかけ時にファイルサイズ等の更新を取得するため
-    if (m_fShareWrite) {
+    if (m_file->IsShareWrite()) {
         m_renewSizeTick = m_renewDurTick = m_renewFsrTick = GetAdjTickCount();
         m_fileSize = fileSize;
     }
@@ -433,7 +430,7 @@ int CTsSender::Send()
     // 補正により一気に増加する可能性を避けるため定期的に呼ぶ
     DWORD tick = GetAdjTickCount();
 
-    if (m_fShareWrite) {
+    if (m_file->IsShareWrite()) {
         // 動画の長さ情報を更新
         if (tick - m_renewSizeTick >= RENEW_SIZE_INTERVAL) {
             __int64 fileSize = m_reader.GetFileSize();

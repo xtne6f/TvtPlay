@@ -11,7 +11,7 @@ public:
     static const int BUF_NUM_MAX = 128;
     CBufferedFileReader();
     ~CBufferedFileReader();
-    void SetFile(IReadOnlyFile *file, bool fFileSizeFixed = false);
+    void SetFile(IReadOnlyFile *file);
     bool SetupBuffer(int bufSize, int bufPreSize, int bufNum);
     void Flush();
     int Read(BYTE **ppBuf);

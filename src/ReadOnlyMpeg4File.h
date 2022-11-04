@@ -35,6 +35,7 @@ public:
     int Read(BYTE *pBuf, int numToRead);
     __int64 SetPointer(__int64 distanceToMove, MOVE_METHOD moveMethod);
     __int64 GetSize() const;
+    bool IsShareWrite() const { return false; }
 private:
     struct BLOCK_100MSEC {
         DWORD pos;
