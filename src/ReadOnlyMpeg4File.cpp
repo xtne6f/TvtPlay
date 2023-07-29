@@ -90,6 +90,14 @@ __int64 CReadOnlyMpeg4File::GetSize() const
     return -1;
 }
 
+int CReadOnlyMpeg4File::GetDurationMsec() const
+{
+    if (m_hFile != INVALID_HANDLE_VALUE) {
+        return static_cast<int>(m_blockList.size()) * 100;
+    }
+    return -1;
+}
+
 bool CReadOnlyMpeg4File::LoadSettings()
 {
     TCHAR iniPath[MAX_PATH];

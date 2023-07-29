@@ -202,8 +202,12 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
             m_file.reset();
             return false;
         }
+        // 動画の長さなどは既知
+        m_unitSize = 188;
+        m_fSpecialExtending = false;
+        m_duration = static_cast<CReadOnlyMpeg4File*>(m_file.get())->GetDurationMsec();
     }
-    if (m_file == nullptr) {
+    else {
         // まず読み込み共有で開いてみる
         m_file.reset(new CReadOnlyLocalFile());
         m_fFixed = true;
@@ -219,12 +223,15 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     }
     m_reader.SetFile(m_file.get());
 
-    // TSパケットの単位を決定
     BYTE buf[8192];
     int readBytes = m_file->Read(buf, sizeof(buf));
     if (readBytes < 0) goto ERROR_EXIT;
-    m_unitSize = select_unit_size(buf, buf + readBytes);
-    if (m_unitSize < 188 || 320 < m_unitSize || (fMpeg4 && m_unitSize != 188)) goto ERROR_EXIT;
+
+    if (!fMpeg4) {
+        // TSパケットの単位を決定
+        m_unitSize = select_unit_size(buf, buf + readBytes);
+        if (m_unitSize < 188 || 320 < m_unitSize) goto ERROR_EXIT;
+    }
 
     // 転送時にパケットを188Byteに詰めるかどうか
     // TimestampedTS(192Byte)の場合のみ変換する
@@ -274,39 +281,50 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     }
     m_initPcr = m_pcr;
 
-    // 動画の長さを取得
-    m_fSpecialExtending = false;
-    m_duration = 0;
-    // 最大で標準的なTSの末尾8秒間を調べる
-    for (int sec = 2; sec <= 8; sec *= 2) {
-        if (Seek(-TS_SUPPOSED_RATE * sec, IReadOnlyFile::MOVE_METHOD_END)) {
-            // ファイル末尾が正常である場合
-            m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 1000 * sec;
-            m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) +
-                         (int)((long long)TS_SUPPOSED_RATE * 1000 * sec / GetRate());
-            break;
-        }
-    }
-    if (m_duration <= 0 && m_file->IsShareWrite() &&
-        SeekToBoundary(fileSize / 2, fileSize, buf, sizeof(buf) / 2))
-    {
-        // 書き込み共有かつファイル末尾が正常でない場合
-        __int64 filePos = m_reader.GetFilePosition();
-        for (int sec = 2; sec <= 8; sec *= 2) {
-            if (Seek(filePos - TS_SUPPOSED_RATE * sec, IReadOnlyFile::MOVE_METHOD_BEGIN)) {
-                filePos = m_reader.GetFilePosition();
-                m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 1000 * sec;
-                // ファイルサイズからレートを計算できないため
-                m_specialExtendInitRate = filePos < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
-                                          static_cast<int>((filePos + TS_SUPPOSED_RATE * sec) * 1000 / m_duration);
-                m_fSpecialExtending = true;
+    if (!fMpeg4) {
+        // 動画の長さを取得
+        m_fSpecialExtending = false;
+        m_duration = 0;
+        // 最大で標準的なTSの末尾8秒間を調べる
+        for (int sec = 1; sec <= 8; sec *= 2) {
+            if (Seek(-TS_SUPPOSED_RATE * sec, IReadOnlyFile::MOVE_METHOD_END)) {
+                // ファイル末尾が正常である場合
+                if (m_file->IsShareWrite()) {
+                    // 概算で補う
+                    m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 1000 * sec;
+                    m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) +
+                                 (int)((long long)TS_SUPPOSED_RATE * 1000 * sec / GetRate());
+                }
+                else {
+                    // 終端まで読む
+                    while (ReadToPcr(false, true)) {
+                        m_duration = DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC;
+                    }
+                }
                 break;
             }
         }
-    }
-    if (m_duration <= 0) {
-        // 最低限、再生はできる場合
-        m_duration = 0;
+        if (m_duration <= 0 && m_file->IsShareWrite() &&
+            SeekToBoundary(fileSize / 2, fileSize, buf, sizeof(buf) / 2))
+        {
+            // 書き込み共有かつファイル末尾が正常でない場合
+            __int64 filePos = m_reader.GetFilePosition();
+            for (int sec = 2; sec <= 8; sec *= 2) {
+                if (Seek(filePos - TS_SUPPOSED_RATE * sec, IReadOnlyFile::MOVE_METHOD_BEGIN)) {
+                    filePos = m_reader.GetFilePosition();
+                    m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 1000 * sec;
+                    // ファイルサイズからレートを計算できないため
+                    m_specialExtendInitRate = filePos < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
+                                              static_cast<int>((filePos + TS_SUPPOSED_RATE * sec) * 1000 / m_duration);
+                    m_fSpecialExtending = true;
+                    break;
+                }
+            }
+        }
+        if (m_duration <= 0) {
+            // 最低限、再生はできる場合
+            m_duration = 0;
+        }
     }
 
     // 再生レートが極端に小さい場合(ワンセグ等)はバッファを縮める
@@ -409,7 +427,7 @@ int CTsSender::Send()
 
     TCHAR readyState[BON_PIPE_MESSAGE_MAX];
     bool fReadToPcr = false;
-    bool fReadToEof = false;
+    bool fReadError = false;
     if (m_fPause) {
         readyState[0] = 0;
         ::Sleep(20);
@@ -423,8 +441,8 @@ int CTsSender::Send()
             ::Sleep(10);
         }
         else {
-            fReadToPcr = ReadToPcr(120000, true, m_fForceSyncRead) == 2;
-            fReadToEof = !fReadToPcr;
+            fReadToPcr = ReadToPcr(true, m_fForceSyncRead);
+            fReadError = !fReadToPcr;
         }
     }
     // 補正により一気に増加する可能性を避けるため定期的に呼ぶ
@@ -526,7 +544,7 @@ int CTsSender::Send()
         }
         if (msec > 0) ::Sleep(msec);
     }
-    return fReadToEof ? 0 : 1;
+    return fReadError ? 0 : 1;
 }
 
 
@@ -768,19 +786,17 @@ DWORD CTsSender::GetAdjTickCount()
 
 
 // PCRが現れるまでTSパケットを処理する
-// 戻り値: 0:終端に達した, 1:PCRが現れる前に処理パケット数がlimitに達した, 2:正常に処理した
-int CTsSender::ReadToPcr(int limit, bool fSend, bool fSyncRead)
+// 戻り値: false:終端に達したかPCRが現れる前に処理パケット数が上限に達した, true:正常に処理した
+bool CTsSender::ReadToPcr(bool fSend, bool fSyncRead)
 {
     MAGIC_NUMBER(0x76389426);
-    bool fPcr;
-    do {
+    bool fPcr = false;
+    for (int limit = READ_TO_PCR_LIMIT_PACKETS; !fPcr && limit > 0; --limit) {
 #if 1 // TSパケットを1つ処理する
-    fPcr = false;
-
     if (!m_curr || m_tail - m_curr <= m_unitSize) {
         RotateBuffer(fSend, fSyncRead);
         if (!m_curr || m_tail - m_curr <= m_unitSize) {
-            return 0;
+            return false;
         }
     }
 
@@ -791,9 +807,9 @@ int CTsSender::ReadToPcr(int limit, bool fSend, bool fSyncRead)
             if ((m_curr = resync(m_curr, m_tail, m_unitSize)) != nullptr) break;
             m_curr = m_tail; // 処理済にする
             RotateBuffer(fSend, fSyncRead);
-            if (!m_curr) return 0;
+            if (!m_curr) return false;
         }
-        if (i == RESYNC_FAILURE_LIMIT) return 0;
+        if (i == RESYNC_FAILURE_LIMIT) return false;
         ASSERT(m_tail - m_curr > m_unitSize);
     }
 
@@ -870,8 +886,8 @@ int CTsSender::ReadToPcr(int limit, bool fSend, bool fSyncRead)
 #endif
         // あまり貯めすぎると再生に影響するため
         if (m_curr - m_head >= BON_UDP_TSDATASIZE - 1880) RotateBuffer(fSend, fSyncRead);
-    } while (!fPcr && --limit > 0);
-    return fPcr ? 2 : 1;
+    }
+    return fPcr;
 }
 
 
@@ -934,12 +950,12 @@ bool CTsSender::Seek(__int64 distanceToMove, IReadOnlyFile::MOVE_METHOD moveMeth
 
     m_curr = m_head = m_tail = nullptr;
     m_fEnPcr = false;
-    if (ReadToPcr(120000, false, true) != 2) {
+    if (!ReadToPcr(false, true)) {
         // なるべく呼び出し前の状態に回復させるが、完全とは限らない
         if (m_file->SetPointer(lastPos, IReadOnlyFile::MOVE_METHOD_BEGIN) >= 0) {
             m_curr = m_head = m_tail = nullptr;
             m_fEnPcr = false;
-            if (ReadToPcr(120000, false, true) == 2) m_prevPcr = m_pcr;
+            if (ReadToPcr(false, true)) m_prevPcr = m_pcr;
         }
         return false;
     }
