@@ -1028,22 +1028,27 @@ bool CReadOnlyMpeg4File::Add16TsPacketsFromPsi(std::vector<BYTE> &buf, const BYT
     if (psiSize < 16 || 1024 < psiSize) {
         return false;
     }
-    // アダプテーションを加えてセクションを16パケットに散らし、連続性指標を常に0で始める
-    BYTE counter = 0xFF;
-    for (size_t i = 0; i < psiSize; ) {
-        buf.resize(buf.size() + 4, 0);
-        CreateHeader(&buf.back() - 3, i == 0, 3, ++counter, pid);
-        size_t pointer = i == 0;
-        size_t n = (psiSize - i) / (16 - counter);
-        buf.push_back(static_cast<BYTE>(183 - n - pointer));
-        buf.push_back(0);
-        buf.insert(buf.end(), 182 - n - pointer, 0xFF);
-        if (pointer) {
+    // アダプテーションを加えてセクションを16パケット(2セクションx8)に散らし、連続性指標を常に0で始める
+    for (BYTE counter = 0; counter < 16; ) {
+        for (size_t i = 0; i < psiSize; ++counter) {
+            buf.resize(buf.size() + 4, 0);
+            CreateHeader(&buf.back() - 3, i == 0, 3, counter, pid);
+            size_t pointer = i == 0;
+            size_t n = (psiSize - i) / (8 - counter % 8);
+            // セクションヘッダはTSを跨がないようにする
+            if (i == 0 && n < 8) {
+                n = 8;
+            }
+            buf.push_back(static_cast<BYTE>(183 - n - pointer));
             buf.push_back(0);
+            buf.insert(buf.end(), 182 - n - pointer, 0xFF);
+            if (pointer) {
+                buf.push_back(0);
+            }
+            buf.insert(buf.end(), psi + i, psi + i + n);
+            buf.resize(((buf.size() - 1) / 188 + 1) * 188, 0xFF);
+            i += n;
         }
-        buf.insert(buf.end(), psi + i, psi + i + n);
-        buf.resize(((buf.size() - 1) / 188 + 1) * 188, 0xFF);
-        i += n;
     }
     return true;
 }
