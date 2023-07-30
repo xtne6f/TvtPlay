@@ -2843,8 +2843,6 @@ void CTvtPlay::RemoveStreamCallback()
 }
 
 
-#define MSB(x) ((x) & 0x80000000)
-
 // ストリームコールバック(別スレッド)
 BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
 {
@@ -2898,7 +2896,7 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
                 DWORD pcr = (DWORD)adapt.pcr_45khz;
 
                 // PCRの連続性チェック
-                if (MSB(pcr - t.m_pcr) || pcr - t.m_pcr >= 1000 * PCR_PER_MSEC) {
+                if (CounterDiff(pcr, t.m_pcr) < 0 || pcr - t.m_pcr >= 1000 * PCR_PER_MSEC) {
                     DEBUG_OUT(TEXT(__FUNCTION__) TEXT("(): Discontinuous packet!\n"));
                     t.m_captionAnalyzer.Clear();
                 }

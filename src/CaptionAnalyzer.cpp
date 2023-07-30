@@ -9,8 +9,6 @@
 #include <regex>
 #include "CaptionAnalyzer.h"
 
-#define MSB(x) ((x) & 0x80000000)
-
 // C1制御符号名(ARIB STD-B24)
 static const char *CP_STRING_SIZE_NAME[] = {
     "SSZ", "MSZ", "NSZ", "SZX60", "SZX41", "SZX44", "SZX45", "SZX6B", "SZX64"
@@ -138,7 +136,7 @@ bool CCaptionAnalyzer::CheckShowState(DWORD currentPcr)
 {
     if (!IsInitialized()) return false;
 
-    while (m_commandFront != m_commandRear && !MSB(currentPcr - m_commandPcr[m_commandFront])) {
+    while (m_commandFront != m_commandRear && CounterDiff(currentPcr, m_commandPcr[m_commandFront]) >= 0) {
         if (m_fCommandShow[m_commandFront]) {
             // 字幕表示タイミングに達した
             m_fShowing = true;

@@ -17,8 +17,6 @@ static DWORD g_dwMagic;
 #define MAGIC_NUMBER
 #endif
 
-#define MSB(x) ((x) & 0x80000000)
-
 CTsTimestampShifter::CTsTimestampShifter()
     : m_shift45khz(0)
     , m_fEnabled(false)
@@ -518,7 +516,7 @@ int CTsSender::Send()
         // 再生速度が上がる=PCRの進行が遅くなる
         int msec = (int)((long long)pcrDiff * m_speedDen / m_speedNum / PCR_PER_MSEC) - tickDiff;
         // PCRの連続性チェックのため
-        DWORD prevPcrAbsDiff = MSB(m_pcr-m_prevPcr) ? m_prevPcr-m_pcr : m_pcr-m_prevPcr;
+        int prevPcrDiff = CounterDiff(m_pcr, m_prevPcr);
         m_prevPcr = m_pcr;
 
         if (m_fUnderrunCtrl && readyState[0] == TEXT('E') &&
@@ -532,7 +530,7 @@ int CTsSender::Send()
 
         // 制御しきれない場合は一度リセット
         if (msec < -2000 || 2000 * m_speedDen / m_speedNum < msec ||
-            prevPcrAbsDiff > m_pcrDisconThreshold)
+            (DWORD)(prevPcrDiff < 0 ? -prevPcrDiff : prevPcrDiff) > m_pcrDisconThreshold)
         {
             // 受信側のストアをパージ
             TransactMessage(TEXT("PURGE"));
@@ -639,8 +637,8 @@ bool CTsSender::Seek(int msec)
         if (!Seek(approx, IReadOnlyFile::MOVE_METHOD_BEGIN)) return false;
 
         // 移動分を差し引く
-        msec += MSB(m_pcr-prevPcr) ? (int)((prevPcr-m_pcr) / PCR_PER_MSEC) :
-                                    -(int)((m_pcr-prevPcr) / PCR_PER_MSEC);
+        int pcrDiff = CounterDiff(m_pcr, prevPcr);
+        msec += pcrDiff < 0 ? (int)(-pcrDiff / PCR_PER_MSEC) : -(int)(pcrDiff / PCR_PER_MSEC);
     }
     if (msec < -5000 || 5000 < msec) return false;
 
@@ -653,8 +651,8 @@ bool CTsSender::Seek(int msec)
             if (pos <= rate) return true;
 
             DWORD prevPcr = m_pcr;
-            if (!Seek(-rate * mul, IReadOnlyFile::MOVE_METHOD_CURRENT) || MSB(prevPcr-m_pcr)) return false;
-            msec += (int)((prevPcr-m_pcr) / PCR_PER_MSEC);
+            if (!Seek(-rate * mul, IReadOnlyFile::MOVE_METHOD_CURRENT) || CounterDiff(prevPcr, m_pcr) < 0) return false;
+            msec += (int)(CounterDiff(prevPcr, m_pcr) / PCR_PER_MSEC);
             // 動画レートが極端に小さいとき動かない可能性があるため
             if (m_pcr == prevPcr) ++mul;
         }
@@ -668,8 +666,8 @@ bool CTsSender::Seek(int msec)
             if (pos >= size - rate*2) return true;
 
             DWORD prevPcr = m_pcr;
-            if (!Seek(rate, IReadOnlyFile::MOVE_METHOD_CURRENT) || MSB(m_pcr-prevPcr)) return false;
-            msec -= (int)((m_pcr-prevPcr) / PCR_PER_MSEC);
+            if (!Seek(rate, IReadOnlyFile::MOVE_METHOD_CURRENT) || CounterDiff(m_pcr, prevPcr) < 0) return false;
+            msec -= (int)(CounterDiff(m_pcr, prevPcr) / PCR_PER_MSEC);
         }
         if (msec > 500) return false;
     }
@@ -792,98 +790,99 @@ bool CTsSender::ReadToPcr(bool fSend, bool fSyncRead)
     MAGIC_NUMBER(0x76389426);
     bool fPcr = false;
     for (int limit = READ_TO_PCR_LIMIT_PACKETS; !fPcr && limit > 0; --limit) {
-#if 1 // TSパケットを1つ処理する
-    if (!m_curr || m_tail - m_curr <= m_unitSize) {
-        RotateBuffer(fSend, fSyncRead);
+        // TSパケットを1つ処理する
+
         if (!m_curr || m_tail - m_curr <= m_unitSize) {
-            return false;
-        }
-    }
-
-    if (m_curr[0] != 0x47 || m_curr[m_unitSize] != 0x47) {
-        // m_currをパケットヘッダと同期させる
-        int i = 0;
-        for (; i < RESYNC_FAILURE_LIMIT; ++i) {
-            if ((m_curr = resync(m_curr, m_tail, m_unitSize)) != nullptr) break;
-            m_curr = m_tail; // 処理済にする
             RotateBuffer(fSend, fSyncRead);
-            if (!m_curr) return false;
+            if (!m_curr || m_tail - m_curr <= m_unitSize) {
+                return false;
+            }
         }
-        if (i == RESYNC_FAILURE_LIMIT) return false;
-        ASSERT(m_tail - m_curr > m_unitSize);
-    }
 
-    TS_HEADER header;
-    extract_ts_header(&header, m_curr);
-    // [統計(地上波)]
-    // adaptation_field_control == 0:0.00%, 1:99.03%, 2:0.21%, 3:0.76%
-    // payload_unit_start_indicator:2.09%
+        if (m_curr[0] != 0x47 || m_curr[m_unitSize] != 0x47) {
+            // m_currをパケットヘッダと同期させる
+            int i = 0;
+            for (; i < RESYNC_FAILURE_LIMIT; ++i) {
+                if ((m_curr = resync(m_curr, m_tail, m_unitSize)) != nullptr) break;
+                m_curr = m_tail; // 処理済にする
+                RotateBuffer(fSend, fSyncRead);
+                if (!m_curr) return false;
+            }
+            if (i == RESYNC_FAILURE_LIMIT) return false;
+            ASSERT(m_tail - m_curr > m_unitSize);
+        }
 
-    if ((header.adaptation_field_control&2)/*2,3*/ &&
-        !header.transport_error_indicator)
-    {
-        // アダプテーションフィールドがある
-        ADAPTATION_FIELD adapt;
-        extract_adaptation_field(&adapt, m_curr + 4);
+        TS_HEADER header;
+        extract_ts_header(&header, m_curr);
+        // [統計(地上波)]
+        // adaptation_field_control == 0:0.00%, 1:99.03%, 2:0.21%, 3:0.76%
+        // payload_unit_start_indicator:2.09%
 
-        if (adapt.pcr_flag) {
-            // 参照PIDが決まっていないとき、最初に3回PCRが出現したPIDを参照PIDとする
-            // 参照PIDのPCRが現れることなく5回別のPCRが出現すれば、参照PIDを変更する
-            if (header.pid != m_pcrPid) {
-                bool fFound = false;
-                for (int i = 0; i < m_pcrPidsLen; i++) {
-                    if (m_pcrPids[i] == header.pid) {
-                        ++m_pcrPidCounts[i];
-                        if (m_pcrPid < 0 && m_pcrPidCounts[i] >= 3 || m_pcrPidCounts[i] >= 5) m_pcrPid = header.pid;
-                        fFound = true;
-                        break;
+        if ((header.adaptation_field_control&2)/*2,3*/ &&
+            !header.transport_error_indicator)
+        {
+            // アダプテーションフィールドがある
+            ADAPTATION_FIELD adapt;
+            extract_adaptation_field(&adapt, m_curr + 4);
+
+            if (adapt.pcr_flag) {
+                // 参照PIDが決まっていないとき、最初に3回PCRが出現したPIDを参照PIDとする
+                // 参照PIDのPCRが現れることなく5回別のPCRが出現すれば、参照PIDを変更する
+                if (header.pid != m_pcrPid) {
+                    bool fFound = false;
+                    for (int i = 0; i < m_pcrPidsLen; i++) {
+                        if (m_pcrPids[i] == header.pid) {
+                            ++m_pcrPidCounts[i];
+                            if (m_pcrPid < 0 && m_pcrPidCounts[i] >= 3 || m_pcrPidCounts[i] >= 5) m_pcrPid = header.pid;
+                            fFound = true;
+                            break;
+                        }
+                    }
+                    if (!fFound && m_pcrPidsLen < PCR_PIDS_MAX) {
+                        m_pcrPids[m_pcrPidsLen] = header.pid;
+                        m_pcrPidCounts[m_pcrPidsLen] = 1;
+                        m_pcrPidsLen++;
                     }
                 }
-                if (!fFound && m_pcrPidsLen < PCR_PIDS_MAX) {
-                    m_pcrPids[m_pcrPidsLen] = header.pid;
-                    m_pcrPidCounts[m_pcrPidsLen] = 1;
-                    m_pcrPidsLen++;
+                // 参照PIDのときはPCRを取得する
+                if (header.pid == m_pcrPid) {
+                    m_pcrPidsLen = 0;
+                    m_pcr = (DWORD)adapt.pcr_45khz;
+                    if (!m_fEnPcr) {
+                        // 基準PCRを設定(受信側のストアを増やすため少し引く)
+                        m_baseTick = GetAdjTickCount() - m_initStore;
+                        m_basePcr = m_pcr;
+                        m_rateCtrlMsec = 0;
+                        m_fEnPcr = true;
+                    }
+                    fPcr = true;
                 }
             }
-            // 参照PIDのときはPCRを取得する
-            if (header.pid == m_pcrPid) {
-                m_pcrPidsLen = 0;
-                m_pcr = (DWORD)adapt.pcr_45khz;
-                if (!m_fEnPcr) {
-                    // 基準PCRを設定(受信側のストアを増やすため少し引く)
-                    m_baseTick = GetAdjTickCount() - m_initStore;
-                    m_basePcr = m_pcr;
-                    m_rateCtrlMsec = 0;
-                    m_fEnPcr = true;
-                }
-                fPcr = true;
+        }
+
+        if (header.pid == 0x14 && m_fEnPcr &&
+            !header.transport_scrambling_control &&
+            !header.transport_error_indicator &&
+            header.payload_unit_start_indicator &&
+            header.adaptation_field_control == 1)
+        {
+            // TOT-PCR対応情報を取得する
+            int pointerField = m_curr[4];
+            BYTE *pTable = m_curr + 5 + pointerField;
+            if (pTable + 7 < m_curr + 188 && (pTable[0] == 0x73 || pTable[0] == 0x70)) {
+                // BCD解析(ARIB STD-B10)
+                m_totBase = ((pTable[5]>>4)*10 + (pTable[5]&0x0f)) * 3600000 +
+                            ((pTable[6]>>4)*10 + (pTable[6]&0x0f)) * 60000 +
+                            ((pTable[7]>>4)*10 + (pTable[7]&0x0f)) * 1000;
+                m_totBasePcr = m_pcr;
             }
         }
-    }
 
-    if (header.pid == 0x14 && m_fEnPcr &&
-        !header.transport_scrambling_control &&
-        !header.transport_error_indicator &&
-        header.payload_unit_start_indicator &&
-        header.adaptation_field_control == 1)
-    {
-        // TOT-PCR対応情報を取得する
-        int pointerField = m_curr[4];
-        BYTE *pTable = m_curr + 5 + pointerField;
-        if (pTable + 7 < m_curr + 188 && (pTable[0] == 0x73 || pTable[0] == 0x70)) {
-            // BCD解析(ARIB STD-B10)
-            m_totBase = ((pTable[5]>>4)*10 + (pTable[5]&0x0f)) * 3600000 +
-                        ((pTable[6]>>4)*10 + (pTable[6]&0x0f)) * 60000 +
-                        ((pTable[7]>>4)*10 + (pTable[7]&0x0f)) * 1000;
-            m_totBasePcr = m_pcr;
-        }
-    }
+        // PCR/PTS/DTSを変更
+        m_tsShifter.Transform(m_curr);
 
-    // PCR/PTS/DTSを変更
-    m_tsShifter.Transform(m_curr);
+        m_curr += m_unitSize;
 
-    m_curr += m_unitSize;
-#endif
         // あまり貯めすぎると再生に影響するため
         if (m_curr - m_head >= BON_UDP_TSDATASIZE - 1880) RotateBuffer(fSend, fSyncRead);
     }
