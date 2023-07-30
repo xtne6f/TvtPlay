@@ -628,8 +628,7 @@ bool CReadOnlyMpeg4File::InitializeBlockList(LPCTSTR &errorMessage)
     DWORD nextPos = 0;
     for (auto it = m_blockList.begin(); it != m_blockList.end(); ++it) {
         DWORD pos = nextPos;
-        // NUL
-        nextPos += max(it->pos, BLOCK_SIZE_MIN);
+        nextPos += it->pos;
         if (nextPos > 0x7FFFFFFF) {
             return false;
         }

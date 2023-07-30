@@ -155,6 +155,7 @@ CTsSender::CTsSender()
     , m_basePcr(0)
     , m_initPcr(0)
     , m_prevPcr(0)
+    , m_lastSentPcr(0)
     , m_rateCtrlMsec(0)
     , m_fEnPcr(false)
     , m_fFixed(false)
@@ -884,7 +885,11 @@ bool CTsSender::ReadToPcr(bool fSend, bool fSyncRead)
         m_curr += m_unitSize;
 
         // あまり貯めすぎると再生に影響するため
-        if (m_curr - m_head >= BON_UDP_TSDATASIZE - 1880) RotateBuffer(fSend, fSyncRead);
+        if (m_curr - m_head >= BON_UDP_TSDATASIZE - 1880 ||
+            (fSend && CounterDiff(m_pcr, m_lastSentPcr) >= MAX_SEND_INTERVAL))
+        {
+            RotateBuffer(fSend, fSyncRead);
+        }
     }
     return fPcr;
 }
@@ -911,6 +916,7 @@ void CTsSender::RotateBuffer(bool fSend, bool fSyncRead)
         else {
             SendData(m_head, static_cast<int>(m_curr - m_head));
         }
+        m_lastSentPcr = m_pcr;
     }
     m_head = m_curr;
 
@@ -954,11 +960,15 @@ bool CTsSender::Seek(__int64 distanceToMove, IReadOnlyFile::MOVE_METHOD moveMeth
         if (m_file->SetPointer(lastPos, IReadOnlyFile::MOVE_METHOD_BEGIN) >= 0) {
             m_curr = m_head = m_tail = nullptr;
             m_fEnPcr = false;
-            if (ReadToPcr(false, true)) m_prevPcr = m_pcr;
+            if (ReadToPcr(false, true)) {
+                m_prevPcr = m_pcr;
+                m_lastSentPcr = m_pcr;
+            }
         }
         return false;
     }
     m_prevPcr = m_pcr;
+    m_lastSentPcr = m_pcr;
     return true;
 }
 
