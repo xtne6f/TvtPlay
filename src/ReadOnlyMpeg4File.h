@@ -14,7 +14,6 @@
 class CReadOnlyMpeg4File : public IReadOnlyFile
 {
     static const DWORD READ_BOX_SIZE_MAX = 64 * 1024 * 1024;
-    static const DWORD BLOCK_SIZE_MIN = 256;
     static const DWORD BLOCK_SIZE_MAX = 65536;
     static const DWORD BLOCK_LIST_SIZE_MAX = 1000000;
     static const DWORD VIDEO_SAMPLE_MAX = 2 * 1024 * 1024;
@@ -35,6 +34,8 @@ public:
     int Read(BYTE *pBuf, int numToRead);
     __int64 SetPointer(__int64 distanceToMove, MOVE_METHOD moveMethod);
     __int64 GetSize() const;
+    int GetPositionMsecFromBytes(__int64 posBytes) const;
+    __int64 GetPositionBytesFromMsec(int msec) const;
     bool IsShareWrite() const { return false; }
 private:
     struct BLOCK_100MSEC {

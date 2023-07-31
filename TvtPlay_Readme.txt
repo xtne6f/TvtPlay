@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.2.9 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.3.0 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは添付のBonDriver_Pipeを使ってローカルTSファイルを
@@ -485,9 +485,8 @@ GetTickCount、[=1]ならQueryPerformanceCounterにします。どちらでも�
 ・TVTest ver.0.7.20以前では、シーク後に音無しor映像無しになることがあります。当
   方ではシーク200回のうち7回発生しました。発生したときはビューアリセットしたりも
   う一度シークしたりしてください。
-・総再生時間の表示は数秒以内の誤差がでる場合があります。また、総再生時間はファイ
-  ル先頭および末尾の情報から算出した値なので、カット編集されている場合は不正確に
-  なります
+・総再生時間はファイル先頭および末尾の情報から算出した値なので、カット編集されて
+  いる場合は不正確になります
 ・26.5時間以上のTSファイルはおそらく正しく再生できません(Program Clock Reference
   が巡回する関係上)
 ・再生位置から一度に13.2時間以上離れた位置にシークすると、誤った位置に飛びます

@@ -35,7 +35,9 @@ class CTsSender
     static const int RENEW_SIZE_INTERVAL = 3000;
     static const int RENEW_FSR_INTERVAL = 1000;
     static const int INITIAL_STORE_MSEC = 500;
+    static const int MAX_SEND_INTERVAL = 400 * PCR_PER_MSEC;
     static const int PCR_LAP_THRESHOLD = 600 * 1000 * PCR_PER_MSEC;
+    static const int READ_TO_PCR_LIMIT_PACKETS = 120000;
 public:
     CTsSender();
     ~CTsSender();
@@ -66,7 +68,7 @@ public:
     int GetRate() const;
 private:
     DWORD GetAdjTickCount();
-    int ReadToPcr(int limit, bool fSend, bool fSyncRead);
+    bool ReadToPcr(bool fSend, bool fSyncRead);
     void RotateBuffer(bool fSend, bool fSyncRead);
     bool Seek(__int64 distanceToMove, IReadOnlyFile::MOVE_METHOD moveMethod);
     bool SeekToBoundary(__int64 predicted, __int64 range, BYTE *pWork, int workSize);
@@ -93,7 +95,7 @@ private:
     int m_pipeNumber;
 
     DWORD m_baseTick, m_renewSizeTick, m_renewDurTick, m_renewFsrTick;
-    DWORD m_pcr, m_basePcr, m_initPcr, m_prevPcr;
+    DWORD m_pcr, m_basePcr, m_initPcr, m_prevPcr, m_lastSentPcr;
     int m_rateCtrlMsec;
     bool m_fEnPcr, m_fFixed, m_fPause;
     bool m_fPurged;

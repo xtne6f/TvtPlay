@@ -32,6 +32,11 @@ LONGLONG CalcHash(const LPBYTE pbData, DWORD dwDataLen, DWORD dwSalt, LONGLONG *
 
 static const DWORD PCR_PER_MSEC = 45;
 
+inline int CounterDiff(DWORD a, DWORD b)
+{
+    return (a - b) & 0x80000000 ? -static_cast<int>(b - a - 1) - 1 : static_cast<int>(a - b);
+}
+
 // 地上波+BSで指定可能なID(ARIB TR-B14):0x01,0x02,0x06,0x0D,0x0F,0x1B
 #define H_262_VIDEO         0x02
 #define PES_PRIVATE_DATA    0x06

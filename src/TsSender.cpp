@@ -17,8 +17,6 @@ static DWORD g_dwMagic;
 #define MAGIC_NUMBER
 #endif
 
-#define MSB(x) ((x) & 0x80000000)
-
 CTsTimestampShifter::CTsTimestampShifter()
     : m_shift45khz(0)
     , m_fEnabled(false)
@@ -157,6 +155,7 @@ CTsSender::CTsSender()
     , m_basePcr(0)
     , m_initPcr(0)
     , m_prevPcr(0)
+    , m_lastSentPcr(0)
     , m_rateCtrlMsec(0)
     , m_fEnPcr(false)
     , m_fFixed(false)
@@ -202,8 +201,12 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
             m_file.reset();
             return false;
         }
+        // 動画の長さなどは既知
+        m_unitSize = 188;
+        m_fSpecialExtending = false;
+        m_duration = static_cast<CReadOnlyMpeg4File*>(m_file.get())->GetPositionMsecFromBytes(m_file->GetSize());
     }
-    if (m_file == nullptr) {
+    else {
         // まず読み込み共有で開いてみる
         m_file.reset(new CReadOnlyLocalFile());
         m_fFixed = true;
@@ -219,12 +222,15 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     }
     m_reader.SetFile(m_file.get());
 
-    // TSパケットの単位を決定
     BYTE buf[8192];
     int readBytes = m_file->Read(buf, sizeof(buf));
     if (readBytes < 0) goto ERROR_EXIT;
-    m_unitSize = select_unit_size(buf, buf + readBytes);
-    if (m_unitSize < 188 || 320 < m_unitSize || (fMpeg4 && m_unitSize != 188)) goto ERROR_EXIT;
+
+    if (!fMpeg4) {
+        // TSパケットの単位を決定
+        m_unitSize = select_unit_size(buf, buf + readBytes);
+        if (m_unitSize < 188 || 320 < m_unitSize) goto ERROR_EXIT;
+    }
 
     // 転送時にパケットを188Byteに詰めるかどうか
     // TimestampedTS(192Byte)の場合のみ変換する
@@ -274,39 +280,50 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     }
     m_initPcr = m_pcr;
 
-    // 動画の長さを取得
-    m_fSpecialExtending = false;
-    m_duration = 0;
-    // 最大で標準的なTSの末尾8秒間を調べる
-    for (int sec = 2; sec <= 8; sec *= 2) {
-        if (Seek(-TS_SUPPOSED_RATE * sec, IReadOnlyFile::MOVE_METHOD_END)) {
-            // ファイル末尾が正常である場合
-            m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 1000 * sec;
-            m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) +
-                         (int)((long long)TS_SUPPOSED_RATE * 1000 * sec / GetRate());
-            break;
-        }
-    }
-    if (m_duration <= 0 && m_file->IsShareWrite() &&
-        SeekToBoundary(fileSize / 2, fileSize, buf, sizeof(buf) / 2))
-    {
-        // 書き込み共有かつファイル末尾が正常でない場合
-        __int64 filePos = m_reader.GetFilePosition();
-        for (int sec = 2; sec <= 8; sec *= 2) {
-            if (Seek(filePos - TS_SUPPOSED_RATE * sec, IReadOnlyFile::MOVE_METHOD_BEGIN)) {
-                filePos = m_reader.GetFilePosition();
-                m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 1000 * sec;
-                // ファイルサイズからレートを計算できないため
-                m_specialExtendInitRate = filePos < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
-                                          static_cast<int>((filePos + TS_SUPPOSED_RATE * sec) * 1000 / m_duration);
-                m_fSpecialExtending = true;
+    if (!fMpeg4) {
+        // 動画の長さを取得
+        m_fSpecialExtending = false;
+        m_duration = 0;
+        // 最大で標準的なTSの末尾8秒間を調べる
+        for (int sec = 1; sec <= 8; sec *= 2) {
+            if (Seek(-TS_SUPPOSED_RATE * sec, IReadOnlyFile::MOVE_METHOD_END)) {
+                // ファイル末尾が正常である場合
+                if (m_file->IsShareWrite()) {
+                    // 概算で補う
+                    m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 1000 * sec;
+                    m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) +
+                                 (int)((long long)TS_SUPPOSED_RATE * 1000 * sec / GetRate());
+                }
+                else {
+                    // 終端まで読む
+                    while (ReadToPcr(false, true)) {
+                        m_duration = DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC;
+                    }
+                }
                 break;
             }
         }
-    }
-    if (m_duration <= 0) {
-        // 最低限、再生はできる場合
-        m_duration = 0;
+        if (m_duration <= 0 && m_file->IsShareWrite() &&
+            SeekToBoundary(fileSize / 2, fileSize, buf, sizeof(buf) / 2))
+        {
+            // 書き込み共有かつファイル末尾が正常でない場合
+            __int64 filePos = m_reader.GetFilePosition();
+            for (int sec = 2; sec <= 8; sec *= 2) {
+                if (Seek(filePos - TS_SUPPOSED_RATE * sec, IReadOnlyFile::MOVE_METHOD_BEGIN)) {
+                    filePos = m_reader.GetFilePosition();
+                    m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 1000 * sec;
+                    // ファイルサイズからレートを計算できないため
+                    m_specialExtendInitRate = filePos < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
+                                              static_cast<int>((filePos + TS_SUPPOSED_RATE * sec) * 1000 / m_duration);
+                    m_fSpecialExtending = true;
+                    break;
+                }
+            }
+        }
+        if (m_duration <= 0) {
+            // 最低限、再生はできる場合
+            m_duration = 0;
+        }
     }
 
     // 再生レートが極端に小さい場合(ワンセグ等)はバッファを縮める
@@ -409,7 +426,7 @@ int CTsSender::Send()
 
     TCHAR readyState[BON_PIPE_MESSAGE_MAX];
     bool fReadToPcr = false;
-    bool fReadToEof = false;
+    bool fReadError = false;
     if (m_fPause) {
         readyState[0] = 0;
         ::Sleep(20);
@@ -423,8 +440,8 @@ int CTsSender::Send()
             ::Sleep(10);
         }
         else {
-            fReadToPcr = ReadToPcr(120000, true, m_fForceSyncRead) == 2;
-            fReadToEof = !fReadToPcr;
+            fReadToPcr = ReadToPcr(true, m_fForceSyncRead);
+            fReadError = !fReadToPcr;
         }
     }
     // 補正により一気に増加する可能性を避けるため定期的に呼ぶ
@@ -500,7 +517,7 @@ int CTsSender::Send()
         // 再生速度が上がる=PCRの進行が遅くなる
         int msec = (int)((long long)pcrDiff * m_speedDen / m_speedNum / PCR_PER_MSEC) - tickDiff;
         // PCRの連続性チェックのため
-        DWORD prevPcrAbsDiff = MSB(m_pcr-m_prevPcr) ? m_prevPcr-m_pcr : m_pcr-m_prevPcr;
+        int prevPcrDiff = CounterDiff(m_pcr, m_prevPcr);
         m_prevPcr = m_pcr;
 
         if (m_fUnderrunCtrl && readyState[0] == TEXT('E') &&
@@ -514,7 +531,7 @@ int CTsSender::Send()
 
         // 制御しきれない場合は一度リセット
         if (msec < -2000 || 2000 * m_speedDen / m_speedNum < msec ||
-            prevPcrAbsDiff > m_pcrDisconThreshold)
+            (DWORD)(prevPcrDiff < 0 ? -prevPcrDiff : prevPcrDiff) > m_pcrDisconThreshold)
         {
             // 受信側のストアをパージ
             TransactMessage(TEXT("PURGE"));
@@ -526,7 +543,7 @@ int CTsSender::Send()
         }
         if (msec > 0) ::Sleep(msec);
     }
-    return fReadToEof ? 0 : 1;
+    return fReadError ? 0 : 1;
 }
 
 
@@ -581,6 +598,12 @@ bool CTsSender::SeekToEnd()
     else Pause(true, true);
 
     m_reader.Flush();
+
+    CReadOnlyMpeg4File *mpeg4File = dynamic_cast<CReadOnlyMpeg4File*>(m_file.get());
+    if (mpeg4File) {
+        // 時間ベースでシークできる
+        return Seek(mpeg4File->GetPositionBytesFromMsec(max(m_duration - 2000, 0)), IReadOnlyFile::MOVE_METHOD_BEGIN);
+    }
     return Seek(-GetRate()*2, IReadOnlyFile::MOVE_METHOD_END);
 }
 
@@ -600,15 +623,23 @@ bool CTsSender::Seek(int msec)
     m_reader.Flush();
     __int64 rate = GetRate();
     __int64 size = m_reader.GetFileSize();
-    __int64 pos;
+    __int64 pos = m_reader.GetFilePosition();
+    DWORD prevPcr = m_pcr;
 
-    if (size < 0) return false;
+    if (size < 0 || pos < 0) return false;
 
-    // -5000<=msec<=5000になるまで動画レートから概算シーク
-    // 5ループまでに収束しなければ失敗
-    for (int i = 0; i < 5 && (msec < -5000 || 5000 < msec); i++) {
-        if ((pos = m_reader.GetFilePosition()) < 0) return false;
+    CReadOnlyMpeg4File *mpeg4File = dynamic_cast<CReadOnlyMpeg4File*>(m_file.get());
+    if (mpeg4File) {
+        // 時間ベースでシークできる
+        int posMsec = mpeg4File->GetPositionMsecFromBytes(pos);
+        return Seek(mpeg4File->GetPositionBytesFromMsec(max(min(posMsec + msec - INITIAL_STORE_MSEC, m_duration - 2000), 0)),
+                    IReadOnlyFile::MOVE_METHOD_BEGIN);
+    }
 
+    // msec==3000を目標に0<=msec<=6000になるまで動画レートから概算シーク
+    // 6ループまでに収束しなければ失敗
+    msec -= 3000;
+    for (int i = 0; i < 6 && (msec < -3000 || 3000 < msec); i++) {
         // 前方or後方にこれ以上シークできない場合
         if (msec < 0 && pos <= rate ||
             msec > 0 && pos >= size - rate*2) return true;
@@ -617,43 +648,44 @@ bool CTsSender::Seek(int msec)
         if (approx > size - rate*2) approx = size - rate*2;
         if (approx < 0) approx = 0;
 
-        DWORD prevPcr = m_pcr;
         if (!Seek(approx, IReadOnlyFile::MOVE_METHOD_BEGIN)) return false;
 
         // 移動分を差し引く
-        msec += MSB(m_pcr-prevPcr) ? (int)((prevPcr-m_pcr) / PCR_PER_MSEC) :
-                                    -(int)((m_pcr-prevPcr) / PCR_PER_MSEC);
-    }
-    if (msec < -5000 || 5000 < msec) return false;
-
-    if (msec < 0) {
-        // 約1秒ずつ前方シーク
-        // 10ループまでに収束しなければ失敗
-        int mul = 1;
-        for (int i = 0; i < 10 && msec < -500; i++) {
-            if ((pos = m_reader.GetFilePosition()) < 0) return false;
-            if (pos <= rate) return true;
-
-            DWORD prevPcr = m_pcr;
-            if (!Seek(-rate * mul, IReadOnlyFile::MOVE_METHOD_CURRENT) || MSB(prevPcr-m_pcr)) return false;
-            msec += (int)((prevPcr-m_pcr) / PCR_PER_MSEC);
-            // 動画レートが極端に小さいとき動かない可能性があるため
-            if (m_pcr == prevPcr) ++mul;
+        int pcrDiff = CounterDiff(m_pcr, prevPcr);
+        int nextMsec = msec + (pcrDiff < 0 ? (int)(-pcrDiff / PCR_PER_MSEC) : -(int)(pcrDiff / PCR_PER_MSEC));
+        if ((nextMsec < -3000 || 3000 < nextMsec) &&
+            ((msec < 0 && nextMsec > -msec / 2) || (msec > 0 && nextMsec < -msec / 2))) {
+            // 移動しすぎているのでレートを下げてやり直し
+            rate = rate * 2 / 3;
         }
-        if (msec < -500) return false;
-    }
-    else {
-        // 約1秒ずつ後方シーク
-        // 10ループまでに収束しなければ失敗
-        for (int i = 0; i < 10 && msec > 500; i++) {
-            if ((pos = m_reader.GetFilePosition()) < 0) return false;
-            if (pos >= size - rate*2) return true;
-
-            DWORD prevPcr = m_pcr;
-            if (!Seek(rate, IReadOnlyFile::MOVE_METHOD_CURRENT) || MSB(m_pcr-prevPcr)) return false;
-            msec -= (int)((m_pcr-prevPcr) / PCR_PER_MSEC);
+        else {
+            if ((msec < 0 && nextMsec * 2 < msec) || (msec > 0 && nextMsec * 2 > msec)) {
+                // あまり移動していないのでレートを上げる
+                rate = rate * 3 / 2;
+            }
+            pos = approx;
+            prevPcr = m_pcr;
+            msec = nextMsec;
         }
-        if (msec > 500) return false;
+    }
+    if (msec < -3000 || 3000 < msec) {
+        return false;
+    }
+    msec += 3000;
+
+    // 目標位置まで進む
+    int nextMsec = msec;
+    while (nextMsec > INITIAL_STORE_MSEC) {
+        m_fEnPcr = false;
+        if (nextMsec > msec || !ReadToPcr(false, true)) {
+            Seek(pos, IReadOnlyFile::MOVE_METHOD_BEGIN);
+            return false;
+        }
+        m_prevPcr = m_pcr;
+        m_lastSentPcr = m_pcr;
+
+        int pcrDiff = CounterDiff(m_pcr, prevPcr);
+        nextMsec = msec + (pcrDiff < 0 ? (int)(-pcrDiff / PCR_PER_MSEC) : -(int)(pcrDiff / PCR_PER_MSEC));
     }
     return true;
 }
@@ -768,110 +800,113 @@ DWORD CTsSender::GetAdjTickCount()
 
 
 // PCRが現れるまでTSパケットを処理する
-// 戻り値: 0:終端に達した, 1:PCRが現れる前に処理パケット数がlimitに達した, 2:正常に処理した
-int CTsSender::ReadToPcr(int limit, bool fSend, bool fSyncRead)
+// 戻り値: false:終端に達したかPCRが現れる前に処理パケット数が上限に達した, true:正常に処理した
+bool CTsSender::ReadToPcr(bool fSend, bool fSyncRead)
 {
     MAGIC_NUMBER(0x76389426);
-    bool fPcr;
-    do {
-#if 1 // TSパケットを1つ処理する
-    fPcr = false;
+    bool fPcr = false;
+    for (int limit = READ_TO_PCR_LIMIT_PACKETS; !fPcr && limit > 0; --limit) {
+        // TSパケットを1つ処理する
 
-    if (!m_curr || m_tail - m_curr <= m_unitSize) {
-        RotateBuffer(fSend, fSyncRead);
         if (!m_curr || m_tail - m_curr <= m_unitSize) {
-            return 0;
-        }
-    }
-
-    if (m_curr[0] != 0x47 || m_curr[m_unitSize] != 0x47) {
-        // m_currをパケットヘッダと同期させる
-        int i = 0;
-        for (; i < RESYNC_FAILURE_LIMIT; ++i) {
-            if ((m_curr = resync(m_curr, m_tail, m_unitSize)) != nullptr) break;
-            m_curr = m_tail; // 処理済にする
             RotateBuffer(fSend, fSyncRead);
-            if (!m_curr) return 0;
+            if (!m_curr || m_tail - m_curr <= m_unitSize) {
+                return false;
+            }
         }
-        if (i == RESYNC_FAILURE_LIMIT) return 0;
-        ASSERT(m_tail - m_curr > m_unitSize);
-    }
 
-    TS_HEADER header;
-    extract_ts_header(&header, m_curr);
-    // [統計(地上波)]
-    // adaptation_field_control == 0:0.00%, 1:99.03%, 2:0.21%, 3:0.76%
-    // payload_unit_start_indicator:2.09%
+        if (m_curr[0] != 0x47 || m_curr[m_unitSize] != 0x47) {
+            // m_currをパケットヘッダと同期させる
+            int i = 0;
+            for (; i < RESYNC_FAILURE_LIMIT; ++i) {
+                if ((m_curr = resync(m_curr, m_tail, m_unitSize)) != nullptr) break;
+                m_curr = m_tail; // 処理済にする
+                RotateBuffer(fSend, fSyncRead);
+                if (!m_curr) return false;
+            }
+            if (i == RESYNC_FAILURE_LIMIT) return false;
+            ASSERT(m_tail - m_curr > m_unitSize);
+        }
 
-    if ((header.adaptation_field_control&2)/*2,3*/ &&
-        !header.transport_error_indicator)
-    {
-        // アダプテーションフィールドがある
-        ADAPTATION_FIELD adapt;
-        extract_adaptation_field(&adapt, m_curr + 4);
+        TS_HEADER header;
+        extract_ts_header(&header, m_curr);
+        // [統計(地上波)]
+        // adaptation_field_control == 0:0.00%, 1:99.03%, 2:0.21%, 3:0.76%
+        // payload_unit_start_indicator:2.09%
 
-        if (adapt.pcr_flag) {
-            // 参照PIDが決まっていないとき、最初に3回PCRが出現したPIDを参照PIDとする
-            // 参照PIDのPCRが現れることなく5回別のPCRが出現すれば、参照PIDを変更する
-            if (header.pid != m_pcrPid) {
-                bool fFound = false;
-                for (int i = 0; i < m_pcrPidsLen; i++) {
-                    if (m_pcrPids[i] == header.pid) {
-                        ++m_pcrPidCounts[i];
-                        if (m_pcrPid < 0 && m_pcrPidCounts[i] >= 3 || m_pcrPidCounts[i] >= 5) m_pcrPid = header.pid;
-                        fFound = true;
-                        break;
+        if ((header.adaptation_field_control&2)/*2,3*/ &&
+            !header.transport_error_indicator)
+        {
+            // アダプテーションフィールドがある
+            ADAPTATION_FIELD adapt;
+            extract_adaptation_field(&adapt, m_curr + 4);
+
+            if (adapt.pcr_flag) {
+                // 参照PIDが決まっていないとき、最初に3回PCRが出現したPIDを参照PIDとする
+                // 参照PIDのPCRが現れることなく5回別のPCRが出現すれば、参照PIDを変更する
+                if (header.pid != m_pcrPid) {
+                    bool fFound = false;
+                    for (int i = 0; i < m_pcrPidsLen; i++) {
+                        if (m_pcrPids[i] == header.pid) {
+                            ++m_pcrPidCounts[i];
+                            if (m_pcrPid < 0 && m_pcrPidCounts[i] >= 3 || m_pcrPidCounts[i] >= 5) m_pcrPid = header.pid;
+                            fFound = true;
+                            break;
+                        }
+                    }
+                    if (!fFound && m_pcrPidsLen < PCR_PIDS_MAX) {
+                        m_pcrPids[m_pcrPidsLen] = header.pid;
+                        m_pcrPidCounts[m_pcrPidsLen] = 1;
+                        m_pcrPidsLen++;
                     }
                 }
-                if (!fFound && m_pcrPidsLen < PCR_PIDS_MAX) {
-                    m_pcrPids[m_pcrPidsLen] = header.pid;
-                    m_pcrPidCounts[m_pcrPidsLen] = 1;
-                    m_pcrPidsLen++;
+                // 参照PIDのときはPCRを取得する
+                if (header.pid == m_pcrPid) {
+                    m_pcrPidsLen = 0;
+                    m_pcr = (DWORD)adapt.pcr_45khz;
+                    if (!m_fEnPcr) {
+                        // 基準PCRを設定(受信側のストアを増やすため少し引く)
+                        m_baseTick = GetAdjTickCount() - m_initStore;
+                        m_basePcr = m_pcr;
+                        m_rateCtrlMsec = 0;
+                        m_fEnPcr = true;
+                    }
+                    fPcr = true;
                 }
             }
-            // 参照PIDのときはPCRを取得する
-            if (header.pid == m_pcrPid) {
-                m_pcrPidsLen = 0;
-                m_pcr = (DWORD)adapt.pcr_45khz;
-                if (!m_fEnPcr) {
-                    // 基準PCRを設定(受信側のストアを増やすため少し引く)
-                    m_baseTick = GetAdjTickCount() - m_initStore;
-                    m_basePcr = m_pcr;
-                    m_rateCtrlMsec = 0;
-                    m_fEnPcr = true;
-                }
-                fPcr = true;
+        }
+
+        if (header.pid == 0x14 && m_fEnPcr &&
+            !header.transport_scrambling_control &&
+            !header.transport_error_indicator &&
+            header.payload_unit_start_indicator &&
+            header.adaptation_field_control == 1)
+        {
+            // TOT-PCR対応情報を取得する
+            int pointerField = m_curr[4];
+            BYTE *pTable = m_curr + 5 + pointerField;
+            if (pTable + 7 < m_curr + 188 && (pTable[0] == 0x73 || pTable[0] == 0x70)) {
+                // BCD解析(ARIB STD-B10)
+                m_totBase = ((pTable[5]>>4)*10 + (pTable[5]&0x0f)) * 3600000 +
+                            ((pTable[6]>>4)*10 + (pTable[6]&0x0f)) * 60000 +
+                            ((pTable[7]>>4)*10 + (pTable[7]&0x0f)) * 1000;
+                m_totBasePcr = m_pcr;
             }
         }
-    }
 
-    if (header.pid == 0x14 && m_fEnPcr &&
-        !header.transport_scrambling_control &&
-        !header.transport_error_indicator &&
-        header.payload_unit_start_indicator &&
-        header.adaptation_field_control == 1)
-    {
-        // TOT-PCR対応情報を取得する
-        int pointerField = m_curr[4];
-        BYTE *pTable = m_curr + 5 + pointerField;
-        if (pTable + 7 < m_curr + 188 && (pTable[0] == 0x73 || pTable[0] == 0x70)) {
-            // BCD解析(ARIB STD-B10)
-            m_totBase = ((pTable[5]>>4)*10 + (pTable[5]&0x0f)) * 3600000 +
-                        ((pTable[6]>>4)*10 + (pTable[6]&0x0f)) * 60000 +
-                        ((pTable[7]>>4)*10 + (pTable[7]&0x0f)) * 1000;
-            m_totBasePcr = m_pcr;
-        }
-    }
+        // PCR/PTS/DTSを変更
+        m_tsShifter.Transform(m_curr);
 
-    // PCR/PTS/DTSを変更
-    m_tsShifter.Transform(m_curr);
+        m_curr += m_unitSize;
 
-    m_curr += m_unitSize;
-#endif
         // あまり貯めすぎると再生に影響するため
-        if (m_curr - m_head >= BON_UDP_TSDATASIZE - 1880) RotateBuffer(fSend, fSyncRead);
-    } while (!fPcr && --limit > 0);
-    return fPcr ? 2 : 1;
+        if (m_curr - m_head >= BON_UDP_TSDATASIZE - 1880 ||
+            (fSend && CounterDiff(m_pcr, m_lastSentPcr) >= MAX_SEND_INTERVAL))
+        {
+            RotateBuffer(fSend, fSyncRead);
+        }
+    }
+    return fPcr;
 }
 
 
@@ -896,6 +931,7 @@ void CTsSender::RotateBuffer(bool fSend, bool fSyncRead)
         else {
             SendData(m_head, static_cast<int>(m_curr - m_head));
         }
+        m_lastSentPcr = m_pcr;
     }
     m_head = m_curr;
 
@@ -934,16 +970,20 @@ bool CTsSender::Seek(__int64 distanceToMove, IReadOnlyFile::MOVE_METHOD moveMeth
 
     m_curr = m_head = m_tail = nullptr;
     m_fEnPcr = false;
-    if (ReadToPcr(120000, false, true) != 2) {
+    if (!ReadToPcr(false, true)) {
         // なるべく呼び出し前の状態に回復させるが、完全とは限らない
         if (m_file->SetPointer(lastPos, IReadOnlyFile::MOVE_METHOD_BEGIN) >= 0) {
             m_curr = m_head = m_tail = nullptr;
             m_fEnPcr = false;
-            if (ReadToPcr(120000, false, true) == 2) m_prevPcr = m_pcr;
+            if (ReadToPcr(false, true)) {
+                m_prevPcr = m_pcr;
+                m_lastSentPcr = m_pcr;
+            }
         }
         return false;
     }
     m_prevPcr = m_pcr;
+    m_lastSentPcr = m_pcr;
     return true;
 }
 

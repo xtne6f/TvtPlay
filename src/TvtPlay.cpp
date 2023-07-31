@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2022-11-04
+// 最終更新: 2023-07-31
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -31,7 +31,7 @@
 #define INFO_DESCRIPTION_SUFFIX L"+)"
 
 static const WCHAR INFO_PLUGIN_NAME[] = L"TvtPlay";
-static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.2.9" INFO_DESCRIPTION_SUFFIX;
+static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.3.0" INFO_DESCRIPTION_SUFFIX;
 static const int INFO_VERSION = 24;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
@@ -2594,8 +2594,6 @@ void CTvtPlay::RemoveStreamCallback()
 }
 
 
-#define MSB(x) ((x) & 0x80000000)
-
 // ストリームコールバック(別スレッド)
 BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
 {
@@ -2649,7 +2647,7 @@ BOOL CALLBACK CTvtPlay::StreamCallback(BYTE *pData, void *pClientData)
                 DWORD pcr = (DWORD)adapt.pcr_45khz;
 
                 // PCRの連続性チェック
-                if (MSB(pcr - t.m_pcr) || pcr - t.m_pcr >= 1000 * PCR_PER_MSEC) {
+                if (CounterDiff(pcr, t.m_pcr) < 0 || pcr - t.m_pcr >= 1000 * PCR_PER_MSEC) {
                     DEBUG_OUT(TEXT(__FUNCTION__) TEXT("(): Discontinuous packet!\n"));
                     t.m_captionAnalyzer.Clear();
                 }

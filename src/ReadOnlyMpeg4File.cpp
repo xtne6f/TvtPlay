@@ -90,6 +90,27 @@ __int64 CReadOnlyMpeg4File::GetSize() const
     return -1;
 }
 
+int CReadOnlyMpeg4File::GetPositionMsecFromBytes(__int64 posBytes) const
+{
+    if (m_hFile != INVALID_HANDLE_VALUE && posBytes >= 0) {
+        BLOCK_100MSEC val;
+        val.pos = static_cast<DWORD>(min(posBytes / 188, MAXDWORD));
+        auto it = std::upper_bound(m_blockList.begin(), m_blockList.end(), val,
+                                   [](const BLOCK_100MSEC &a, const BLOCK_100MSEC &b) { return a.pos < b.pos; }) - 1;
+        return static_cast<int>(it - m_blockList.begin()) * 100;
+    }
+    return -1;
+}
+
+__int64 CReadOnlyMpeg4File::GetPositionBytesFromMsec(int msec) const
+{
+    if (m_hFile != INVALID_HANDLE_VALUE && msec >= 0) {
+        int index = min(msec / 100, static_cast<int>(m_blockList.size() - 1));
+        return static_cast<__int64>(m_blockList[index].pos) * 188;
+    }
+    return -1;
+}
+
 bool CReadOnlyMpeg4File::LoadSettings()
 {
     TCHAR iniPath[MAX_PATH];
@@ -620,8 +641,7 @@ bool CReadOnlyMpeg4File::InitializeBlockList(LPCTSTR &errorMessage)
     DWORD nextPos = 0;
     for (auto it = m_blockList.begin(); it != m_blockList.end(); ++it) {
         DWORD pos = nextPos;
-        // NUL
-        nextPos += max(it->pos, BLOCK_SIZE_MIN);
+        nextPos += it->pos;
         if (nextPos > 0x7FFFFFFF) {
             return false;
         }
@@ -1020,22 +1040,27 @@ bool CReadOnlyMpeg4File::Add16TsPacketsFromPsi(std::vector<BYTE> &buf, const BYT
     if (psiSize < 16 || 1024 < psiSize) {
         return false;
     }
-    // アダプテーションを加えてセクションを16パケットに散らし、連続性指標を常に0で始める
-    BYTE counter = 0xFF;
-    for (size_t i = 0; i < psiSize; ) {
-        buf.resize(buf.size() + 4, 0);
-        CreateHeader(&buf.back() - 3, i == 0, 3, ++counter, pid);
-        size_t pointer = i == 0;
-        size_t n = (psiSize - i) / (16 - counter);
-        buf.push_back(static_cast<BYTE>(183 - n - pointer));
-        buf.push_back(0);
-        buf.insert(buf.end(), 182 - n - pointer, 0xFF);
-        if (pointer) {
+    // アダプテーションを加えてセクションを16パケット(2セクションx8)に散らし、連続性指標を常に0で始める
+    for (BYTE counter = 0; counter < 16; ) {
+        for (size_t i = 0; i < psiSize; ++counter) {
+            buf.resize(buf.size() + 4, 0);
+            CreateHeader(&buf.back() - 3, i == 0, 3, counter, pid);
+            size_t pointer = i == 0;
+            size_t n = (psiSize - i) / (8 - counter % 8);
+            // セクションヘッダはTSを跨がないようにする
+            if (i == 0 && n < 8) {
+                n = 8;
+            }
+            buf.push_back(static_cast<BYTE>(183 - n - pointer));
             buf.push_back(0);
+            buf.insert(buf.end(), 182 - n - pointer, 0xFF);
+            if (pointer) {
+                buf.push_back(0);
+            }
+            buf.insert(buf.end(), psi + i, psi + i + n);
+            buf.resize(((buf.size() - 1) / 188 + 1) * 188, 0xFF);
+            i += n;
         }
-        buf.insert(buf.end(), psi + i, psi + i + n);
-        buf.resize(((buf.size() - 1) / 188 + 1) * 188, 0xFF);
-        i += n;
     }
     return true;
 }
