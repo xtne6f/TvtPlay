@@ -676,6 +676,7 @@ bool CTsSender::Seek(int msec)
     // 目標位置まで進む
     int nextMsec = msec;
     while (nextMsec > INITIAL_STORE_MSEC) {
+        m_fEnPcr = false;
         if (nextMsec > msec || !ReadToPcr(false, true)) {
             Seek(pos, IReadOnlyFile::MOVE_METHOD_BEGIN);
             return false;
