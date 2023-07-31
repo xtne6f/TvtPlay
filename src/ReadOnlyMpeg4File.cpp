@@ -90,10 +90,23 @@ __int64 CReadOnlyMpeg4File::GetSize() const
     return -1;
 }
 
-int CReadOnlyMpeg4File::GetDurationMsec() const
+int CReadOnlyMpeg4File::GetPositionMsecFromBytes(__int64 posBytes) const
 {
-    if (m_hFile != INVALID_HANDLE_VALUE) {
-        return static_cast<int>(m_blockList.size()) * 100;
+    if (m_hFile != INVALID_HANDLE_VALUE && posBytes >= 0) {
+        BLOCK_100MSEC val;
+        val.pos = static_cast<DWORD>(min(posBytes / 188, MAXDWORD));
+        auto it = std::upper_bound(m_blockList.begin(), m_blockList.end(), val,
+                                   [](const BLOCK_100MSEC &a, const BLOCK_100MSEC &b) { return a.pos < b.pos; }) - 1;
+        return static_cast<int>(it - m_blockList.begin()) * 100;
+    }
+    return -1;
+}
+
+__int64 CReadOnlyMpeg4File::GetPositionBytesFromMsec(int msec) const
+{
+    if (m_hFile != INVALID_HANDLE_VALUE && msec >= 0) {
+        int index = min(msec / 100, static_cast<int>(m_blockList.size() - 1));
+        return static_cast<__int64>(m_blockList[index].pos) * 188;
     }
     return -1;
 }

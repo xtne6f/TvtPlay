@@ -204,7 +204,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
         // 動画の長さなどは既知
         m_unitSize = 188;
         m_fSpecialExtending = false;
-        m_duration = static_cast<CReadOnlyMpeg4File*>(m_file.get())->GetDurationMsec();
+        m_duration = static_cast<CReadOnlyMpeg4File*>(m_file.get())->GetPositionMsecFromBytes(m_file->GetSize());
     }
     else {
         // まず読み込み共有で開いてみる
@@ -598,6 +598,12 @@ bool CTsSender::SeekToEnd()
     else Pause(true, true);
 
     m_reader.Flush();
+
+    CReadOnlyMpeg4File *mpeg4File = dynamic_cast<CReadOnlyMpeg4File*>(m_file.get());
+    if (mpeg4File) {
+        // 時間ベースでシークできる
+        return Seek(mpeg4File->GetPositionBytesFromMsec(max(m_duration - 2000, 0)), IReadOnlyFile::MOVE_METHOD_BEGIN);
+    }
     return Seek(-GetRate()*2, IReadOnlyFile::MOVE_METHOD_END);
 }
 
@@ -617,15 +623,23 @@ bool CTsSender::Seek(int msec)
     m_reader.Flush();
     __int64 rate = GetRate();
     __int64 size = m_reader.GetFileSize();
-    __int64 pos;
+    __int64 pos = m_reader.GetFilePosition();
+    DWORD prevPcr = m_pcr;
 
-    if (size < 0) return false;
+    if (size < 0 || pos < 0) return false;
 
-    // -5000<=msec<=5000になるまで動画レートから概算シーク
-    // 5ループまでに収束しなければ失敗
-    for (int i = 0; i < 5 && (msec < -5000 || 5000 < msec); i++) {
-        if ((pos = m_reader.GetFilePosition()) < 0) return false;
+    CReadOnlyMpeg4File *mpeg4File = dynamic_cast<CReadOnlyMpeg4File*>(m_file.get());
+    if (mpeg4File) {
+        // 時間ベースでシークできる
+        int posMsec = mpeg4File->GetPositionMsecFromBytes(pos);
+        return Seek(mpeg4File->GetPositionBytesFromMsec(max(min(posMsec + msec - INITIAL_STORE_MSEC, m_duration - 2000), 0)),
+                    IReadOnlyFile::MOVE_METHOD_BEGIN);
+    }
 
+    // msec==3000を目標に0<=msec<=6000になるまで動画レートから概算シーク
+    // 6ループまでに収束しなければ失敗
+    msec -= 3000;
+    for (int i = 0; i < 6 && (msec < -3000 || 3000 < msec); i++) {
         // 前方or後方にこれ以上シークできない場合
         if (msec < 0 && pos <= rate ||
             msec > 0 && pos >= size - rate*2) return true;
@@ -634,43 +648,43 @@ bool CTsSender::Seek(int msec)
         if (approx > size - rate*2) approx = size - rate*2;
         if (approx < 0) approx = 0;
 
-        DWORD prevPcr = m_pcr;
         if (!Seek(approx, IReadOnlyFile::MOVE_METHOD_BEGIN)) return false;
 
         // 移動分を差し引く
         int pcrDiff = CounterDiff(m_pcr, prevPcr);
-        msec += pcrDiff < 0 ? (int)(-pcrDiff / PCR_PER_MSEC) : -(int)(pcrDiff / PCR_PER_MSEC);
-    }
-    if (msec < -5000 || 5000 < msec) return false;
-
-    if (msec < 0) {
-        // 約1秒ずつ前方シーク
-        // 10ループまでに収束しなければ失敗
-        int mul = 1;
-        for (int i = 0; i < 10 && msec < -500; i++) {
-            if ((pos = m_reader.GetFilePosition()) < 0) return false;
-            if (pos <= rate) return true;
-
-            DWORD prevPcr = m_pcr;
-            if (!Seek(-rate * mul, IReadOnlyFile::MOVE_METHOD_CURRENT) || CounterDiff(prevPcr, m_pcr) < 0) return false;
-            msec += (int)(CounterDiff(prevPcr, m_pcr) / PCR_PER_MSEC);
-            // 動画レートが極端に小さいとき動かない可能性があるため
-            if (m_pcr == prevPcr) ++mul;
+        int nextMsec = msec + (pcrDiff < 0 ? (int)(-pcrDiff / PCR_PER_MSEC) : -(int)(pcrDiff / PCR_PER_MSEC));
+        if ((nextMsec < -3000 || 3000 < nextMsec) &&
+            ((msec < 0 && nextMsec > -msec / 2) || (msec > 0 && nextMsec < -msec / 2))) {
+            // 移動しすぎているのでレートを下げてやり直し
+            rate = rate * 2 / 3;
         }
-        if (msec < -500) return false;
-    }
-    else {
-        // 約1秒ずつ後方シーク
-        // 10ループまでに収束しなければ失敗
-        for (int i = 0; i < 10 && msec > 500; i++) {
-            if ((pos = m_reader.GetFilePosition()) < 0) return false;
-            if (pos >= size - rate*2) return true;
-
-            DWORD prevPcr = m_pcr;
-            if (!Seek(rate, IReadOnlyFile::MOVE_METHOD_CURRENT) || CounterDiff(m_pcr, prevPcr) < 0) return false;
-            msec -= (int)(CounterDiff(m_pcr, prevPcr) / PCR_PER_MSEC);
+        else {
+            if ((msec < 0 && nextMsec * 2 < msec) || (msec > 0 && nextMsec * 2 > msec)) {
+                // あまり移動していないのでレートを上げる
+                rate = rate * 3 / 2;
+            }
+            pos = approx;
+            prevPcr = m_pcr;
+            msec = nextMsec;
         }
-        if (msec > 500) return false;
+    }
+    if (msec < -3000 || 3000 < msec) {
+        return false;
+    }
+    msec += 3000;
+
+    // 目標位置まで進む
+    int nextMsec = msec;
+    while (nextMsec > INITIAL_STORE_MSEC) {
+        if (nextMsec > msec || !ReadToPcr(false, true)) {
+            Seek(pos, IReadOnlyFile::MOVE_METHOD_BEGIN);
+            return false;
+        }
+        m_prevPcr = m_pcr;
+        m_lastSentPcr = m_pcr;
+
+        int pcrDiff = CounterDiff(m_pcr, prevPcr);
+        nextMsec = msec + (pcrDiff < 0 ? (int)(-pcrDiff / PCR_PER_MSEC) : -(int)(pcrDiff / PCR_PER_MSEC));
     }
     return true;
 }
