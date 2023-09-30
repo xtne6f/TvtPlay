@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2023-07-31
+// 最終更新: 2023-09-30
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -33,8 +33,8 @@
 #define INFO_DESCRIPTION_SUFFIX L")"
 
 static const WCHAR INFO_PLUGIN_NAME[] = L"TvtPlay";
-static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.3.0" INFO_DESCRIPTION_SUFFIX;
-static const int INFO_VERSION = 24;
+static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.3.1" INFO_DESCRIPTION_SUFFIX;
+static const int INFO_VERSION = 25;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
 #define WM_QUERY_CLOSE_NEXT (WM_APP + 2)
