@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2023-07-31
+// 最終更新: 2023-09-30
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -31,8 +31,8 @@
 #define INFO_DESCRIPTION_SUFFIX L"+)"
 
 static const WCHAR INFO_PLUGIN_NAME[] = L"TvtPlay";
-static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.3.0" INFO_DESCRIPTION_SUFFIX;
-static const int INFO_VERSION = 24;
+static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.3.1" INFO_DESCRIPTION_SUFFIX;
+static const int INFO_VERSION = 25;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
 #define WM_QUERY_CLOSE_NEXT (WM_APP + 2)
@@ -151,6 +151,7 @@ CTvtPlay::CTvtPlay()
     , m_seekListNum(0)
     , m_stretchListNum(0)
     , m_popupMax(0)
+    , m_playlistPopupMax(0)
     , m_fPopupDesc(false)
     , m_fPopuping(false)
     , m_fDialogOpen(false)
@@ -408,6 +409,7 @@ void CTvtPlay::LoadSettings()
         m_popupMax          = GetBufferedProfileInt(pBuf, TEXT("PopupMax"), 30);
         m_fPopupDesc        = GetBufferedProfileInt(pBuf, TEXT("PopupDesc"), 0) != 0;
         GetBufferedProfileString(pBuf, TEXT("PopupPattern"), TEXT("%RecordFolder%*.ts"), m_szPopupPattern, _countof(m_szPopupPattern));
+        m_playlistPopupMax  = GetBufferedProfileInt(pBuf, TEXT("PlaylistPopupMax"), 30);
         GetBufferedProfileString(pBuf, TEXT("ChaptersFolderName"), TEXT("chapters"), m_szChaptersDirName, _countof(m_szChaptersDirName));
 #ifdef EN_SWC
         GetBufferedProfileString(pBuf, TEXT("CaptionDll"), TEXT("Plugins\\TvtPlay_Caption.dll"), m_szCaptionDllPath, _countof(m_szCaptionDllPath));
@@ -513,6 +515,7 @@ void CTvtPlay::SaveSettings(bool fWriteDefault) const
         WritePrivateProfileInt(SETTINGS, TEXT("PopupMax"), m_popupMax, m_szIniFileName);
         WritePrivateProfileInt(SETTINGS, TEXT("PopupDesc"), m_fPopupDesc, m_szIniFileName);
         ::WritePrivateProfileString(SETTINGS, TEXT("PopupPattern"), m_szPopupPattern, m_szIniFileName);
+        WritePrivateProfileInt(SETTINGS, TEXT("PlaylistPopupMax"), m_playlistPopupMax, m_szIniFileName);
         ::WritePrivateProfileString(SETTINGS, TEXT("ChaptersFolderName"), m_szChaptersDirName, m_szIniFileName);
 #ifdef EN_SWC
         ::WritePrivateProfileString(SETTINGS, TEXT("CaptionDll"), m_szCaptionDllPath, m_szIniFileName);
@@ -1002,9 +1005,6 @@ bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
     std::sort(nameList.begin(), nameList.end(), [](LPCTSTR a, LPCTSTR b) { return _tcsicmp(a, b) < 0; });
     if (m_fPopupDesc) std::reverse(nameList.begin(), nameList.end());
 
-    // ポップアップしない部分をとばす
-    int skipSize = max(listSize - m_popupMax, 0);
-
     // メニュー生成
     int selID = 0;
     HMENU hmenu = ::CreatePopupMenu();
@@ -1013,14 +1013,29 @@ bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
             ::AppendMenu(hmenu, MF_STRING | MF_GRAYED, 0, TEXT("(なし)"));
         }
         else {
-            for (int i = 0; skipSize+i < listSize; ++i) {
+            HMENU hSubMenu = hmenu;
+            for (int i = 0; i < listSize; ++i) {
                 TCHAR str[64];
-                _tcsncpy_s(str, nameList[skipSize+i], _TRUNCATE);
+                if (i > 0 && i % m_popupMax == 0) {
+                    HMENU hNewMenu = ::CreateMenu();
+                    if (hNewMenu) {
+                        // 手前のアイテムをサブメニュー化
+                        _stprintf_s(str, TEXT("[%d - %d] (&P)"), max(listSize - i - m_popupMax, 0) + 1, listSize - i);
+                        if (::InsertMenu(hSubMenu, 0, MF_STRING | MF_POPUP | MF_BYPOSITION, (UINT_PTR)hNewMenu, str)) {
+                            ::InsertMenu(hSubMenu, 1, MF_SEPARATOR | MF_BYPOSITION, 0, nullptr);
+                            hSubMenu = hNewMenu;
+                        }
+                        else {
+                            ::DestroyMenu(hNewMenu);
+                        }
+                    }
+                }
+                _tcsncpy_s(str, nameList[listSize - i - 1], _TRUNCATE);
                 if (_tcslen(str) == 63) _tcscpy_s(&str[60], 4, TEXT("..."));
                 // プレフィクス対策
                 for (LPTSTR p = str; *p; p++)
                     if (*p == TEXT('&')) *p = TEXT('_');
-                ::AppendMenu(hmenu, MF_STRING, i + 1, str);
+                ::InsertMenu(hSubMenu, 0, MF_STRING | MF_BYPOSITION, listSize - i, str);
             }
         }
         selID = TrackPopup(hmenu, pt, flags);
@@ -1028,9 +1043,9 @@ bool CTvtPlay::OpenWithPopup(const POINT &pt, UINT flags)
     }
 
     TCHAR fileName[MAX_PATH];
-    if (selID > 0 && skipSize+selID-1 < listSize &&
+    if (selID > 0 && selID - 1 < listSize &&
         ::PathRemoveFileSpec(pattern) &&
-        ::PathCombine(fileName, pattern, nameList[skipSize+selID-1]))
+        ::PathCombine(fileName, pattern, nameList[selID - 1]))
     {
         return m_playlist.PushBackListOrFile(fileName, true) >= 0 ? OpenCurrent() : false;
     }
@@ -1051,9 +1066,25 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
         }
         else {
             hmenu = ::GetSubMenu(hTopMenu, 0);
-            std::vector<CPlaylist::PLAY_INFO>::const_iterator it = m_playlist.Get().begin();
-            for (int cmdID = 1; it != m_playlist.Get().end() && cmdID <= 10000; ++cmdID, ++it) {
+            HMENU hSubMenu = hmenu;
+            int listSize = (int)m_playlist.Get().size();
+            auto it = m_playlist.Get().rbegin();
+            for (int i = 0; i < listSize && i < POPUP_MAX_MAX; ++i, ++it) {
                 TCHAR str[64];
+                if (i > 0 && i % max(m_playlistPopupMax, 1) == 0) {
+                    HMENU hNewMenu = ::CreateMenu();
+                    if (hNewMenu) {
+                        // 手前のアイテムをサブメニュー化
+                        _stprintf_s(str, TEXT("[%d - %d] (&P)"), max(listSize - i - max(m_playlistPopupMax, 1), 0) + 1, listSize - i);
+                        if (::InsertMenu(hSubMenu, 0, MF_STRING | MF_POPUP | MF_BYPOSITION, (UINT_PTR)hNewMenu, str)) {
+                            ::InsertMenu(hSubMenu, 1, MF_SEPARATOR | MF_BYPOSITION, 0, nullptr);
+                            hSubMenu = hNewMenu;
+                        }
+                        else {
+                            ::DestroyMenu(hNewMenu);
+                        }
+                    }
+                }
                 _tcsncpy_s(str, PathFindFileName((*it).path), _TRUNCATE);
                 if (_tcslen(str) == 63) _tcscpy_s(&str[60], 4, TEXT("..."));
                 // プレフィクス対策
@@ -1063,11 +1094,11 @@ bool CTvtPlay::OpenWithPlayListPopup(const POINT &pt, UINT flags)
                 MENUITEMINFO mi;
                 mi.cbSize = sizeof(MENUITEMINFO);
                 mi.fMask = MIIM_ID | MIIM_STATE | MIIM_TYPE;
-                mi.wID = cmdID;
-                mi.fState = cmdID-1==(int)m_playlist.GetPosition() ? MFS_DEFAULT | MFS_CHECKED : 0;
+                mi.wID = listSize - i;
+                mi.fState = mi.wID - 1 == m_playlist.GetPosition() ? MFS_DEFAULT | MFS_CHECKED : 0;
                 mi.fType = MFT_STRING | MFT_RADIOCHECK;
                 mi.dwTypeData = str;
-                ::InsertMenuItem(hmenu, cmdID - 1, TRUE, &mi);
+                ::InsertMenuItem(hSubMenu, 0, TRUE, &mi);
             }
         }
         selID = TrackPopup(hmenu, pt, flags);

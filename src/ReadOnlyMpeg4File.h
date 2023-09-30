@@ -52,6 +52,9 @@ private:
     static inline DWORD ArrayToDWORD(const BYTE *data) {
         return MAKEWORD(data[3], data[2]) | static_cast<DWORD>(MAKEWORD(data[1], data[0])) << 16;
     }
+    static inline __int64 ArrayToInt64(const BYTE *data) {
+        return ArrayToDWORD(&data[4]) | static_cast<__int64>(ArrayToDWORD(&data[0])) << 32;
+    }
     bool LoadSettings();
     void InitializeMetaInfo(LPCTSTR path);
     void LoadCaption(LPCTSTR path);
@@ -60,7 +63,7 @@ private:
     bool ReadVideoSampleDesc(char index, bool &fHevc, std::vector<BYTE> &spsPps, std::vector<BYTE> &buf) const;
     bool ReadAudioSampleDesc(char index, BYTE *adtsHeader, std::vector<BYTE> &buf) const;
     bool ReadSampleTable(char index, std::vector<__int64> &stso, std::vector<DWORD> &stsz,
-                         std::vector<__int64> &stts, std::vector<DWORD> *ctts, std::vector<BYTE> &buf) const;
+                         std::vector<__int64> &stts, std::vector<DWORD> *ctts, __int64 &editTimeOffset, std::vector<BYTE> &buf) const;
     bool InitializeBlockList(LPCTSTR &errorMessage);
     bool ReadCurrentBlock();
     bool InitializePsiCounterInfo(LPCTSTR &errorMessage);
@@ -99,6 +102,7 @@ private:
     std::vector<__int64> m_sttsV, m_sttsA[2];
     std::vector<DWORD> m_cttsV;
     DWORD m_timeScaleV, m_timeScaleA[2];
+    DWORD m_offsetPtsV, m_offsetPtsA[2];
     bool m_fHevc;
     std::vector<BYTE> m_spsPps;
     BYTE m_adtsHeader[2][7];

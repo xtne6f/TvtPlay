@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.3.0 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.3.1 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは添付のBonDriver_Pipeを使ってローカルTSファイルを
@@ -282,6 +282,7 @@ FileInfoAutoUpdate【ver.1.7～】
 PopupMax【ver.0.8～】
     フォルダの簡易表示機能でファイルを一覧表示する最大数、またはこの機能を使わな
     い[=0]
+    # この数で表示しきれない項目は順次サブメニューになります。
 PopupDesc【ver.0.9～】
     簡易表示機能でファイルを降順表示する[=1]かどうか
 PopupPattern【ver.0.8～】
@@ -289,6 +290,9 @@ PopupPattern【ver.0.8～】
     # たとえば[=D:\media\*.ts]とすれば"D:\media"フォルダにある.tsファイルが名前
     # 順にポップアップ表示されます。
     # %RecordFolder% はTVTestの録画フォルダに置き換わります。
+PlaylistPopupMax【ver.3.1～】
+    再生リストのポップアップ(ListPopup)で一覧表示する最大数
+    # PopupMaxと同様です。
 ChaptersFolderName【ver.1.7～】
     TSファイルのある場所にこの名前のフォルダがあれば、チャプターファイルをここか
     ら読み書きする

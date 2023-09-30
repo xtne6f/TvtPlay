@@ -118,6 +118,7 @@ private:
     int m_seekListNum, m_stretchListNum;
     TCHAR m_buttonList[BUTTON_MAX][BUTTON_TEXT_MAX];
     int m_popupMax;
+    int m_playlistPopupMax;
     TCHAR m_szPopupPattern[MAX_PATH];
     bool m_fPopupDesc, m_fPopuping;
     bool m_fDialogOpen;
