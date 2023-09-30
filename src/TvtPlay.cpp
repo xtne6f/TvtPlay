@@ -757,7 +757,8 @@ bool CTvtPlay::EnablePlugin(bool fEnable) {
         if (!InitializePlugin()) return false;
 
         if (!m_hwndFrame) {
-            m_hwndFrame = ::CreateWindow(TVTPLAY_FRAME_WINDOW_CLASS, nullptr, 0, 0, 0, 0, 0, nullptr, nullptr, g_hinstDLL, this);
+            m_hwndFrame = ::CreateWindow(TVTPLAY_FRAME_WINDOW_CLASS, nullptr, WS_POPUP, 0, 0, 0, 0,
+                                         m_pApp->GetAppWindow(), nullptr, g_hinstDLL, this);
             if (!m_hwndFrame) return false;
         }
 
