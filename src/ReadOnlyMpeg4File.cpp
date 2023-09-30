@@ -232,24 +232,35 @@ bool CReadOnlyMpeg4File::InitializeTable(LPCTSTR &errorMessage)
             }
         }
         if (timeScale != 0) {
+            __int64 editTimeOffset;
             if (m_stsoV.empty() && ReadVideoSampleDesc(i, m_fHevc, m_spsPps, buf)) {
                 m_timeScaleV = timeScale;
-                if (!ReadSampleTable(i, m_stsoV, m_stszV, m_sttsV, &m_cttsV, buf) ||
-                    std::find_if(m_stszV.begin(), m_stszV.end(), [](DWORD a) { return a > VIDEO_SAMPLE_MAX; }) != m_stszV.end()) {
+                if (ReadSampleTable(i, m_stsoV, m_stszV, m_sttsV, &m_cttsV, editTimeOffset, buf) &&
+                    std::find_if(m_stszV.begin(), m_stszV.end(), [](DWORD a) { return a > VIDEO_SAMPLE_MAX; }) == m_stszV.end()) {
+                    // 0.5秒の範囲でPTSを利用してエディットリストの内容を反映する
+                    m_offsetPtsV = static_cast<DWORD>(22500 + min(max(editTimeOffset * 45000 / m_timeScaleV, 0), 22500));
+                }
+                else {
                     m_stsoV.clear();
                 }
             }
             else if (m_stsoA[0].empty() && ReadAudioSampleDesc(i, m_adtsHeader[0], buf)) {
                 m_timeScaleA[0] = timeScale;
-                if (!ReadSampleTable(i, m_stsoA[0], m_stszA[0], m_sttsA[0], nullptr, buf) ||
-                    std::find_if(m_stszA[0].begin(), m_stszA[0].end(), [](DWORD a) { return a > AUDIO_SAMPLE_MAX; }) != m_stszA[0].end()) {
+                if (ReadSampleTable(i, m_stsoA[0], m_stszA[0], m_sttsA[0], nullptr, editTimeOffset, buf) &&
+                    std::find_if(m_stszA[0].begin(), m_stszA[0].end(), [](DWORD a) { return a > AUDIO_SAMPLE_MAX; }) == m_stszA[0].end()) {
+                    m_offsetPtsA[0] = static_cast<DWORD>(22500 + min(max(editTimeOffset * 45000 / m_timeScaleA[0], 0), 22500));
+                }
+                else {
                     m_stsoA[0].clear();
                 }
             }
             else if (m_stsoA[1].empty() && !m_stsoA[0].empty() && ReadAudioSampleDesc(i, m_adtsHeader[1], buf)) {
                 m_timeScaleA[1] = timeScale;
-                if (!ReadSampleTable(i, m_stsoA[1], m_stszA[1], m_sttsA[1], nullptr, buf) ||
-                    std::find_if(m_stszA[1].begin(), m_stszA[1].end(), [](DWORD a) { return a > AUDIO_SAMPLE_MAX; }) != m_stszA[1].end()) {
+                if (ReadSampleTable(i, m_stsoA[1], m_stszA[1], m_sttsA[1], nullptr, editTimeOffset, buf) &&
+                    std::find_if(m_stszA[1].begin(), m_stszA[1].end(), [](DWORD a) { return a > AUDIO_SAMPLE_MAX; }) == m_stszA[1].end()) {
+                    m_offsetPtsA[1] = static_cast<DWORD>(22500 + min(max(editTimeOffset * 45000 / m_timeScaleA[1], 0), 22500));
+                }
+                else {
                     m_stsoA[1].clear();
                 }
             }
@@ -418,7 +429,7 @@ bool CReadOnlyMpeg4File::ReadAudioSampleDesc(char index, BYTE *adtsHeader, std::
 }
 
 bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso, std::vector<DWORD> &stsz,
-                                         std::vector<__int64> &stts, std::vector<DWORD> *ctts, std::vector<BYTE> &buf) const
+                                         std::vector<__int64> &stts, std::vector<DWORD> *ctts, __int64 &editTimeOffset, std::vector<BYTE> &buf) const
 {
     char path[37] = "/moov0/trak?/mdia0/minf0/stbl0/????0";
     path[11] = index;
@@ -431,7 +442,7 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
             if (ArrayToDWORD(&buf[0]) == 0 && n == (buf.size() - 8) / 8) {
                 stco.reserve(n);
                 for (size_t i = 0; i < n; ++i) {
-                    stco.push_back(static_cast<__int64>(ArrayToDWORD(&buf[8 + 8 * i])) << 32 | ArrayToDWORD(&buf[12 + 8 * i]));
+                    stco.push_back(ArrayToInt64(&buf[8 + 8 * i]));
                 }
             }
         }
@@ -551,6 +562,37 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
         }
         if (ctts->size() != stsz.size()) {
             return false;
+        }
+    }
+
+    editTimeOffset = 0;
+    char elstPath[] = "/moov0/trak?/edts0/elst0";
+    elstPath[11] = index;
+    if (ReadBox(elstPath, buf) >= 8) {
+        DWORD verFlags = ArrayToDWORD(&buf[0]);
+        size_t n = ArrayToDWORD(&buf[4]);
+        if ((verFlags & 0xFEFFFFFF) == 0 && n == 1 && (verFlags ? 28U : 20U) == buf.size()) {
+            // 最もシンプルなエディットリストのみ対応
+            __int64 segmentDuration;
+            __int64 mediaTime;
+            DWORD mediaRate;
+            if (verFlags) {
+                segmentDuration = ArrayToInt64(&buf[8]);
+                mediaTime = ArrayToInt64(&buf[16]);
+                mediaRate = ArrayToDWORD(&buf[24]);
+            }
+            else {
+                segmentDuration = ArrayToDWORD(&buf[8]);
+                mediaTime = ArrayToDWORD(&buf[12]);
+                if (mediaTime >= 0x80000000) {
+                    mediaTime = -1;
+                }
+                mediaRate = ArrayToDWORD(&buf[16]);
+            }
+            if (segmentDuration > 0 && mediaTime >= 0 && mediaRate == 0x10000) {
+                // 遅延分を加える
+                editTimeOffset += mediaTime;
+            }
         }
     }
     return true;
@@ -805,7 +847,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
             }
             // PES header
             sample.insert(sample.begin(), 14, 0xFF);
-            CreatePesHeader(sample.data(), 0xE0, true, 0, static_cast<DWORD>(45000 * (sampleTime + m_cttsV[indexV]) / m_timeScaleV + 22500), stuffingSize);
+            CreatePesHeader(sample.data(), 0xE0, true, 0, static_cast<DWORD>(45000 * (sampleTime + m_cttsV[indexV]) / m_timeScaleV + m_offsetPtsV), stuffingSize);
             n += 14;
         }
         for (int i = 0; i < n; ++counterV) {
@@ -841,7 +883,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
                 sample[18] |= n >> 3 & 0xFF;
                 sample[19] |= n << 5 & 0xFF;
                 // PES header
-                CreatePesHeader(sample.data(), 0xC0, true, (n + 8) & 0xFFFF, static_cast<DWORD>(45000 * sampleTime / m_timeScaleA[a] + 22500), 0);
+                CreatePesHeader(sample.data(), 0xC0, true, (n + 8) & 0xFFFF, static_cast<DWORD>(45000 * sampleTime / m_timeScaleA[a] + m_offsetPtsA[a]), 0);
                 n += 14;
             }
             for (int i = 0; i < n; ++counterA[a]) {
