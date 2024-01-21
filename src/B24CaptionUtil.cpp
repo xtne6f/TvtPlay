@@ -4,17 +4,17 @@
 
 namespace
 {
-const DWORD CAPTION_MAX_PER_SEC = 20;
-const DWORD CAPTION_MANAGEMENT_RESEND_MSEC = 5000;
+const uint32_t CAPTION_MAX_PER_SEC = 20;
+const uint32_t CAPTION_MANAGEMENT_RESEND_MSEC = 5000;
 const char B24CAPTION_MAGIC[] = "b24caption-2aaf6fcf-6388-4e59-88ff-46e1555d0edd";
 
-bool DecodeBase64(std::vector<BYTE> &dest, const char *src, size_t srcSize)
+bool DecodeBase64(std::vector<uint8_t> &dest, const char *src, size_t srcSize)
 {
     if (srcSize % 4 != 0) {
         return false;
     }
     for (size_t i = 0; i + 3 < srcSize; i += 4) {
-        BYTE b[4];
+        uint8_t b[4];
         for (size_t j = 0; j < 4; ++j) {
             char c = src[i + j];
             b[j] = 'A' <= c && c <= 'Z' ? c - 'A' :
@@ -38,7 +38,7 @@ bool DecodeBase64(std::vector<BYTE> &dest, const char *src, size_t srcSize)
     return true;
 }
 
-bool DecodeB24Caption(std::vector<BYTE> &dest, const char *src)
+bool DecodeB24Caption(std::vector<uint8_t> &dest, const char *src)
 {
     dest.clear();
     size_t bracePos[8];
@@ -65,7 +65,7 @@ bool DecodeB24Caption(std::vector<BYTE> &dest, const char *src)
             if (c == '^') {
                 // キャレット記法
                 dest.push_back(0xC2);
-                dest.push_back(static_cast<BYTE>(d + 0x40));
+                dest.push_back(static_cast<uint8_t>(d + 0x40));
             }
             else if (c == '=') {
                 // 24bitサイズフィールド
@@ -76,9 +76,9 @@ bool DecodeB24Caption(std::vector<BYTE> &dest, const char *src)
                 else if (d == '}' && braceCount > 0) {
                     size_t pos = bracePos[--braceCount];
                     size_t sz = dest.size() - pos;
-                    dest[pos - 3] = static_cast<BYTE>(sz >> 16);
-                    dest[pos - 2] = static_cast<BYTE>(sz >> 8);
-                    dest[pos - 1] = static_cast<BYTE>(sz);
+                    dest[pos - 3] = static_cast<uint8_t>(sz >> 16);
+                    dest[pos - 2] = static_cast<uint8_t>(sz >> 8);
+                    dest[pos - 1] = static_cast<uint8_t>(sz);
                 }
                 else {
                     // ネストが深すぎるなど
@@ -98,29 +98,29 @@ bool DecodeB24Caption(std::vector<BYTE> &dest, const char *src)
             }
             else {
                 // HEX
-                dest.push_back(static_cast<BYTE>(((c >= 'a' ? c - 'a' + 10 : c >= 'A' ? c - 'A' + 10 : c - '0') << 4) |
-                                                  (d >= 'a' ? d - 'a' + 10 : d >= 'A' ? d - 'A' + 10 : d - '0')));
+                dest.push_back(static_cast<uint8_t>((c >= 'a' ? c - 'a' + 10 : c >= 'A' ? c - 'A' + 10 : c - '0') << 4 |
+                                                    (d >= 'a' ? d - 'a' + 10 : d >= 'A' ? d - 'A' + 10 : d - '0')));
             }
         }
         else if (*src == '&') {
             // WebVTTの文字実体参照のうち主要なものをデコード
             ++src;
             static const char ent[5][6] = { "amp;", "lt;", "gt;", "quot;", "apos;" };
-            static const BYTE ref[5] = { '&', '<', '>', '"', '\'' };
+            static const uint8_t ref[5] = { '&', '<', '>', '"', '\'' };
             size_t i = 0;
-            for (; i < _countof(ref); ++i) {
+            for (; i < sizeof(ref); ++i) {
                 if (strncmp(src, ent[i], strlen(ent[i])) == 0) {
                     dest.push_back(ref[i]);
                     src += strlen(ent[i]);
                     break;
                 }
             }
-            if (i >= _countof(ref)) {
+            if (i >= sizeof(ref)) {
                 dest.push_back('&');
             }
         }
         else {
-            dest.push_back(static_cast<BYTE>(*(src++)));
+            dest.push_back(static_cast<uint8_t>(*(src++)));
         }
     }
     // PESに格納できるサイズであること
@@ -128,7 +128,7 @@ bool DecodeB24Caption(std::vector<BYTE> &dest, const char *src)
 }
 }
 
-void LoadWebVttB24Caption(LPCTSTR path, std::vector<std::pair<__int64, std::vector<BYTE>>> &captionList)
+void LoadWebVttB24Caption(LPCTSTR path, std::vector<std::pair<int64_t, std::vector<uint8_t>>> &captionList)
 {
     captionList.clear();
     FILE *fp;
@@ -137,12 +137,12 @@ void LoadWebVttB24Caption(LPCTSTR path, std::vector<std::pair<__int64, std::vect
     }
 
     bool fMagic = false;
-    __int64 currentQueMsec = 0;
-    DWORD captionNumPerSec = 0;
-    BYTE currentDgiGroup = 0;
+    int64_t currentQueMsec = 0;
+    uint32_t captionNumPerSec = 0;
+    uint8_t currentDgiGroup = 0;
     size_t captionManagementIndex = 0;
     enum { VTT_SIGNATURE, VTT_IGNORE, VTT_BODY, VTT_CUE_ID, VTT_CUE_TIME, VTT_CUE } state = VTT_SIGNATURE;
-    std::vector<BYTE> decodeBuf;
+    std::vector<uint8_t> decodeBuf;
     std::vector<char> buf;
     size_t bufLen = 0;
     size_t readFileCount = 0;
@@ -247,10 +247,10 @@ void LoadWebVttB24Caption(LPCTSTR path, std::vector<std::pair<__int64, std::vect
         if (state == VTT_CUE_TIME) {
             state = VTT_IGNORE;
             if (bufLen >= 12 && buf[2] == ':' && (buf[5] == '.' || (buf[5] == ':' && buf[8] == '.'))) {
-                int t1 = strtol(&buf[0], nullptr, 10);
-                int t2 = strtol(&buf[3], nullptr, 10);
-                int t3 = strtol(&buf[6], nullptr, 10);
-                int t;
+                long t1 = strtol(&buf[0], nullptr, 10);
+                long t2 = strtol(&buf[3], nullptr, 10);
+                long t3 = strtol(&buf[6], nullptr, 10);
+                long t;
                 if (buf[5] == '.') {
                     // mm:ss.ttt
                     t = ((t1 * 60) + t2) * 1000 + t3;
@@ -286,10 +286,10 @@ void LoadWebVttB24Caption(LPCTSTR path, std::vector<std::pair<__int64, std::vect
     fclose(fp);
 }
 
-WORD CalcCrc16Ccitt(const BYTE *data, size_t len, WORD crc)
+uint16_t CalcCrc16Ccitt(const uint8_t *data, size_t len, uint16_t crc)
 {
     for (size_t i = 0; i < len; ++i) {
-        WORD c = ((crc >> 8) ^ data[i]) << 8;
+        uint16_t c = ((crc >> 8) ^ data[i]) << 8;
         for (int j = 0; j < 8; ++j) {
             c = (c << 1) ^ (c & 0x8000 ? 0x1021 : 0);
         }
