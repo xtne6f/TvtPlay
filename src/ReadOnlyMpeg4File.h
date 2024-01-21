@@ -5,6 +5,7 @@
 #include "ReadOnlyFile.h"
 #include <stdint.h>
 #include <map>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -28,7 +29,7 @@ class CReadOnlyMpeg4File : public IReadOnlyFile
     static const uint16_t DISPLACED_PID = 0x1E00;
     static const uint32_t PSI_MAX_STREAMS = 32;
 public:
-    CReadOnlyMpeg4File() : m_hFile(INVALID_HANDLE_VALUE) {}
+    CReadOnlyMpeg4File() : m_fp(nullptr, fclose) {}
     ~CReadOnlyMpeg4File() { Close(); }
     bool Open(LPCTSTR path, int flags, LPCTSTR &errorMessage);
     void Close();
@@ -89,7 +90,7 @@ private:
     static size_t NalFileToByte(std::vector<uint8_t> &data, bool &fIdr, bool fHevc);
     static uint32_t CalcCrc32(const uint8_t *data, size_t len, uint32_t crc = 0xFFFFFFFF);
 
-    HANDLE m_hFile;
+    std::unique_ptr<FILE, decltype(&fclose)> m_fp;
     TCHAR m_metaName[MAX_PATH];
     TCHAR m_vttExtension[16];
     TCHAR m_psiDataExtension[16];

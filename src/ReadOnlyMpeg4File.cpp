@@ -1,5 +1,6 @@
 ﻿#include <Windows.h>
 #include <Shlwapi.h>
+#include <io.h>
 #include <algorithm>
 #include "Util.h"
 #include "B24CaptionUtil.h"
@@ -11,9 +12,11 @@ bool CReadOnlyMpeg4File::Open(LPCTSTR path, int flags, LPCTSTR &errorMessage)
 {
     Close();
     if ((flags & OPEN_FLAG_NORMAL) && !(flags & OPEN_FLAG_SHARE_WRITE) && LoadSettings()) {
-        m_hFile = ::CreateFile(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE,
-                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (m_hFile != INVALID_HANDLE_VALUE) {
+        FILE *fp;
+        if (_tfopen_s(&fp, path, TEXT("rbN")) == 0) {
+            m_fp.reset(fp);
+        }
+        if (m_fp) {
             LoadCaption(path);
             OpenPsiData(path);
             if (InitializeTable(errorMessage)) {
@@ -32,15 +35,12 @@ bool CReadOnlyMpeg4File::Open(LPCTSTR path, int flags, LPCTSTR &errorMessage)
 void CReadOnlyMpeg4File::Close()
 {
     m_psiDataReader.Close();
-    if (m_hFile != INVALID_HANDLE_VALUE) {
-        ::CloseHandle(m_hFile);
-        m_hFile = INVALID_HANDLE_VALUE;
-    }
+    m_fp.reset();
 }
 
 int CReadOnlyMpeg4File::Read(BYTE *pBuf, int numToRead)
 {
-    if (m_hFile != INVALID_HANDLE_VALUE) {
+    if (m_fp) {
         int numRead = 0;
         while (numRead < numToRead) {
             if (m_blockCache.empty() && !ReadCurrentBlock()) {
@@ -63,7 +63,7 @@ int CReadOnlyMpeg4File::Read(BYTE *pBuf, int numToRead)
 
 __int64 CReadOnlyMpeg4File::SetPointer(__int64 distanceToMove, MOVE_METHOD moveMethod)
 {
-    if (m_hFile != INVALID_HANDLE_VALUE) {
+    if (m_fp) {
         int64_t toMove = moveMethod == MOVE_METHOD_CURRENT ? static_cast<int64_t>(m_blockInfo->pos) * 188 + m_pointer + distanceToMove :
                          moveMethod == MOVE_METHOD_END ? GetSize() + distanceToMove : distanceToMove;
         if (toMove >= 0) {
@@ -84,7 +84,7 @@ __int64 CReadOnlyMpeg4File::SetPointer(__int64 distanceToMove, MOVE_METHOD moveM
 
 __int64 CReadOnlyMpeg4File::GetSize() const
 {
-    if (m_hFile != INVALID_HANDLE_VALUE) {
+    if (m_fp) {
         return static_cast<int64_t>(m_blockList.back().pos) * 188;
     }
     return -1;
@@ -92,7 +92,7 @@ __int64 CReadOnlyMpeg4File::GetSize() const
 
 int CReadOnlyMpeg4File::GetPositionMsecFromBytes(__int64 posBytes) const
 {
-    if (m_hFile != INVALID_HANDLE_VALUE && posBytes >= 0) {
+    if (m_fp && posBytes >= 0) {
         BLOCK_100MSEC val;
         val.pos = static_cast<uint32_t>(min(posBytes / 188, 0xFFFFFFFF));
         auto it = std::upper_bound(m_blockList.begin(), m_blockList.end(), val,
@@ -104,7 +104,7 @@ int CReadOnlyMpeg4File::GetPositionMsecFromBytes(__int64 posBytes) const
 
 __int64 CReadOnlyMpeg4File::GetPositionBytesFromMsec(int msec) const
 {
-    if (m_hFile != INVALID_HANDLE_VALUE && msec >= 0) {
+    if (m_fp && msec >= 0) {
         int index = min(msec / 100, static_cast<int>(m_blockList.size() - 1));
         return static_cast<int64_t>(m_blockList[index].pos) * 188;
     }
@@ -164,7 +164,7 @@ void CReadOnlyMpeg4File::InitializeMetaInfo(LPCTSTR path)
     if (!m_iniTime[0]) {
         // ファイルの更新日時をTOTとする
         FILETIME ft;
-        if (::GetFileTime(m_hFile, nullptr, nullptr, &ft)) {
+        if (::GetFileTime(reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(m_fp.get()))), nullptr, nullptr, &ft)) {
             m_totStart.LowPart = ft.dwLowDateTime;
             m_totStart.HighPart = ft.dwHighDateTime;
             m_totStart.QuadPart += 9 * 36000000000LL;
@@ -499,15 +499,15 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<int64_t> &stso,
             }
         }
     }
-    LARGE_INTEGER fileSize;
-    if (stso.size() != stsz.size() || !::GetFileSizeEx(m_hFile, &fileSize)) {
+    int64_t fileSize;
+    if (stso.size() != stsz.size() || _fseeki64(m_fp.get(), 0, SEEK_END) != 0 || (fileSize = _ftelli64(m_fp.get())) < 0) {
         return false;
     }
     // サンプルの総和や範囲がファイルサイズを超えていないかチェック
     int64_t sum = 0;
     for (size_t i = 0; i < stso.size(); ++i) {
         sum += stsz[i];
-        if (sum > fileSize.QuadPart || stso[i] + stsz[i] > fileSize.QuadPart) {
+        if (sum > fileSize || stso[i] + stsz[i] > fileSize) {
             return false;
         }
     }
@@ -1000,35 +1000,30 @@ bool CReadOnlyMpeg4File::InitializePsiCounterInfo(LPCTSTR &errorMessage)
 int CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<uint8_t> &data) const
 {
     if (path[0] == '/') {
-        LARGE_INTEGER toMove = {};
-        if (!::SetFilePointerEx(m_hFile, toMove, nullptr, FILE_BEGIN)) {
-            return -1;
-        }
+        rewind(m_fp.get());
         ++path;
     }
     int index = path[4] - '0';
     uint8_t head[16];
-    DWORD numRead;
-    while (::ReadFile(m_hFile, head, 8, &numRead, nullptr) && numRead == 8) {
-        LARGE_INTEGER boxSize;
-        boxSize.QuadPart = ArrayToDWORD(head);
-        if (boxSize.QuadPart == 1) {
+    while (fread(head, 1, 8, m_fp.get()) == 8) {
+        int numRead = 8;
+        int64_t boxSize = ArrayToDWORD(head);
+        if (boxSize == 1) {
             // 64bit形式
-            if (!::ReadFile(m_hFile, head + 8, 8, &numRead, nullptr) || numRead != 8) {
+            if (fread(head + 8, 1, 8, m_fp.get()) != 8) {
                 break;
             }
             numRead = 16;
-            boxSize.HighPart = ArrayToDWORD(head + 8);
-            boxSize.LowPart = ArrayToDWORD(head + 12);
+            boxSize = ArrayToInt64(head + 8);
         }
-        if (boxSize.QuadPart < numRead) {
+        if (boxSize < numRead) {
             break;
         }
         if (::memcmp(path, head + 4, 4) == 0 && --index < 0) {
             if (path[5] == '\0') {
-                if (boxSize.QuadPart - numRead <= READ_BOX_SIZE_MAX) {
-                    data.resize(static_cast<size_t>(boxSize.QuadPart - numRead));
-                    if (data.empty() || ::ReadFile(m_hFile, data.data(), static_cast<uint32_t>(data.size()), &numRead, nullptr) && numRead == data.size()) {
+                if (boxSize - numRead <= READ_BOX_SIZE_MAX) {
+                    data.resize(static_cast<size_t>(boxSize - numRead));
+                    if (data.empty() || fread(data.data(), 1, data.size(), m_fp.get()) == data.size()) {
                         return static_cast<int>(data.size());
                     }
                 }
@@ -1036,9 +1031,7 @@ int CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<uint8_t> &data) const
             }
             return ReadBox(path + 6, data);
         }
-        LARGE_INTEGER toMove;
-        toMove.QuadPart = boxSize.QuadPart - numRead;
-        if (!::SetFilePointerEx(m_hFile, toMove, nullptr, FILE_CURRENT)) {
+        if (_fseeki64(m_fp.get(), boxSize - numRead, SEEK_CUR) != 0) {
             break;
         }
     }
@@ -1052,12 +1045,9 @@ int CReadOnlyMpeg4File::ReadSample(size_t index, const std::vector<int64_t> &sts
     }
     if (data) {
         data->resize(stsz[index]);
-        LARGE_INTEGER toMove;
-        toMove.QuadPart = stso[index];
-        DWORD numRead;
         if (data->empty() ||
-            !::SetFilePointerEx(m_hFile, toMove, nullptr, FILE_BEGIN) ||
-            !::ReadFile(m_hFile, data->data(), stsz[index], &numRead, nullptr) || numRead != stsz[index]) {
+            _fseeki64(m_fp.get(), stso[index], SEEK_SET) != 0 ||
+            fread(data->data(), 1, stsz[index], m_fp.get()) != stsz[index]) {
             data->clear();
         }
         return static_cast<int>(data->size());
