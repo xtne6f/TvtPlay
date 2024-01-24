@@ -1382,10 +1382,15 @@ size_t CReadOnlyMpeg4File::CreatePmt2ndLoop(uint8_t *data, bool fHevc, bool fAud
         data[x++] = CAPTION_PID >> 8 | 0xE0;
         data[x++] = CAPTION_PID & 0xFF;
         data[x++] = 0xF0;
-        data[x++] = 3;
+        data[x++] = 8;
         data[x++] = 0x52; // ストリーム識別記述子
         data[x++] = 1;
         data[x++] = 0x30;
+        data[x++] = 0xFD; // データ符号化方式記述子
+        data[x++] = 3;
+        data[x++] = 0x00;
+        data[x++] = 0x08;
+        data[x++] = 0x3D;
     }
     return x;
 }
