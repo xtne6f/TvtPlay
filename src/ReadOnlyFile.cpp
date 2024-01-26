@@ -1,7 +1,7 @@
 ﻿#include <Windows.h>
 #include "ReadOnlyFile.h"
 
-bool CReadOnlyLocalFile::Open(LPCTSTR path, int flags, LPCTSTR &errorMessage)
+bool CReadOnlyLocalFile::Open(LPCTSTR path, int flags, const char *&errorMessage)
 {
     Close();
     if (flags & OPEN_FLAG_NORMAL) {

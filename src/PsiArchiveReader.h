@@ -15,7 +15,7 @@ public:
     bool Open(LPCTSTR path);
     void Close() { m_fp.reset(); }
     bool IsOpen() const { return !!m_fp; }
-    bool ReadCodeList(const std::function<void(int, uint16_t, uint16_t)> &proc, LPCTSTR &errorMessage);
+    bool ReadCodeList(const std::function<void(int, uint16_t, uint16_t)> &proc, const char *&errorMessage);
     void Read(int beginTimeMsec, int endTimeMsec,
               const std::function<void(const std::vector<uint8_t> &, uint16_t)> &proc);
 private:

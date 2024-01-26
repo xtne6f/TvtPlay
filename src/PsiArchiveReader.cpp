@@ -13,10 +13,10 @@ bool CPsiArchiveReader::Open(LPCTSTR path)
     return !!m_fp;
 }
 
-bool CPsiArchiveReader::ReadCodeList(const std::function<void(int, uint16_t, uint16_t)> &proc, LPCTSTR &errorMessage)
+bool CPsiArchiveReader::ReadCodeList(const std::function<void(int, uint16_t, uint16_t)> &proc, const char *&errorMessage)
 {
     if (!m_fp) {
-        errorMessage = TEXT("CPsiArchiveReader: File is not open");
+        errorMessage = "CPsiArchiveReader: File is not open";
         return false;
     }
     rewind(m_fp.get());
@@ -37,7 +37,7 @@ bool CPsiArchiveReader::ReadCodeList(const std::function<void(int, uint16_t, uin
             break;
         }
         if (dictionaryBuffSize > DICTIONARY_MAX_BUFF_SIZE) {
-            errorMessage = TEXT("CPsiArchiveReader: Buffer limit exceeded");
+            errorMessage = "CPsiArchiveReader: Buffer limit exceeded";
             return false;
         }
         uint32_t trailerSize = (dictionaryLen + (dictionaryDataSize + 1) / 2 + codeListLen) % 2 ? 2 : 4;
@@ -45,7 +45,7 @@ bool CPsiArchiveReader::ReadCodeList(const std::function<void(int, uint16_t, uin
         dict.assign(dictionaryWindowLen, std::make_pair(static_cast<uint16_t>(0), static_cast<uint16_t>(0xFFFF)));
         for (size_t i = 0; i < dictionaryLen; ++i) {
             if (fread(&dict[i].first, sizeof(uint16_t), 1, m_fp.get()) != 1) {
-                errorMessage = TEXT("CPsiArchiveReader: Read error");
+                errorMessage = "CPsiArchiveReader: Read error";
                 return false;
             }
             if (dict[i].first >= CODE_NUMBER_BEGIN) {
@@ -53,7 +53,7 @@ bool CPsiArchiveReader::ReadCodeList(const std::function<void(int, uint16_t, uin
                 uint16_t lastIndex = dict[i].first - CODE_NUMBER_BEGIN;
                 if (lastIndex >= lastDict.size() || lastDict[lastIndex].second == 0xFFFF) {
                     // 参照先が異常
-                    errorMessage = TEXT("CPsiArchiveReader: Invalid dictionary");
+                    errorMessage = "CPsiArchiveReader: Invalid dictionary";
                     return false;
                 }
                 dict[i] = lastDict[lastIndex];
@@ -62,7 +62,7 @@ bool CPsiArchiveReader::ReadCodeList(const std::function<void(int, uint16_t, uin
             uint32_t addSize = dict[i].first + 3;
             if (dictionaryBuffSize < addSize) {
                 // 辞書バッファサイズ超過
-                errorMessage = TEXT("CPsiArchiveReader: Invalid dictionary");
+                errorMessage = "CPsiArchiveReader: Invalid dictionary";
                 return false;
             }
             dictionaryBuffSize -= addSize;
@@ -71,11 +71,11 @@ bool CPsiArchiveReader::ReadCodeList(const std::function<void(int, uint16_t, uin
             if (dict[i].second == 0xFFFF) {
                 // 新規なのでPID情報あり
                 if (dictionaryDataSize < 2) {
-                    errorMessage = TEXT("CPsiArchiveReader: Invalid dictionary");
+                    errorMessage = "CPsiArchiveReader: Invalid dictionary";
                     return false;
                 }
                 if (fread(&dict[i].second, sizeof(uint16_t), 1, m_fp.get()) != 1) {
-                    errorMessage = TEXT("CPsiArchiveReader: Read error");
+                    errorMessage = "CPsiArchiveReader: Read error";
                     return false;
                 }
                 dictionaryDataSize -= 2;
@@ -84,7 +84,7 @@ bool CPsiArchiveReader::ReadCodeList(const std::function<void(int, uint16_t, uin
         }
         for (size_t i = dictionaryLen, lastIndex = 0; i < dictionaryWindowLen; ++lastIndex) {
             if (lastIndex >= lastDict.size()) {
-                errorMessage = TEXT("CPsiArchiveReader: Invalid dictionary");
+                errorMessage = "CPsiArchiveReader: Invalid dictionary";
                 return false;
             }
             if (lastDict[lastIndex].second != 0xFFFF) {
@@ -118,17 +118,17 @@ bool CPsiArchiveReader::ReadCodeList(const std::function<void(int, uint16_t, uin
                 for (size_t n = (m_timeList[i] >> 16) + 1; n > 0; --n) {
                     uint16_t code;
                     if (codeCount++ == codeListLen) {
-                        errorMessage = TEXT("CPsiArchiveReader: Invalid codelist");
+                        errorMessage = "CPsiArchiveReader: Invalid codelist";
                         return false;
                     }
                     if (fread(&code, sizeof(uint16_t), 1, m_fp.get()) != 1) {
-                        errorMessage = TEXT("CPsiArchiveReader: Read error");
+                        errorMessage = "CPsiArchiveReader: Read error";
                         return false;
                     }
                     if (code < CODE_NUMBER_BEGIN ||
                         static_cast<size_t>(code - CODE_NUMBER_BEGIN) >= dict.size())
                     {
-                        errorMessage = TEXT("CPsiArchiveReader: Invalid codelist");
+                        errorMessage = "CPsiArchiveReader: Invalid codelist";
                         return false;
                     }
                     if (currTime != UNKNOWN_TIME) {
@@ -141,12 +141,12 @@ bool CPsiArchiveReader::ReadCodeList(const std::function<void(int, uint16_t, uin
         }
 
         if (codeListLen != codeCount) {
-            errorMessage = TEXT("CPsiArchiveReader: Invalid codelist");
+            errorMessage = "CPsiArchiveReader: Invalid codelist";
             return false;
         }
         uint8_t trailer[4];
         if (fread(trailer, 1, trailerSize, m_fp.get()) != trailerSize) {
-            errorMessage = TEXT("CPsiArchiveReader: Read error");
+            errorMessage = "CPsiArchiveReader: Read error";
             return false;
         }
         dict.swap(lastDict);

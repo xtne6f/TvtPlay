@@ -15,7 +15,7 @@ public:
     };
     IReadOnlyFile() {}
     virtual ~IReadOnlyFile() {}
-    virtual bool Open(LPCTSTR path, int flags, LPCTSTR &errorMessage) = 0;
+    virtual bool Open(LPCTSTR path, int flags, const char *&errorMessage) = 0;
     virtual void Close() = 0;
     virtual int Read(BYTE *pBuf, int numToRead) = 0;
     virtual __int64 SetPointer(__int64 distanceToMove, MOVE_METHOD moveMethod) = 0;
@@ -31,7 +31,7 @@ class CReadOnlyLocalFile : public IReadOnlyFile
 public:
     CReadOnlyLocalFile() : m_hFile(INVALID_HANDLE_VALUE), m_fShareWrite(false) {}
     ~CReadOnlyLocalFile() { Close(); }
-    bool Open(LPCTSTR path, int flags, LPCTSTR &errorMessage);
+    bool Open(LPCTSTR path, int flags, const char *&errorMessage);
     void Close();
     int Read(BYTE *pBuf, int numToRead);
     __int64 SetPointer(__int64 distanceToMove, MOVE_METHOD moveMethod);

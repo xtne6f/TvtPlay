@@ -8,7 +8,7 @@
 
 extern HINSTANCE g_hinstDLL;
 
-bool CReadOnlyMpeg4File::Open(LPCTSTR path, int flags, LPCTSTR &errorMessage)
+bool CReadOnlyMpeg4File::Open(LPCTSTR path, int flags, const char *&errorMessage)
 {
     Close();
     if ((flags & OPEN_FLAG_NORMAL) && !(flags & OPEN_FLAG_SHARE_WRITE) && LoadSettings()) {
@@ -217,7 +217,7 @@ void CReadOnlyMpeg4File::OpenPsiData(LPCTSTR path)
     m_psiDataReader.Open(psiDataPath);
 }
 
-bool CReadOnlyMpeg4File::InitializeTable(LPCTSTR &errorMessage)
+bool CReadOnlyMpeg4File::InitializeTable(const char *&errorMessage)
 {
     std::vector<uint8_t> buf;
     m_stsoV.clear();
@@ -270,12 +270,12 @@ bool CReadOnlyMpeg4File::InitializeTable(LPCTSTR &errorMessage)
         }
     }
     if (m_stsoV.empty()) {
-        errorMessage = TEXT("CReadOnlyMpeg4File: No video track");
+        errorMessage = "CReadOnlyMpeg4File: No video track";
         return false;
     }
     // 音声2は必須でない
     if (m_stsoA[0].empty()) {
-        errorMessage = TEXT("CReadOnlyMpeg4File: No audio track");
+        errorMessage = "CReadOnlyMpeg4File: No audio track";
         return false;
     }
     return InitializeBlockList(errorMessage);
@@ -589,7 +589,7 @@ bool CReadOnlyMpeg4File::ReadSampleTable(int64_t trakBoxPos, std::vector<int64_t
     return true;
 }
 
-bool CReadOnlyMpeg4File::InitializeBlockList(LPCTSTR &errorMessage)
+bool CReadOnlyMpeg4File::InitializeBlockList(const char *&errorMessage)
 {
     m_blockList.clear();
     BLOCK_100MSEC block = {};
@@ -938,7 +938,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
     return true;
 }
 
-bool CReadOnlyMpeg4File::InitializePsiCounterInfo(LPCTSTR &errorMessage)
+bool CReadOnlyMpeg4File::InitializePsiCounterInfo(const char *&errorMessage)
 {
     m_psiCounterInfoMap.clear();
     if (!m_psiDataReader.IsOpen()) {
