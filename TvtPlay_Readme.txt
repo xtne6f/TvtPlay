@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.3.1 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.3.2 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは添付のBonDriver_Pipeを使ってローカルTSファイルを
@@ -368,6 +368,12 @@ PsiDataExtension【ver.2.8～】
     # MP4再生時に番組情報や放送時刻、データ放送といった情報を再現できます。
     # https://github.com/xtne6f/psisiarc が出力した書庫を利用できます。
     # BroadcastIDやTimeキーの指定は無視されます。
+CheckFileAttributes【ver.3.2～】
+    同時に読み込むファイルの隠し属性を検査する[=1]かどうか
+    # デフォルトは[=1]です。
+    # MP4ファイルを再生するとき、同時に読み込むWebVTTファイルやPSI/SIデータファ
+    # イルが隠し属性やシステムファイル属性である場合は(MP4ファイルが同等の隠し属
+    # 性やシステムファイル属性である場合をのぞき)無視するようにします。
 BroadcastID
     ファイルの放送IDを指定
     # NetworkID=0x0001,TransportStreamID=0x0002,ServiceID=0x0003としたいときは
