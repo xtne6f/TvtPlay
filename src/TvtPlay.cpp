@@ -1,5 +1,5 @@
 ﻿// TVTestにtsファイル再生機能を追加するプラグイン
-// 最終更新: 2023-09-30
+// 最終更新: 2024-02-02
 // 署名: 849fa586809b0d16276cd644c6749503
 #include <Windows.h>
 #include <WindowsX.h>
@@ -31,7 +31,7 @@
 #define INFO_DESCRIPTION_SUFFIX L"+)"
 
 static const WCHAR INFO_PLUGIN_NAME[] = L"TvtPlay";
-static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.3.1" INFO_DESCRIPTION_SUFFIX;
+static const WCHAR INFO_DESCRIPTION[] = L"ファイル再生機能を追加 (ver.3.2" INFO_DESCRIPTION_SUFFIX;
 static const int INFO_VERSION = 25;
 
 #define WM_UPDATE_STATUS    (WM_APP + 1)
@@ -1408,12 +1408,14 @@ bool CTvtPlay::Open(LPCTSTR fileName, int offset, int stretchID)
 {
     Close();
 
-    LPCTSTR errorMessage = nullptr;
+    const char *errorMessage = nullptr;
     if (!m_tsSender.Open(fileName, m_salt, m_readBufSizeKB*1024, m_fConvTo188, m_fUnderrunCtrl, m_fUseQpc,
                          m_pcrThresholdMsec, errorMessage))
     {
         if (errorMessage) {
-            m_pApp->AddLog(errorMessage, TVTest::LOG_TYPE_ERROR);
+            TCHAR log[128];
+            _stprintf_s(log, TEXT("%.127hs"), errorMessage);
+            m_pApp->AddLog(log, TVTest::LOG_TYPE_ERROR);
         }
         return false;
     }

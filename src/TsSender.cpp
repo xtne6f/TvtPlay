@@ -189,7 +189,7 @@ CTsSender::~CTsSender()
 
 
 bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, bool fUnderrunCtrl, bool fUseQpc,
-                     int pcrDisconThresholdMsec, LPCTSTR &errorMessage)
+                     int pcrDisconThresholdMsec, const char *&errorMessage)
 {
     Close();
 
@@ -275,7 +275,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
 
     // ファイル先頭のPCRを取得
     if (!SeekToBegin()) {
-        errorMessage = TEXT("CTsSender::Open(): SeekToBegin() Error");
+        errorMessage = "CTsSender::Open(): SeekToBegin() Error";
         goto ERROR_EXIT;
     }
     m_initPcr = m_pcr;
@@ -334,7 +334,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     }
 
     if (!SeekToBegin()) {
-        errorMessage = TEXT("CTsSender::Open(): SeekToBegin()-2 Error");
+        errorMessage = "CTsSender::Open(): SeekToBegin()-2 Error";
         goto ERROR_EXIT;
     }
 

@@ -42,7 +42,7 @@ public:
     CTsSender();
     ~CTsSender();
     bool Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, bool fUnderrunCtrl, bool fUseQpc,
-              int pcrDisconThresholdMsec, LPCTSTR &errorMessage);
+              int pcrDisconThresholdMsec, const char *&errorMessage);
     DWORD GetInitialPcr() { return m_initPcr; }
     void SetupQpc();
     void SetUdpPort(unsigned short port);

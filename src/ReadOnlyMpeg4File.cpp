@@ -1,5 +1,6 @@
 ﻿#include <Windows.h>
 #include <Shlwapi.h>
+#include <io.h>
 #include <algorithm>
 #include "Util.h"
 #include "B24CaptionUtil.h"
@@ -7,13 +8,15 @@
 
 extern HINSTANCE g_hinstDLL;
 
-bool CReadOnlyMpeg4File::Open(LPCTSTR path, int flags, LPCTSTR &errorMessage)
+bool CReadOnlyMpeg4File::Open(LPCTSTR path, int flags, const char *&errorMessage)
 {
     Close();
     if ((flags & OPEN_FLAG_NORMAL) && !(flags & OPEN_FLAG_SHARE_WRITE) && LoadSettings()) {
-        m_hFile = ::CreateFile(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE,
-                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (m_hFile != INVALID_HANDLE_VALUE) {
+        FILE *fp;
+        if (_tfopen_s(&fp, path, TEXT("rbN")) == 0) {
+            m_fp.reset(fp);
+        }
+        if (m_fp) {
             LoadCaption(path);
             OpenPsiData(path);
             if (InitializeTable(errorMessage)) {
@@ -32,25 +35,22 @@ bool CReadOnlyMpeg4File::Open(LPCTSTR path, int flags, LPCTSTR &errorMessage)
 void CReadOnlyMpeg4File::Close()
 {
     m_psiDataReader.Close();
-    if (m_hFile != INVALID_HANDLE_VALUE) {
-        ::CloseHandle(m_hFile);
-        m_hFile = INVALID_HANDLE_VALUE;
-    }
+    m_fp.reset();
 }
 
 int CReadOnlyMpeg4File::Read(BYTE *pBuf, int numToRead)
 {
-    if (m_hFile != INVALID_HANDLE_VALUE) {
+    if (m_fp) {
         int numRead = 0;
         while (numRead < numToRead) {
             if (m_blockCache.empty() && !ReadCurrentBlock()) {
                 break;
             }
-            int n = static_cast<int>(min(numToRead - numRead, static_cast<__int64>(m_blockCache.size()) - m_pointer));
+            int n = static_cast<int>(min(numToRead - numRead, static_cast<int64_t>(m_blockCache.size()) - m_pointer));
             ::memcpy(pBuf + numRead, &m_blockCache[static_cast<size_t>(m_pointer)], n);
             numRead += n;
             m_pointer += n;
-            if (m_pointer >= static_cast<__int64>(m_blockCache.size())) {
+            if (m_pointer >= static_cast<int64_t>(m_blockCache.size())) {
                 ++m_blockInfo;
                 m_blockCache.clear();
                 m_pointer = 0;
@@ -63,19 +63,19 @@ int CReadOnlyMpeg4File::Read(BYTE *pBuf, int numToRead)
 
 __int64 CReadOnlyMpeg4File::SetPointer(__int64 distanceToMove, MOVE_METHOD moveMethod)
 {
-    if (m_hFile != INVALID_HANDLE_VALUE) {
-        __int64 toMove = moveMethod == MOVE_METHOD_CURRENT ? static_cast<__int64>(m_blockInfo->pos) * 188 + m_pointer + distanceToMove :
+    if (m_fp) {
+        int64_t toMove = moveMethod == MOVE_METHOD_CURRENT ? static_cast<int64_t>(m_blockInfo->pos) * 188 + m_pointer + distanceToMove :
                          moveMethod == MOVE_METHOD_END ? GetSize() + distanceToMove : distanceToMove;
         if (toMove >= 0) {
             BLOCK_100MSEC val;
-            val.pos = static_cast<DWORD>(min(toMove / 188, MAXDWORD));
+            val.pos = static_cast<uint32_t>(min(toMove / 188, 0xFFFFFFFF));
             auto it = std::upper_bound(m_blockList.begin(), m_blockList.end(), val,
                                        [](const BLOCK_100MSEC &a, const BLOCK_100MSEC &b) { return a.pos < b.pos; }) - 1;
             if (it != m_blockInfo) {
                 m_blockCache.clear();
                 m_blockInfo = it;
             }
-            m_pointer = toMove - static_cast<__int64>(it->pos) * 188;
+            m_pointer = toMove - static_cast<int64_t>(it->pos) * 188;
             return toMove;
         }
     }
@@ -84,17 +84,17 @@ __int64 CReadOnlyMpeg4File::SetPointer(__int64 distanceToMove, MOVE_METHOD moveM
 
 __int64 CReadOnlyMpeg4File::GetSize() const
 {
-    if (m_hFile != INVALID_HANDLE_VALUE) {
-        return static_cast<__int64>(m_blockList.back().pos) * 188;
+    if (m_fp) {
+        return static_cast<int64_t>(m_blockList.back().pos) * 188;
     }
     return -1;
 }
 
 int CReadOnlyMpeg4File::GetPositionMsecFromBytes(__int64 posBytes) const
 {
-    if (m_hFile != INVALID_HANDLE_VALUE && posBytes >= 0) {
+    if (m_fp && posBytes >= 0) {
         BLOCK_100MSEC val;
-        val.pos = static_cast<DWORD>(min(posBytes / 188, MAXDWORD));
+        val.pos = static_cast<uint32_t>(min(posBytes / 188, 0xFFFFFFFF));
         auto it = std::upper_bound(m_blockList.begin(), m_blockList.end(), val,
                                    [](const BLOCK_100MSEC &a, const BLOCK_100MSEC &b) { return a.pos < b.pos; }) - 1;
         return static_cast<int>(it - m_blockList.begin()) * 100;
@@ -104,9 +104,9 @@ int CReadOnlyMpeg4File::GetPositionMsecFromBytes(__int64 posBytes) const
 
 __int64 CReadOnlyMpeg4File::GetPositionBytesFromMsec(int msec) const
 {
-    if (m_hFile != INVALID_HANDLE_VALUE && msec >= 0) {
+    if (m_fp && msec >= 0) {
         int index = min(msec / 100, static_cast<int>(m_blockList.size() - 1));
-        return static_cast<__int64>(m_blockList[index].pos) * 188;
+        return static_cast<int64_t>(m_blockList[index].pos) * 188;
     }
     return -1;
 }
@@ -124,6 +124,7 @@ bool CReadOnlyMpeg4File::LoadSettings()
     GetBufferedProfileString(buf.data(), TEXT("Meta"), TEXT("metadata.ini"), m_metaName, _countof(m_metaName));
     GetBufferedProfileString(buf.data(), TEXT("VttExtension"), TEXT(".vtt"), m_vttExtension, _countof(m_vttExtension));
     GetBufferedProfileString(buf.data(), TEXT("PsiDataExtension"), TEXT(".psc"), m_psiDataExtension, _countof(m_psiDataExtension));
+    m_fCheckFileAttributes = GetBufferedProfileInt(buf.data(), TEXT("CheckFileAttributes"), 1) != 0;
     GetBufferedProfileString(buf.data(), TEXT("BroadcastID"), TEXT("0x000100020003"), m_iniBroadcastID, _countof(m_iniBroadcastID));
     GetBufferedProfileString(buf.data(), TEXT("Time"), TEXT(""), m_iniTime, _countof(m_iniTime));
     if (!buf[0]) {
@@ -131,6 +132,7 @@ bool CReadOnlyMpeg4File::LoadSettings()
         ::WritePrivateProfileString(TEXT("MP4"), TEXT("Meta"), m_metaName, iniPath);
         ::WritePrivateProfileString(TEXT("MP4"), TEXT("VttExtension"), m_vttExtension, iniPath);
         ::WritePrivateProfileString(TEXT("MP4"), TEXT("PsiDataExtension"), m_psiDataExtension, iniPath);
+        WritePrivateProfileInt(TEXT("MP4"), TEXT("CheckFileAttributes"), m_fCheckFileAttributes, iniPath);
         ::WritePrivateProfileString(TEXT("MP4"), TEXT("BroadcastID"), m_iniBroadcastID, iniPath);
         ::WritePrivateProfileString(TEXT("MP4"), TEXT("Time"), TEXT(""), iniPath);
     }
@@ -164,7 +166,7 @@ void CReadOnlyMpeg4File::InitializeMetaInfo(LPCTSTR path)
     if (!m_iniTime[0]) {
         // ファイルの更新日時をTOTとする
         FILETIME ft;
-        if (::GetFileTime(m_hFile, nullptr, nullptr, &ft)) {
+        if (::GetFileTime(reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(m_fp.get()))), nullptr, nullptr, &ft)) {
             m_totStart.LowPart = ft.dwLowDateTime;
             m_totStart.HighPart = ft.dwHighDateTime;
             m_totStart.QuadPart += 9 * 36000000000LL;
@@ -201,6 +203,16 @@ void CReadOnlyMpeg4File::LoadCaption(LPCTSTR path)
     if (!::PathRenameExtension(vttPath, m_vttExtension)) {
         return;
     }
+    if (m_fCheckFileAttributes) {
+        // 従ファイルにある隠し属性が主ファイルにも必要
+        DWORD hiddenAttr = ::GetFileAttributes(vttPath) & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+        if (hiddenAttr) {
+            DWORD attr = ::GetFileAttributes(path);
+            if (attr == INVALID_FILE_ATTRIBUTES || (hiddenAttr & ~attr)) {
+                return;
+            }
+        }
+    }
     LoadWebVttB24Caption(vttPath, m_captionList);
 }
 
@@ -214,51 +226,64 @@ void CReadOnlyMpeg4File::OpenPsiData(LPCTSTR path)
     if (!::PathRenameExtension(psiDataPath, m_psiDataExtension)) {
         return;
     }
+    if (m_fCheckFileAttributes) {
+        // 従ファイルにある隠し属性が主ファイルにも必要
+        DWORD hiddenAttr = ::GetFileAttributes(psiDataPath) & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+        if (hiddenAttr) {
+            DWORD attr = ::GetFileAttributes(path);
+            if (attr == INVALID_FILE_ATTRIBUTES || (hiddenAttr & ~attr)) {
+                return;
+            }
+        }
+    }
     m_psiDataReader.Open(psiDataPath);
 }
 
-bool CReadOnlyMpeg4File::InitializeTable(LPCTSTR &errorMessage)
+bool CReadOnlyMpeg4File::InitializeTable(const char *&errorMessage)
 {
-    std::vector<BYTE> buf;
+    std::vector<uint8_t> buf;
     m_stsoV.clear();
     m_stsoA[0].clear();
     m_stsoA[1].clear();
-    char path[] = "/moov0/trak0/mdia0/mdhd0";
-    for (char i = '0'; i <= '9'; ++i, ++path[11]) {
-        DWORD timeScale = 0;
-        if (ReadBox(path, buf) >= 24) {
+    for (char path[] = "moov0/trak0"; path[10] <= '9'; ++path[10]) {
+        int64_t trakBoxPos = FindBoxPosition(path, 0).first;
+        if (trakBoxPos < 0) {
+            break;
+        }
+        uint32_t timeScale = 0;
+        if (ReadBox("mdia0/mdhd0", buf, trakBoxPos) >= 24) {
             if ((ArrayToDWORD(&buf[0]) & 0xFEFFFFFF) == 0) {
                 timeScale = ArrayToDWORD(&buf[buf[0] ? 20 : 12]);
             }
         }
         if (timeScale != 0) {
-            __int64 editTimeOffset;
-            if (m_stsoV.empty() && ReadVideoSampleDesc(i, m_fHevc, m_spsPps, buf)) {
+            int64_t editTimeOffset;
+            if (m_stsoV.empty() && ReadVideoSampleDesc(trakBoxPos, m_fHevc, m_spsPps, buf)) {
                 m_timeScaleV = timeScale;
-                if (ReadSampleTable(i, m_stsoV, m_stszV, m_sttsV, &m_cttsV, editTimeOffset, buf) &&
-                    std::find_if(m_stszV.begin(), m_stszV.end(), [](DWORD a) { return a > VIDEO_SAMPLE_MAX; }) == m_stszV.end()) {
+                if (ReadSampleTable(trakBoxPos, m_stsoV, m_stszV, m_sttsV, &m_cttsV, editTimeOffset, buf) &&
+                    std::find_if(m_stszV.begin(), m_stszV.end(), [](uint32_t a) { return a > VIDEO_SAMPLE_MAX; }) == m_stszV.end()) {
                     // 0.5秒の範囲でPTSを利用してエディットリストの内容を反映する
-                    m_offsetPtsV = static_cast<DWORD>(22500 + min(max(editTimeOffset * 45000 / m_timeScaleV, 0), 22500));
+                    m_offsetPtsV = static_cast<uint32_t>(22500 + min(max(editTimeOffset * 45000 / m_timeScaleV, 0), 22500));
                 }
                 else {
                     m_stsoV.clear();
                 }
             }
-            else if (m_stsoA[0].empty() && ReadAudioSampleDesc(i, m_adtsHeader[0], buf)) {
+            else if (m_stsoA[0].empty() && ReadAudioSampleDesc(trakBoxPos, m_adtsHeader[0], buf)) {
                 m_timeScaleA[0] = timeScale;
-                if (ReadSampleTable(i, m_stsoA[0], m_stszA[0], m_sttsA[0], nullptr, editTimeOffset, buf) &&
-                    std::find_if(m_stszA[0].begin(), m_stszA[0].end(), [](DWORD a) { return a > AUDIO_SAMPLE_MAX; }) == m_stszA[0].end()) {
-                    m_offsetPtsA[0] = static_cast<DWORD>(22500 + min(max(editTimeOffset * 45000 / m_timeScaleA[0], 0), 22500));
+                if (ReadSampleTable(trakBoxPos, m_stsoA[0], m_stszA[0], m_sttsA[0], nullptr, editTimeOffset, buf) &&
+                    std::find_if(m_stszA[0].begin(), m_stszA[0].end(), [](uint32_t a) { return a > AUDIO_SAMPLE_MAX; }) == m_stszA[0].end()) {
+                    m_offsetPtsA[0] = static_cast<uint32_t>(22500 + min(max(editTimeOffset * 45000 / m_timeScaleA[0], 0), 22500));
                 }
                 else {
                     m_stsoA[0].clear();
                 }
             }
-            else if (m_stsoA[1].empty() && !m_stsoA[0].empty() && ReadAudioSampleDesc(i, m_adtsHeader[1], buf)) {
+            else if (m_stsoA[1].empty() && !m_stsoA[0].empty() && ReadAudioSampleDesc(trakBoxPos, m_adtsHeader[1], buf)) {
                 m_timeScaleA[1] = timeScale;
-                if (ReadSampleTable(i, m_stsoA[1], m_stszA[1], m_sttsA[1], nullptr, editTimeOffset, buf) &&
-                    std::find_if(m_stszA[1].begin(), m_stszA[1].end(), [](DWORD a) { return a > AUDIO_SAMPLE_MAX; }) == m_stszA[1].end()) {
-                    m_offsetPtsA[1] = static_cast<DWORD>(22500 + min(max(editTimeOffset * 45000 / m_timeScaleA[1], 0), 22500));
+                if (ReadSampleTable(trakBoxPos, m_stsoA[1], m_stszA[1], m_sttsA[1], nullptr, editTimeOffset, buf) &&
+                    std::find_if(m_stszA[1].begin(), m_stszA[1].end(), [](uint32_t a) { return a > AUDIO_SAMPLE_MAX; }) == m_stszA[1].end()) {
+                    m_offsetPtsA[1] = static_cast<uint32_t>(22500 + min(max(editTimeOffset * 45000 / m_timeScaleA[1], 0), 22500));
                 }
                 else {
                     m_stsoA[1].clear();
@@ -267,26 +292,24 @@ bool CReadOnlyMpeg4File::InitializeTable(LPCTSTR &errorMessage)
         }
     }
     if (m_stsoV.empty()) {
-        errorMessage = TEXT("CReadOnlyMpeg4File: No video track");
+        errorMessage = "CReadOnlyMpeg4File: No video track";
         return false;
     }
     // 音声2は必須でない
     if (m_stsoA[0].empty()) {
-        errorMessage = TEXT("CReadOnlyMpeg4File: No audio track");
+        errorMessage = "CReadOnlyMpeg4File: No audio track";
         return false;
     }
     return InitializeBlockList(errorMessage);
 }
 
-bool CReadOnlyMpeg4File::ReadVideoSampleDesc(char index, bool &fHevc, std::vector<BYTE> &spsPps, std::vector<BYTE> &buf) const
+bool CReadOnlyMpeg4File::ReadVideoSampleDesc(int64_t trakBoxPos, bool &fHevc, std::vector<uint8_t> &spsPps, std::vector<uint8_t> &buf) const
 {
-    const DWORD DATA_FORMAT_AVC1 = 0x61766331;
-    const DWORD DATA_FORMAT_HVC1 = 0x68766331;
-    char path[] = "/moov0/trak?/mdia0/minf0/stbl0/stsd0";
-    path[11] = index;
-    if (ReadBox(path, buf) >= 16) {
+    const uint32_t DATA_FORMAT_AVC1 = 0x61766331;
+    const uint32_t DATA_FORMAT_HVC1 = 0x68766331;
+    if (ReadBox("mdia0/minf0/stbl0/stsd0", buf, trakBoxPos) >= 16) {
         size_t boxLen = ArrayToDWORD(&buf[8]);
-        DWORD dataFormat = ArrayToDWORD(&buf[12]);
+        uint32_t dataFormat = ArrayToDWORD(&buf[12]);
         // TODO: "hev1"は未対応
         if (ArrayToDWORD(&buf[0]) == 0 &&
             ArrayToDWORD(&buf[4]) == 1 &&
@@ -306,9 +329,9 @@ bool CReadOnlyMpeg4File::ReadVideoSampleDesc(char index, bool &fHevc, std::vecto
                 if (ArrayToDWORD(&buf[4]) == 0x61766343 && dataFormat == DATA_FORMAT_AVC1) {
                     buf.resize(boxLen);
                     if (15 < buf.size() && (buf[13] & 0x1F) == 1) {
-                        size_t spsLen = MAKEWORD(buf[15], buf[14]);
+                        size_t spsLen = buf[14] << 8 | buf[15];
                         if (18 + spsLen < buf.size() && buf[16 + spsLen] == 1) {
-                            size_t ppsLen = MAKEWORD(buf[18 + spsLen], buf[17 + spsLen]);
+                            size_t ppsLen = buf[17 + spsLen] << 8 | buf[18 + spsLen];
                             if (18 + spsLen + ppsLen < buf.size()) {
                                 spsPps.assign(3, 0);
                                 spsPps.push_back(1);
@@ -342,10 +365,10 @@ bool CReadOnlyMpeg4File::ReadVideoSampleDesc(char index, bool &fHevc, std::vecto
                             size_t pos = 31;
                             for (int i = 0; !fFoundAll && i < numArray && pos + 2 < buf.size(); ++i) {
                                 int naluType = buf[pos] & 0x3F;
-                                int numNalu = MAKEWORD(buf[pos + 2], buf[pos + 1]);
+                                int numNalu = buf[pos + 1] << 8 | buf[pos + 2];
                                 pos += 3;
                                 for (int j = 0; j < numNalu && pos + 1 < buf.size(); ++j) {
-                                    size_t naluLen = MAKEWORD(buf[pos + 1], buf[pos]);
+                                    size_t naluLen = buf[pos] << 8 | buf[pos + 1];
                                     pos += 2;
                                     if (naluType == NALU_TYPES[naluTypeIndex] && numNalu == 1 && pos + naluLen <= buf.size()) {
                                         spsPps.insert(spsPps.end(), 3, 0);
@@ -371,11 +394,9 @@ bool CReadOnlyMpeg4File::ReadVideoSampleDesc(char index, bool &fHevc, std::vecto
     return false;
 }
 
-bool CReadOnlyMpeg4File::ReadAudioSampleDesc(char index, BYTE *adtsHeader, std::vector<BYTE> &buf) const
+bool CReadOnlyMpeg4File::ReadAudioSampleDesc(int64_t trakBoxPos, uint8_t *adtsHeader, std::vector<uint8_t> &buf) const
 {
-    char path[] = "/moov0/trak?/mdia0/minf0/stbl0/stsd0";
-    path[11] = index;
-    if (ReadBox(path, buf) >= 16) {
+    if (ReadBox("mdia0/minf0/stbl0/stsd0", buf, trakBoxPos) >= 16) {
         size_t boxLen = ArrayToDWORD(&buf[8]);
         if (ArrayToDWORD(&buf[0]) == 0 &&
             ArrayToDWORD(&buf[4]) == 1 &&
@@ -404,7 +425,7 @@ bool CReadOnlyMpeg4File::ReadAudioSampleDesc(char index, BYTE *adtsHeader, std::
                             // DecoderConfig
                             i += !(buf[i + 1] & 0x80) ? 2 : !(buf[i + 2] & 0x80) ? 3 : !(buf[i + 3] & 0x80) ? 4 : 5;
                             if (i + 4 < buf.size() - 1) {
-                                int bufferSize = MAKEWORD(buf[i + 4], buf[i + 3]);
+                                int bufferSize = buf[i + 3] << 8 | buf[i + 4];
                                 i += 13;
                                 if (i + 1 < buf.size() && buf[i] == 0x05) {
                                     // DecoderSpecificInfo
@@ -428,15 +449,16 @@ bool CReadOnlyMpeg4File::ReadAudioSampleDesc(char index, BYTE *adtsHeader, std::
     return false;
 }
 
-bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso, std::vector<DWORD> &stsz,
-                                         std::vector<__int64> &stts, std::vector<DWORD> *ctts, __int64 &editTimeOffset, std::vector<BYTE> &buf) const
+bool CReadOnlyMpeg4File::ReadSampleTable(int64_t trakBoxPos, std::vector<int64_t> &stso, std::vector<uint32_t> &stsz,
+                                         std::vector<int64_t> &stts, std::vector<uint32_t> *ctts, int64_t &editTimeOffset, std::vector<uint8_t> &buf) const
 {
-    char path[37] = "/moov0/trak?/mdia0/minf0/stbl0/????0";
-    path[11] = index;
+    int64_t stblBoxPos = FindBoxPosition("mdia0/minf0/stbl0", trakBoxPos).first;
+    if (stblBoxPos < 0) {
+        return false;
+    }
 
-    std::vector<__int64> stco;
-    ::memcpy(&path[31], "co64", 4);
-    if (ReadBox(path, buf) >= 0) {
+    std::vector<int64_t> stco;
+    if (ReadBox("co640", buf, stblBoxPos) >= 0) {
         if (buf.size() >= 8) {
             size_t n = ArrayToDWORD(&buf[4]);
             if (ArrayToDWORD(&buf[0]) == 0 && n == (buf.size() - 8) / 8) {
@@ -447,21 +469,17 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
             }
         }
     }
-    else {
-        ::memcpy(&path[31], "stco", 4);
-        if (ReadBox(path, buf) >= 8) {
-            size_t n = ArrayToDWORD(&buf[4]);
-            if (ArrayToDWORD(&buf[0]) == 0 && n == (buf.size() - 8) / 4) {
-                stco.reserve(n);
-                for (size_t i = 0; i < n; ++i) {
-                    stco.push_back(ArrayToDWORD(&buf[8 + 4 * i]));
-                }
+    else if (ReadBox("stco0", buf, stblBoxPos) >= 8) {
+        size_t n = ArrayToDWORD(&buf[4]);
+        if (ArrayToDWORD(&buf[0]) == 0 && n == (buf.size() - 8) / 4) {
+            stco.reserve(n);
+            for (size_t i = 0; i < n; ++i) {
+                stco.push_back(ArrayToDWORD(&buf[8 + 4 * i]));
             }
         }
     }
     stsz.clear();
-    ::memcpy(&path[31], "stsz", 4);
-    if (ReadBox(path, buf) >= 12) {
+    if (ReadBox("stsz0", buf, stblBoxPos) >= 12) {
         size_t n = ArrayToDWORD(&buf[8]);
         if (ArrayToDWORD(&buf[0]) == 0 && ArrayToDWORD(&buf[4]) == 0 && n == (buf.size() - 12) / 4) {
             stsz.reserve(n);
@@ -477,8 +495,7 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
     // 各サンプルのファイル位置を計算
     stso.clear();
     stso.reserve(stsz.size());
-    ::memcpy(&path[31], "stsc", 4);
-    if (ReadBox(path, buf) < 8) {
+    if (ReadBox("stsc0", buf, stblBoxPos) < 8) {
         return false;
     }
     size_t stscNum = ArrayToDWORD(&buf[4]);
@@ -486,9 +503,9 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
         return false;
     }
     for (size_t i = 0; i < stscNum; ++i) {
-        DWORD currChunk = ArrayToDWORD(&buf[8 + 12 * i]) - 1;
-        DWORD sampleNum = ArrayToDWORD(&buf[12 + 12 * i]);
-        DWORD nextChunk = i + 1 < stscNum ? ArrayToDWORD(&buf[8 + 12 * (i + 1)]) - 1 : MAXDWORD;
+        uint32_t currChunk = ArrayToDWORD(&buf[8 + 12 * i]) - 1;
+        uint32_t sampleNum = ArrayToDWORD(&buf[12 + 12 * i]);
+        uint32_t nextChunk = i + 1 < stscNum ? ArrayToDWORD(&buf[8 + 12 * (i + 1)]) - 1 : 0xFFFFFFFF;
         if (nextChunk <= currChunk || sampleNum == 0) {
             return false;
         }
@@ -499,26 +516,25 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
             }
         }
     }
-    LARGE_INTEGER fileSize;
-    if (stso.size() != stsz.size() || !::GetFileSizeEx(m_hFile, &fileSize)) {
+    int64_t fileSize;
+    if (stso.size() != stsz.size() || _fseeki64(m_fp.get(), 0, SEEK_END) != 0 || (fileSize = _ftelli64(m_fp.get())) < 0) {
         return false;
     }
     // サンプルの総和や範囲がファイルサイズを超えていないかチェック
-    __int64 sum = 0;
+    int64_t sum = 0;
     for (size_t i = 0; i < stso.size(); ++i) {
         sum += stsz[i];
-        if (sum > fileSize.QuadPart || stso[i] + stsz[i] > fileSize.QuadPart) {
+        if (sum > fileSize || stso[i] + stsz[i] > fileSize) {
             return false;
         }
     }
 
     stts.clear();
     stts.reserve(stsz.size());
-    ::memcpy(&path[31], "stts", 4);
-    if (ReadBox(path, buf) >= 8) {
+    if (ReadBox("stts0", buf, stblBoxPos) >= 8) {
         size_t n = ArrayToDWORD(&buf[4]);
         if (ArrayToDWORD(&buf[0]) == 0 && n == (buf.size() - 8) / 8) {
-            if (n == 1 || n == 2 && ArrayToDWORD(&buf[16]) == 1) {
+            if (n == 1 || (n == 2 && ArrayToDWORD(&buf[16]) == 1)) {
                 // 固定レートのため節約
                 stts.push_back(-1);
                 stts.push_back(ArrayToDWORD(&buf[12]));
@@ -527,22 +543,21 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
                 // STTSは積分済み
                 stts.push_back(0);
                 for (size_t i = 0; i < n; ++i) {
-                    for (DWORD j = 0; j < ArrayToDWORD(&buf[8 + 8 * i]) && stts.size() < stsz.size(); ++j) {
+                    for (uint32_t j = 0; j < ArrayToDWORD(&buf[8 + 8 * i]) && stts.size() < stsz.size(); ++j) {
                         stts.push_back(stts.back() + ArrayToDWORD(&buf[12 + 8 * i]));
                     }
                 }
             }
         }
     }
-    if (stts.empty() || stts[0] < 0 && stts[1] <= 0 || stts[0] >= 0 && stts.size() != stsz.size()) {
+    if (stts.empty() || (stts[0] < 0 && stts[1] <= 0) || (stts[0] >= 0 && stts.size() != stsz.size())) {
         return false;
     }
 
     if (ctts) {
         ctts->clear();
         ctts->reserve(stsz.size());
-        ::memcpy(&path[31], "ctts", 4);
-        if (ReadBox(path, buf) < 0) {
+        if (ReadBox("ctts0", buf, stblBoxPos) < 0) {
             // out-of-orderなし
             ctts->resize(stsz.size(), 0);
         }
@@ -550,7 +565,7 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
             size_t n = ArrayToDWORD(&buf[4]);
             if (ArrayToDWORD(&buf[0]) == 0 && n == (buf.size() - 8) / 8) {
                 for (size_t i = 0; i < n; ++i) {
-                    for (DWORD j = 0; j < ArrayToDWORD(&buf[8 + 8 * i]) && ctts->size() < stsz.size(); ++j) {
+                    for (uint32_t j = 0; j < ArrayToDWORD(&buf[8 + 8 * i]) && ctts->size() < stsz.size(); ++j) {
                         ctts->push_back(ArrayToDWORD(&buf[12 + 8 * i]));
                         if (ctts->back() >= 0x80000000) {
                             // TODO: 負のオフセット
@@ -566,16 +581,14 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
     }
 
     editTimeOffset = 0;
-    char elstPath[] = "/moov0/trak?/edts0/elst0";
-    elstPath[11] = index;
-    if (ReadBox(elstPath, buf) >= 8) {
-        DWORD verFlags = ArrayToDWORD(&buf[0]);
+    if (ReadBox("edts0/elst0", buf, trakBoxPos) >= 8) {
+        uint32_t verFlags = ArrayToDWORD(&buf[0]);
         size_t n = ArrayToDWORD(&buf[4]);
         if ((verFlags & 0xFEFFFFFF) == 0 && n == 1 && (verFlags ? 28U : 20U) == buf.size()) {
             // 最もシンプルなエディットリストのみ対応
-            __int64 segmentDuration;
-            __int64 mediaTime;
-            DWORD mediaRate;
+            int64_t segmentDuration;
+            int64_t mediaTime;
+            uint32_t mediaRate;
             if (verFlags) {
                 segmentDuration = ArrayToInt64(&buf[8]);
                 mediaTime = ArrayToInt64(&buf[16]);
@@ -598,7 +611,7 @@ bool CReadOnlyMpeg4File::ReadSampleTable(char index, std::vector<__int64> &stso,
     return true;
 }
 
-bool CReadOnlyMpeg4File::InitializeBlockList(LPCTSTR &errorMessage)
+bool CReadOnlyMpeg4File::InitializeBlockList(const char *&errorMessage)
 {
     m_blockList.clear();
     BLOCK_100MSEC block = {};
@@ -611,7 +624,7 @@ bool CReadOnlyMpeg4File::InitializeBlockList(LPCTSTR &errorMessage)
         if (indexV >= m_stsoV.size() && indexA[0] >= m_stsoA[0].size() && indexA[1] >= m_stsoA[1].size()) {
             break;
         }
-        __int64 size;
+        int64_t size;
         if (m_psiDataReader.IsOpen()) {
             // PAT + PCR + PMT
             size = 2 + 16;
@@ -629,8 +642,8 @@ bool CReadOnlyMpeg4File::InitializeBlockList(LPCTSTR &errorMessage)
             }
         }
         for (; indexV < m_stsoV.size(); ++indexV) {
-            __int64 sampleTime = m_sttsV[0] < 0 ? static_cast<__int64>(indexV) * m_sttsV[1] : m_sttsV[indexV];
-            if (sampleTime >= static_cast<__int64>(m_blockList.size()) * m_timeScaleV / 10) {
+            int64_t sampleTime = m_sttsV[0] < 0 ? static_cast<int64_t>(indexV) * m_sttsV[1] : m_sttsV[indexV];
+            if (sampleTime >= static_cast<int64_t>(m_blockList.size()) * m_timeScaleV / 10) {
                 break;
             }
             int n = ReadSample(indexV, m_stsoV, m_stszV, nullptr);
@@ -639,13 +652,14 @@ bool CReadOnlyMpeg4File::InitializeBlockList(LPCTSTR &errorMessage)
                 n += (m_fHevc ? 7 : 6) + static_cast<int>(m_spsPps.size());
                 // PES header
                 n += 14;
+                size += (n + 183) / 184;
+                block.counterV = static_cast<uint8_t>(block.counterV + (n + 183) / 184);
             }
-            for (; n > 0; n -= 184, ++size, ++block.counterV);
         }
         for (int a = 0; a < 2; ++a) {
             for (; indexA[a] < m_stsoA[a].size(); ++indexA[a]) {
-                __int64 sampleTime = m_sttsA[a][0] < 0 ? static_cast<__int64>(indexA[a]) * m_sttsA[a][1] : m_sttsA[a][indexA[a]];
-                if (sampleTime >= static_cast<__int64>(m_blockList.size()) * m_timeScaleA[a] / 10) {
+                int64_t sampleTime = m_sttsA[a][0] < 0 ? static_cast<int64_t>(indexA[a]) * m_sttsA[a][1] : m_sttsA[a][indexA[a]];
+                if (sampleTime >= static_cast<int64_t>(m_blockList.size()) * m_timeScaleA[a] / 10) {
                     break;
                 }
                 int n = ReadSample(indexA[a], m_stsoA[a], m_stszA[a], nullptr);
@@ -654,25 +668,27 @@ bool CReadOnlyMpeg4File::InitializeBlockList(LPCTSTR &errorMessage)
                     n += 7;
                     // PES header
                     n += 14;
+                    size += (n + 183) / 184;
+                    block.counterA[a] = static_cast<uint8_t>(block.counterA[a] + (n + 183) / 184);
                 }
-                for (; n > 0; n -= 184, ++size, ++block.counterA[a]);
             }
         }
 
         // 放送では字幕は映像や音声にたいして早めに送られるのでそれに似せる
-        __int64 captionEndTime = static_cast<__int64>(m_blockList.size()) * 100 + CAPTION_FORWARD_MSEC;
+        int64_t captionEndTime = static_cast<int64_t>(m_blockList.size()) * 100 + CAPTION_FORWARD_MSEC;
         for (; itCaption != m_captionList.end() && itCaption->first < captionEndTime; ++itCaption) {
             int n = static_cast<int>(itCaption->second.size());
             // 同期型PES(STD-B24)の先頭 + サイズフィールド + CRC16 + PES header
             n += 3 + 2 + 2 + 14;
-            for (; n > 0; n -= 184, ++size, ++block.counterC);
+            size += (n + 183) / 184;
+            block.counterC = static_cast<uint8_t>(block.counterC + (n + 183) / 184);
         }
 
         // ブロックサイズの異常をチェック
         if (size > BLOCK_SIZE_MAX) {
             return false;
         }
-        m_blockList.back().pos = static_cast<DWORD>(size);
+        m_blockList.back().pos = static_cast<uint32_t>(size);
     }
 
     if (!InitializePsiCounterInfo(errorMessage)) {
@@ -680,9 +696,9 @@ bool CReadOnlyMpeg4File::InitializeBlockList(LPCTSTR &errorMessage)
     }
 
     // posを積分してサイズから位置に変換
-    DWORD nextPos = 0;
+    uint32_t nextPos = 0;
     for (auto it = m_blockList.begin(); it != m_blockList.end(); ++it) {
-        DWORD pos = nextPos;
+        uint32_t pos = nextPos;
         nextPos += it->pos;
         if (nextPos > 0x7FFFFFFF) {
             return false;
@@ -695,41 +711,41 @@ bool CReadOnlyMpeg4File::InitializeBlockList(LPCTSTR &errorMessage)
 bool CReadOnlyMpeg4File::ReadCurrentBlock()
 {
     m_blockCache.clear();
-    std::vector<BYTE> sample;
+    std::vector<uint8_t> sample;
     if (m_blockInfo + 1 == m_blockList.end()) {
         return false;
     }
     size_t blockIndex = m_blockInfo - m_blockList.begin();
-    BYTE counterV = m_blockInfo->counterV;
-    BYTE counterA[2] = { m_blockInfo->counterA[0], m_blockInfo->counterA[1] };
-    BYTE counterC = m_blockInfo->counterC;
-    size_t indexV = m_sttsV[0] < 0 ? static_cast<size_t>((static_cast<__int64>(blockIndex) * m_timeScaleV / 10 + m_sttsV[1] - 1) / m_sttsV[1]) :
-        std::lower_bound(m_sttsV.begin(), m_sttsV.end(), static_cast<__int64>(blockIndex) * m_timeScaleV / 10) - m_sttsV.begin();
+    uint8_t counterV = m_blockInfo->counterV;
+    uint8_t counterA[2] = { m_blockInfo->counterA[0], m_blockInfo->counterA[1] };
+    uint8_t counterC = m_blockInfo->counterC;
+    size_t indexV = m_sttsV[0] < 0 ? static_cast<size_t>((static_cast<int64_t>(blockIndex) * m_timeScaleV / 10 + m_sttsV[1] - 1) / m_sttsV[1]) :
+        std::lower_bound(m_sttsV.begin(), m_sttsV.end(), static_cast<int64_t>(blockIndex) * m_timeScaleV / 10) - m_sttsV.begin();
     size_t indexA[2] = {};
     for (int a = 0; a < 2 && !m_stsoA[a].empty(); ++a) {
-        indexA[a] = m_sttsA[a][0] < 0 ? static_cast<size_t>((static_cast<__int64>(blockIndex) * m_timeScaleA[a] / 10 + m_sttsA[a][1] - 1) / m_sttsA[a][1]) :
-            std::lower_bound(m_sttsA[a].begin(), m_sttsA[a].end(), static_cast<__int64>(blockIndex) * m_timeScaleA[a] / 10) - m_sttsA[a].begin();
+        indexA[a] = m_sttsA[a][0] < 0 ? static_cast<size_t>((static_cast<int64_t>(blockIndex) * m_timeScaleA[a] / 10 + m_sttsA[a][1] - 1) / m_sttsA[a][1]) :
+            std::lower_bound(m_sttsA[a].begin(), m_sttsA[a].end(), static_cast<int64_t>(blockIndex) * m_timeScaleA[a] / 10) - m_sttsA[a].begin();
     }
     auto itCaption = std::lower_bound(m_captionList.cbegin(), m_captionList.cend(),
-        std::make_pair(static_cast<__int64>(blockIndex) * 100 + CAPTION_FORWARD_MSEC, std::vector<BYTE>()),
-        [](const std::pair<__int64, std::vector<BYTE>> &a, const std::pair<__int64, std::vector<BYTE>> &b) { return a.first < b.first; });
+        std::make_pair(static_cast<int64_t>(blockIndex) * 100 + CAPTION_FORWARD_MSEC, std::vector<uint8_t>()),
+        [](const std::pair<int64_t, std::vector<uint8_t>> &a, const std::pair<int64_t, std::vector<uint8_t>> &b) { return a.first < b.first; });
 
     if (m_psiDataReader.IsOpen()) {
         // PSI/SIをマージ
         bool fPatAdded = false;
         bool fPmtAdded = false;
-        WORD pmtPid = 0;
+        uint16_t pmtPid = 0;
         for (auto it = m_psiCounterInfoMap.begin(); it != m_psiCounterInfoMap.end(); ++it) {
             // 事前に計算された連続性指標の開始値
             it->second.currentCounter = (it->second.counterList[blockIndex / 2] >> ((1 - blockIndex % 2) * 4)) & 0x0F;
         }
         m_psiDataReader.Read(static_cast<int>(blockIndex * 100), static_cast<int>((blockIndex + 1) * 100),
-                             [this, blockIndex, &fPatAdded, &fPmtAdded, &pmtPid](const std::vector<BYTE> &psi, WORD pid) {
+                             [this, blockIndex, &fPatAdded, &fPmtAdded, &pmtPid](const std::vector<uint8_t> &psi, uint16_t pid) {
             if (pid == 0) {
                 // PAT
                 if (!fPatAdded) {
                     m_blockCache.insert(m_blockCache.end(), 188, 0xFF);
-                    BYTE *packet = &m_blockCache.back() - 187;
+                    uint8_t *packet = &m_blockCache.back() - 187;
                     CreateHeader(packet, 1, 1, blockIndex & 0x0F, 0x0000);
                     packet[4] = 0;
                     fPatAdded = CreatePatFromPat(packet + 5, psi, pmtPid) != 0;
@@ -754,7 +770,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
     else {
         // PAT
         m_blockCache.insert(m_blockCache.end(), 188, 0xFF);
-        BYTE *packet = &m_blockCache.back() - 187;
+        uint8_t *packet = &m_blockCache.back() - 187;
         CreateHeader(packet, 1, 1, blockIndex & 0x0F, 0x0000);
         packet[4] = 0;
         CreatePat(packet + 5, m_tsid, m_sid);
@@ -808,13 +824,13 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
 
     // PCR
     m_blockCache.insert(m_blockCache.end(), 188, 0xFF);
-    BYTE *packet = &m_blockCache.back() - 187;
+    uint8_t *packet = &m_blockCache.back() - 187;
     CreateHeader(packet, 0, 2, 0, PCR_PID);
-    CreatePcrAdaptation(packet + 4, static_cast<DWORD>(blockIndex) * 4500);
+    CreatePcrAdaptation(packet + 4, static_cast<uint32_t>(blockIndex) * 4500);
 
     for (; indexV < m_stsoV.size(); ++indexV) {
-        __int64 sampleTime = m_sttsV[0] < 0 ? static_cast<__int64>(indexV) * m_sttsV[1] : m_sttsV[indexV];
-        if (sampleTime >= static_cast<__int64>(blockIndex + 1) * m_timeScaleV / 10) {
+        int64_t sampleTime = m_sttsV[0] < 0 ? static_cast<int64_t>(indexV) * m_sttsV[1] : m_sttsV[indexV];
+        if (sampleTime >= static_cast<int64_t>(blockIndex + 1) * m_timeScaleV / 10) {
             break;
         }
         int n = ReadSample(indexV, m_stsoV, m_stszV, &sample);
@@ -824,7 +840,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
             // SPS + PPS
             sample.insert(sample.begin() + firstAudTail, m_spsPps.begin(), m_spsPps.end());
             n += static_cast<int>(m_spsPps.size());
-            BYTE stuffingSize = m_fHevc ? 7 : 6;
+            uint8_t stuffingSize = m_fHevc ? 7 : 6;
             sample.insert(sample.begin(), stuffingSize, 0xFF);
             n += stuffingSize;
             // AUDがないときは付加しておく(規格に厳密ではない)
@@ -847,7 +863,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
             }
             // PES header
             sample.insert(sample.begin(), 14, 0xFF);
-            CreatePesHeader(sample.data(), 0xE0, true, 0, static_cast<DWORD>(45000 * (sampleTime + m_cttsV[indexV]) / m_timeScaleV + m_offsetPtsV), stuffingSize);
+            CreatePesHeader(sample.data(), 0xE0, true, 0, static_cast<uint32_t>(45000 * (sampleTime + m_cttsV[indexV]) / m_timeScaleV + m_offsetPtsV), stuffingSize);
             n += 14;
         }
         for (int i = 0; i < n; ++counterV) {
@@ -867,10 +883,10 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
         }
     }
 
-    for (BYTE a = 0; a < 2; ++a) {
+    for (uint8_t a = 0; a < 2; ++a) {
         for (; indexA[a] < m_stsoA[a].size(); ++indexA[a]) {
-            __int64 sampleTime = m_sttsA[a][0] < 0 ? static_cast<__int64>(indexA[a]) * m_sttsA[a][1] : m_sttsA[a][indexA[a]];
-            if (sampleTime >= static_cast<__int64>(blockIndex + 1) * m_timeScaleA[a] / 10) {
+            int64_t sampleTime = m_sttsA[a][0] < 0 ? static_cast<int64_t>(indexA[a]) * m_sttsA[a][1] : m_sttsA[a][indexA[a]];
+            if (sampleTime >= static_cast<int64_t>(blockIndex + 1) * m_timeScaleA[a] / 10) {
                 break;
             }
             int n = ReadSample(indexA[a], m_stsoA[a], m_stszA[a], &sample);
@@ -883,7 +899,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
                 sample[18] |= n >> 3 & 0xFF;
                 sample[19] |= n << 5 & 0xFF;
                 // PES header
-                CreatePesHeader(sample.data(), 0xC0, true, (n + 8) & 0xFFFF, static_cast<DWORD>(45000 * sampleTime / m_timeScaleA[a] + m_offsetPtsA[a]), 0);
+                CreatePesHeader(sample.data(), 0xC0, true, (n + 8) & 0xFFFF, static_cast<uint32_t>(45000 * sampleTime / m_timeScaleA[a] + m_offsetPtsA[a]), 0);
                 n += 14;
             }
             for (int i = 0; i < n; ++counterA[a]) {
@@ -904,7 +920,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
         }
     }
 
-    __int64 captionEndTime = static_cast<__int64>(blockIndex + 1) * 100 + CAPTION_FORWARD_MSEC;
+    int64_t captionEndTime = static_cast<int64_t>(blockIndex + 1) * 100 + CAPTION_FORWARD_MSEC;
     for (; itCaption != m_captionList.end() && itCaption->first < captionEndTime; ++itCaption) {
         sample.assign(17, 0xFF);
         // 同期型PES(STD-B24)
@@ -912,13 +928,13 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
         sample[15] = 0xFF;
         sample[16] = 0xF0;
         sample.insert(sample.end(), itCaption->second.begin(), itCaption->second.begin() + 3);
-        sample.push_back(HIBYTE(itCaption->second.size() - 3));
-        sample.push_back(LOBYTE(itCaption->second.size() - 3));
+        sample.push_back((itCaption->second.size() - 3) >> 8 & 0xFF);
+        sample.push_back((itCaption->second.size() - 3) & 0xFF);
         sample.insert(sample.end(), itCaption->second.begin() + 3, itCaption->second.end());
-        WORD crc = CalcCrc16Ccitt(sample.data() + 17, sample.size() - 17);
-        sample.push_back(HIBYTE(crc));
-        sample.push_back(LOBYTE(crc));
-        CreatePesHeader(sample.data(), 0xBD, false, static_cast<WORD>(sample.size() - 6), static_cast<DWORD>(45 * itCaption->first + 22500), 0);
+        uint16_t crc = CalcCrc16Ccitt(sample.data() + 17, sample.size() - 17);
+        sample.push_back(crc >> 8);
+        sample.push_back(crc & 0xFF);
+        CreatePesHeader(sample.data(), 0xBD, false, static_cast<uint16_t>(sample.size() - 6), static_cast<uint32_t>(45 * itCaption->first + 22500), 0);
         for (size_t i = 0; i < sample.size(); ++counterC) {
             m_blockCache.insert(m_blockCache.end(), 188, 0xFF);
             packet = &m_blockCache.back() - 187;
@@ -944,7 +960,7 @@ bool CReadOnlyMpeg4File::ReadCurrentBlock()
     return true;
 }
 
-bool CReadOnlyMpeg4File::InitializePsiCounterInfo(LPCTSTR &errorMessage)
+bool CReadOnlyMpeg4File::InitializePsiCounterInfo(const char *&errorMessage)
 {
     m_psiCounterInfoMap.clear();
     if (!m_psiDataReader.IsOpen()) {
@@ -953,7 +969,7 @@ bool CReadOnlyMpeg4File::InitializePsiCounterInfo(LPCTSTR &errorMessage)
 
     size_t readingBlockIndex = 0;
     bool blockSizeMaxExceeded = false;
-    return m_psiDataReader.ReadCodeList([this, &readingBlockIndex, &blockSizeMaxExceeded](int timeMsec, WORD psiSize, WORD pid) {
+    return m_psiDataReader.ReadCodeList([this, &readingBlockIndex, &blockSizeMaxExceeded](int timeMsec, uint16_t psiSize, uint16_t pid) {
         size_t blockIndex = timeMsec / 100;
         if (readingBlockIndex < blockIndex) {
             if (blockIndex < m_blockList.size()) {
@@ -969,7 +985,7 @@ bool CReadOnlyMpeg4File::InitializePsiCounterInfo(LPCTSTR &errorMessage)
             // ランダムアクセスのためブロックごとのパケットサイズと連続性指標の開始値を計算しておく
             auto it = m_psiCounterInfoMap.find(pid);
             if (it == m_psiCounterInfoMap.end() && m_psiCounterInfoMap.size() < PSI_MAX_STREAMS) {
-                WORD mappedPid = pid;
+                uint16_t mappedPid = pid;
                 while (mappedPid == VIDEO_PID ||
                        mappedPid == AUDIO1_PID ||
                        mappedPid == AUDIO1_PID + 1 ||
@@ -977,7 +993,7 @@ bool CReadOnlyMpeg4File::InitializePsiCounterInfo(LPCTSTR &errorMessage)
                        mappedPid == PMT_PID ||
                        mappedPid == PCR_PID ||
                        m_psiCounterInfoMap.end() != std::find_if(m_psiCounterInfoMap.begin(), m_psiCounterInfoMap.end(),
-                           [=](const std::pair<WORD, PSI_COUNTER_INFO> &a) { return a.second.mappedPid == mappedPid; }))
+                           [=](const std::pair<uint16_t, PSI_COUNTER_INFO> &a) { return a.second.mappedPid == mappedPid; }))
                 {
                     // PIDが衝突するのでずらす
                     if (mappedPid == pid) mappedPid = DISPLACED_PID;
@@ -997,67 +1013,63 @@ bool CReadOnlyMpeg4File::InitializePsiCounterInfo(LPCTSTR &errorMessage)
     }, errorMessage) && !blockSizeMaxExceeded;
 }
 
-int CReadOnlyMpeg4File::ReadBox(LPCSTR path, std::vector<BYTE> &data) const
+std::pair<int64_t, int64_t> CReadOnlyMpeg4File::FindBoxPosition(const char *path, int64_t currentBoxPos) const
 {
-    if (path[0] == '/') {
-        LARGE_INTEGER toMove = {};
-        if (!::SetFilePointerEx(m_hFile, toMove, nullptr, FILE_BEGIN)) {
-            return -1;
-        }
-        ++path;
+    if ((currentBoxPos >= 0 && _fseeki64(m_fp.get(), currentBoxPos, SEEK_SET) != 0) ||
+        !path[0] || !path[1] || !path[2] || !path[3] || path[4] < '0') {
+        return std::pair<int64_t, int64_t>(-1, 0);
     }
     int index = path[4] - '0';
-    BYTE head[16];
-    DWORD numRead;
-    while (::ReadFile(m_hFile, head, 8, &numRead, nullptr) && numRead == 8) {
-        LARGE_INTEGER boxSize;
-        boxSize.QuadPart = ArrayToDWORD(head);
-        if (boxSize.QuadPart == 1) {
+    uint8_t head[16];
+    while (fread(head, 1, 8, m_fp.get()) == 8) {
+        int numRead = 8;
+        int64_t boxSize = ArrayToDWORD(head);
+        if (boxSize == 1) {
             // 64bit形式
-            if (!::ReadFile(m_hFile, head + 8, 8, &numRead, nullptr) || numRead != 8) {
+            if (fread(head + 8, 1, 8, m_fp.get()) != 8) {
                 break;
             }
             numRead = 16;
-            boxSize.HighPart = ArrayToDWORD(head + 8);
-            boxSize.LowPart = ArrayToDWORD(head + 12);
+            boxSize = ArrayToInt64(head + 8);
         }
-        if (boxSize.QuadPart < numRead) {
+        if (boxSize < numRead) {
             break;
         }
         if (::memcmp(path, head + 4, 4) == 0 && --index < 0) {
             if (path[5] == '\0') {
-                if (boxSize.QuadPart - numRead <= READ_BOX_SIZE_MAX) {
-                    data.resize(static_cast<size_t>(boxSize.QuadPart - numRead));
-                    if (data.empty() || ::ReadFile(m_hFile, data.data(), static_cast<DWORD>(data.size()), &numRead, nullptr) && numRead == data.size()) {
-                        return static_cast<int>(data.size());
-                    }
-                }
-                break;
+                return std::pair<int64_t, int64_t>(_ftelli64(m_fp.get()), boxSize - numRead);
             }
-            return ReadBox(path + 6, data);
+            return FindBoxPosition(path + 6, -1);
         }
-        LARGE_INTEGER toMove;
-        toMove.QuadPart = boxSize.QuadPart - numRead;
-        if (!::SetFilePointerEx(m_hFile, toMove, nullptr, FILE_CURRENT)) {
+        if (_fseeki64(m_fp.get(), boxSize - numRead, SEEK_CUR) != 0) {
             break;
+        }
+    }
+    return std::pair<int64_t, int64_t>(-1, 0);
+}
+
+int CReadOnlyMpeg4File::ReadBox(const char *path, std::vector<uint8_t> &data, int64_t currentBoxPos) const
+{
+    std::pair<int64_t, int64_t> posAndSize = FindBoxPosition(path, currentBoxPos);
+    if (posAndSize.first >= 0 && posAndSize.second <= READ_BOX_SIZE_MAX) {
+        data.resize(static_cast<size_t>(posAndSize.second));
+        if (data.empty() || fread(data.data(), 1, data.size(), m_fp.get()) == data.size()) {
+            return static_cast<int>(data.size());
         }
     }
     return -1;
 }
 
-int CReadOnlyMpeg4File::ReadSample(size_t index, const std::vector<__int64> &stso, const std::vector<DWORD> &stsz, std::vector<BYTE> *data) const
+int CReadOnlyMpeg4File::ReadSample(size_t index, const std::vector<int64_t> &stso, const std::vector<uint32_t> &stsz, std::vector<uint8_t> *data) const
 {
     if (index >= stso.size()) {
         return -1;
     }
     if (data) {
         data->resize(stsz[index]);
-        LARGE_INTEGER toMove;
-        toMove.QuadPart = stso[index];
-        DWORD numRead;
         if (data->empty() ||
-            !::SetFilePointerEx(m_hFile, toMove, nullptr, FILE_BEGIN) ||
-            !::ReadFile(m_hFile, data->data(), stsz[index], &numRead, nullptr) || numRead != stsz[index]) {
+            _fseeki64(m_fp.get(), stso[index], SEEK_SET) != 0 ||
+            fread(data->data(), 1, stsz[index], m_fp.get()) != stsz[index]) {
             data->clear();
         }
         return static_cast<int>(data->size());
@@ -1065,7 +1077,7 @@ int CReadOnlyMpeg4File::ReadSample(size_t index, const std::vector<__int64> &sts
     return stsz[index];
 }
 
-void CReadOnlyMpeg4File::AddTsPacketsFromPsi(std::vector<BYTE> &buf, const BYTE *psi, size_t psiSize, BYTE &counter, WORD pid)
+void CReadOnlyMpeg4File::AddTsPacketsFromPsi(std::vector<uint8_t> &buf, const uint8_t *psi, size_t psiSize, uint8_t &counter, uint16_t pid)
 {
     for (size_t i = 0; i < psiSize; ) {
         size_t pointer = i == 0;
@@ -1077,13 +1089,13 @@ void CReadOnlyMpeg4File::AddTsPacketsFromPsi(std::vector<BYTE> &buf, const BYTE 
     }
 }
 
-bool CReadOnlyMpeg4File::Add16TsPacketsFromPsi(std::vector<BYTE> &buf, const BYTE *psi, size_t psiSize, WORD pid)
+bool CReadOnlyMpeg4File::Add16TsPacketsFromPsi(std::vector<uint8_t> &buf, const uint8_t *psi, size_t psiSize, uint16_t pid)
 {
     if (psiSize < 16 || 1024 < psiSize) {
         return false;
     }
     // アダプテーションを加えてセクションを16パケット(2セクションx8)に散らし、連続性指標を常に0で始める
-    for (BYTE counter = 0; counter < 16; ) {
+    for (uint8_t counter = 0; counter < 16; ) {
         for (size_t i = 0; i < psiSize; ++counter) {
             buf.resize(buf.size() + 4, 0);
             CreateHeader(&buf.back() - 3, i == 0, 3, counter, pid);
@@ -1093,7 +1105,7 @@ bool CReadOnlyMpeg4File::Add16TsPacketsFromPsi(std::vector<BYTE> &buf, const BYT
             if (i == 0 && n < 8) {
                 n = 8;
             }
-            buf.push_back(static_cast<BYTE>(183 - n - pointer));
+            buf.push_back(static_cast<uint8_t>(183 - n - pointer));
             buf.push_back(0);
             buf.insert(buf.end(), 182 - n - pointer, 0xFF);
             if (pointer) {
@@ -1107,13 +1119,13 @@ bool CReadOnlyMpeg4File::Add16TsPacketsFromPsi(std::vector<BYTE> &buf, const BYT
     return true;
 }
 
-size_t CReadOnlyMpeg4File::CreatePat(BYTE *data, WORD tsid, WORD sid)
+size_t CReadOnlyMpeg4File::CreatePat(uint8_t *data, uint16_t tsid, uint16_t sid)
 {
     data[0] = 0x00;
     data[1] = 0xB0;
     data[2] = 17;
-    data[3] = HIBYTE(tsid);
-    data[4] = LOBYTE(tsid);
+    data[3] = tsid >> 8;
+    data[4] = tsid & 0xFF;
     data[5] = 0xC1;
     data[6] = 0;
     data[7] = 0;
@@ -1121,33 +1133,33 @@ size_t CReadOnlyMpeg4File::CreatePat(BYTE *data, WORD tsid, WORD sid)
     data[9] = 0x00;
     data[10] = 0xE0;
     data[11] = 0x10;
-    data[12] = HIBYTE(sid);
-    data[13] = LOBYTE(sid);
-    data[14] = HIBYTE(PMT_PID) | 0xE0;
-    data[15] = LOBYTE(PMT_PID);
-    DWORD crc = CalcCrc32(data, 16);
-    data[16] = HIBYTE(HIWORD(crc));
-    data[17] = LOBYTE(HIWORD(crc));
-    data[18] = HIBYTE(crc);
-    data[19] = LOBYTE(crc);
+    data[12] = sid >> 8;
+    data[13] = sid & 0xFF;
+    data[14] = PMT_PID >> 8 | 0xE0;
+    data[15] = PMT_PID & 0xFF;
+    uint32_t crc = CalcCrc32(data, 16);
+    data[16] = crc >> 24;
+    data[17] = crc >> 16 & 0xFF;
+    data[18] = crc >> 8 & 0xFF;
+    data[19] = crc & 0xFF;
     return 20;
 }
 
-size_t CReadOnlyMpeg4File::CreatePatFromPat(BYTE *data, const std::vector<BYTE> &pat, WORD &firstPmtPid)
+size_t CReadOnlyMpeg4File::CreatePatFromPat(uint8_t *data, const std::vector<uint8_t> &pat, uint16_t &firstPmtPid)
 {
     if (pat.size() < 8 || pat[0] != 0x00) {
         return 0;
     }
     firstPmtPid = 0;
-    const BYTE *nitPid = nullptr;
-    const BYTE *firstPmtSid = nullptr;
+    const uint8_t *nitPid = nullptr;
+    const uint8_t *firstPmtSid = nullptr;
     for (size_t i = 8; i + 3 < pat.size() - 4; i += 4) {
         if (pat[i] == 0 && pat[i + 1] == 0) {
             nitPid = &pat[i + 2];
         }
         else if (!firstPmtSid) {
             firstPmtSid = &pat[i];
-            firstPmtPid = MAKEWORD(pat[i + 3], pat[i + 2] & 0x1F);
+            firstPmtPid = (pat[i + 2] & 0x1F) << 8 | pat[i + 3];
         }
     }
 
@@ -1169,24 +1181,24 @@ size_t CReadOnlyMpeg4File::CreatePatFromPat(BYTE *data, const std::vector<BYTE> 
     if (firstPmtSid) {
         data[x++] = firstPmtSid[0];
         data[x++] = firstPmtSid[1];
-        data[x++] = HIBYTE(PMT_PID) | 0xE0;
-        data[x++] = LOBYTE(PMT_PID);
+        data[x++] = PMT_PID >> 8 | 0xE0;
+        data[x++] = PMT_PID & 0xFF;
     }
-    DWORD crc = CalcCrc32(data, x);
-    data[x++] = HIBYTE(HIWORD(crc));
-    data[x++] = LOBYTE(HIWORD(crc));
-    data[x++] = HIBYTE(crc);
-    data[x++] = LOBYTE(crc);
+    uint32_t crc = CalcCrc32(data, x);
+    data[x++] = crc >> 24;
+    data[x++] = crc >> 16 & 0xFF;
+    data[x++] = crc >> 8 & 0xFF;
+    data[x++] = crc & 0xFF;
     return x;
 }
 
-size_t CReadOnlyMpeg4File::CreateNit(BYTE *data, WORD nid)
+size_t CReadOnlyMpeg4File::CreateNit(uint8_t *data, uint16_t nid)
 {
     data[0] = 0x40;
     data[1] = 0xF0;
     data[2] = 17;
-    data[3] = HIBYTE(nid);
-    data[4] = LOBYTE(nid);
+    data[3] = nid >> 8;
+    data[4] = nid & 0xFF;
     data[5] = 0xC1;
     data[6] = 0;
     data[7] = 0;
@@ -1198,29 +1210,29 @@ size_t CReadOnlyMpeg4File::CreateNit(BYTE *data, WORD nid)
     data[13] = 0x4E; // ネットワーク名"N"
     data[14] = 0xF0;
     data[15] = 0;
-    DWORD crc = CalcCrc32(data, 16);
-    data[16] = HIBYTE(HIWORD(crc));
-    data[17] = LOBYTE(HIWORD(crc));
-    data[18] = HIBYTE(crc);
-    data[19] = LOBYTE(crc);
+    uint32_t crc = CalcCrc32(data, 16);
+    data[16] = crc >> 24;
+    data[17] = crc >> 16 & 0xFF;
+    data[18] = crc >> 8 & 0xFF;
+    data[19] = crc & 0xFF;
     return 20;
 }
 
-size_t CReadOnlyMpeg4File::CreateSdt(BYTE *data, WORD nid, WORD tsid, WORD sid)
+size_t CReadOnlyMpeg4File::CreateSdt(uint8_t *data, uint16_t nid, uint16_t tsid, uint16_t sid)
 {
     data[0] = 0x42;
     data[1] = 0xF0;
     data[2] = 24;
-    data[3] = HIBYTE(tsid);
-    data[4] = LOBYTE(tsid);
+    data[3] = tsid >> 8;
+    data[4] = tsid & 0xFF;
     data[5] = 0xC1;
     data[6] = 0;
     data[7] = 0;
-    data[8] = HIBYTE(nid);
-    data[9] = LOBYTE(nid);
+    data[8] = nid >> 8;
+    data[9] = nid & 0xFF;
     data[10] = 0xFF;
-    data[11] = HIBYTE(sid);
-    data[12] = LOBYTE(sid);
+    data[11] = sid >> 8;
+    data[12] = sid & 0xFF;
     data[13] = 0xFF;
     data[14] = 0x00;
     data[15] = 7;
@@ -1231,39 +1243,39 @@ size_t CReadOnlyMpeg4File::CreateSdt(BYTE *data, WORD nid, WORD tsid, WORD sid)
     data[20] = 2;
     data[21] = 0x0E;
     data[22] = 0x53; // サービス名"S"
-    DWORD crc = CalcCrc32(data, 23);
-    data[23] = HIBYTE(HIWORD(crc));
-    data[24] = LOBYTE(HIWORD(crc));
-    data[25] = HIBYTE(crc);
-    data[26] = LOBYTE(crc);
+    uint32_t crc = CalcCrc32(data, 23);
+    data[23] = crc >> 24;
+    data[24] = crc >> 16 & 0xFF;
+    data[25] = crc >> 8 & 0xFF;
+    data[26] = crc & 0xFF;
     return 27;
 }
 
-size_t CReadOnlyMpeg4File::CreateEmptyEitPf(BYTE *data, WORD nid, WORD tsid, WORD sid)
+size_t CReadOnlyMpeg4File::CreateEmptyEitPf(uint8_t *data, uint16_t nid, uint16_t tsid, uint16_t sid)
 {
     data[0] = 0x4E;
     data[1] = 0xF0;
     data[2] = 15;
-    data[3] = HIBYTE(sid);
-    data[4] = LOBYTE(sid);
+    data[3] = sid >> 8;
+    data[4] = sid & 0xFF;
     data[5] = 0xC1;
     data[6] = 0;
     data[7] = 0;
-    data[8] = HIBYTE(tsid);
-    data[9] = LOBYTE(tsid);
-    data[10] = HIBYTE(nid);
-    data[11] = LOBYTE(nid);
+    data[8] = tsid >> 8;
+    data[9] = tsid & 0xFF;
+    data[10] = nid >> 8;
+    data[11] = nid & 0xFF;
     data[12] = 0;
     data[13] = 0x4E;
-    DWORD crc = CalcCrc32(data, 14);
-    data[14] = HIBYTE(HIWORD(crc));
-    data[15] = LOBYTE(HIWORD(crc));
-    data[16] = HIBYTE(crc);
-    data[17] = LOBYTE(crc);
+    uint32_t crc = CalcCrc32(data, 14);
+    data[14] = crc >> 24;
+    data[15] = crc >> 16 & 0xFF;
+    data[16] = crc >> 8 & 0xFF;
+    data[17] = crc & 0xFF;
     return 18;
 }
 
-size_t CReadOnlyMpeg4File::CreateTot(BYTE *data, SYSTEMTIME st)
+size_t CReadOnlyMpeg4File::CreateTot(uint8_t *data, SYSTEMTIME st)
 {
     data[0] = 0x73;
     data[1] = 0x70;
@@ -1277,101 +1289,101 @@ size_t CReadOnlyMpeg4File::CreateTot(BYTE *data, SYSTEMTIME st)
     LARGE_INTEGER li;
     li.LowPart = ft.dwLowDateTime;
     li.HighPart = ft.dwHighDateTime;
-    __int64 mjd = (li.QuadPart - 81377568000000000LL) / (24 * 60 * 60 * 10000000LL);
-    data[3] = HIBYTE(mjd);
-    data[4] = LOBYTE(mjd);
+    int64_t mjd = (li.QuadPart - 81377568000000000LL) / (24 * 60 * 60 * 10000000LL);
+    data[3] = mjd >> 8 & 0xFF;
+    data[4] = mjd & 0xFF;
     data[8] = 0xF0;
     data[9] = 0;
-    DWORD crc = CalcCrc32(data, 10);
-    data[10] = HIBYTE(HIWORD(crc));
-    data[11] = LOBYTE(HIWORD(crc));
-    data[12] = HIBYTE(crc);
-    data[13] = LOBYTE(crc);
+    uint32_t crc = CalcCrc32(data, 10);
+    data[10] = crc >> 24;
+    data[11] = crc >> 16 & 0xFF;
+    data[12] = crc >> 8 & 0xFF;
+    data[13] = crc & 0xFF;
     return 14;
 }
 
-size_t CReadOnlyMpeg4File::CreatePmt(BYTE *data, WORD sid, bool fHevc, bool fAudio2, bool fCaption)
+size_t CReadOnlyMpeg4File::CreatePmt(uint8_t *data, uint16_t sid, bool fHevc, bool fAudio2, bool fCaption)
 {
     data[0] = 0x02;
-    data[3] = HIBYTE(sid);
-    data[4] = LOBYTE(sid);
+    data[3] = sid >> 8;
+    data[4] = sid & 0xFF;
     data[5] = 0xC1;
     data[6] = 0;
     data[7] = 0;
-    data[8] = HIBYTE(PCR_PID) | 0xE0;
-    data[9] = LOBYTE(PCR_PID);
+    data[8] = PCR_PID >> 8 | 0xE0;
+    data[9] = PCR_PID & 0xFF;
     data[10] = 0xF0;
     data[11] = 0;
     size_t x = 12 + CreatePmt2ndLoop(data + 12, fHevc, fAudio2, fCaption);
-    data[1] = HIBYTE(x + 4 - 3) | 0xB0;
-    data[2] = LOBYTE(x + 4 - 3);
-    DWORD crc = CalcCrc32(data, x);
-    data[x++] = HIBYTE(HIWORD(crc));
-    data[x++] = LOBYTE(HIWORD(crc));
-    data[x++] = HIBYTE(crc);
-    data[x++] = LOBYTE(crc);
+    data[1] = ((x + 4 - 3) >> 8 & 0xFF) | 0xB0;
+    data[2] = (x + 4 - 3) & 0xFF;
+    uint32_t crc = CalcCrc32(data, x);
+    data[x++] = crc >> 24;
+    data[x++] = crc >> 16 & 0xFF;
+    data[x++] = crc >> 8 & 0xFF;
+    data[x++] = crc & 0xFF;
     return x;
 }
 
-bool CReadOnlyMpeg4File::AddPmtPacketsFromPmt(std::vector<BYTE> &buf, const std::vector<BYTE> &pmt, const std::map<WORD, PSI_COUNTER_INFO> &pidMap,
+bool CReadOnlyMpeg4File::AddPmtPacketsFromPmt(std::vector<uint8_t> &buf, const std::vector<uint8_t> &pmt, const std::map<uint16_t, PSI_COUNTER_INFO> &pidMap,
                                               bool fHevc, bool fAudio2, bool fCaption)
 {
     if (pmt.size() < 12 || pmt[0] != 0x02) {
         return false;
     }
-    BYTE data[1024];
+    uint8_t data[1024];
     data[0] = 0x02;
     data[3] = pmt[3];
     data[4] = pmt[4];
     data[5] = pmt[5];
     data[6] = 0;
     data[7] = 0;
-    data[8] = HIBYTE(PCR_PID) | 0xE0;
-    data[9] = LOBYTE(PCR_PID);
+    data[8] = PCR_PID >> 8 | 0xE0;
+    data[9] = PCR_PID & 0xFF;
     data[10] = 0xF0;
     data[11] = 0;
     size_t x = 12 + CreatePmt2ndLoop(data + 12, fHevc, fAudio2, fCaption);
 
-    WORD programInfoLength = MAKEWORD(pmt[11], pmt[10] & 0x03);
+    uint16_t programInfoLength = (pmt[10] & 0x03) << 8 | pmt[11];
     for (size_t pos = 12 + programInfoLength; pos + 4 < pmt.size() - 4; ) {
-        WORD esPid = MAKEWORD(pmt[pos + 2], pmt[pos + 1] & 0x1F);
-        WORD esInfoLength = MAKEWORD(pmt[pos + 4], pmt[pos + 3] & 0x03);
+        uint16_t esPid = (pmt[pos + 1] & 0x1F) << 8 | pmt[pos + 2];
+        uint16_t esInfoLength = (pmt[pos + 3] & 0x03) << 8 | pmt[pos + 4];
         auto it = pidMap.find(esPid);
         if (it != pidMap.end() && pos + 5 + esInfoLength <= pmt.size() - 4) {
             if (x + 5 + esInfoLength > 1024 - 4) {
                 break;
             }
             ::memcpy(data + x, &pmt[pos], 5 + esInfoLength);
-            data[x + 1] = HIBYTE(it->second.mappedPid) | 0xE0;
-            data[x + 2] = LOBYTE(it->second.mappedPid);
+            data[x + 1] = it->second.mappedPid >> 8 | 0xE0;
+            data[x + 2] = it->second.mappedPid & 0xFF;
             x += 5 + esInfoLength;
         }
         pos += 5 + esInfoLength;
     }
-    data[1] = HIBYTE(x + 4 - 3) | 0xB0;
-    data[2] = LOBYTE(x + 4 - 3);
-    DWORD crc = CalcCrc32(data, x);
-    data[x++] = HIBYTE(HIWORD(crc));
-    data[x++] = LOBYTE(HIWORD(crc));
-    data[x++] = HIBYTE(crc);
-    data[x++] = LOBYTE(crc);
+    data[1] = ((x + 4 - 3) >> 8 & 0xFF) | 0xB0;
+    data[2] = (x + 4 - 3) & 0xFF;
+    uint32_t crc = CalcCrc32(data, x);
+    data[x++] = crc >> 24;
+    data[x++] = crc >> 16 & 0xFF;
+    data[x++] = crc >> 8 & 0xFF;
+    data[x++] = crc & 0xFF;
     return Add16TsPacketsFromPsi(buf, data, x, PMT_PID);
 }
 
-size_t CReadOnlyMpeg4File::CreatePmt2ndLoop(BYTE *data, bool fHevc, bool fAudio2, bool fCaption)
+size_t CReadOnlyMpeg4File::CreatePmt2ndLoop(uint8_t *data, bool fHevc, bool fAudio2, bool fCaption)
 {
     size_t x = 0;
     data[x++] = fHevc ? H_265_VIDEO : AVC_VIDEO;
-    data[x++] = HIBYTE(VIDEO_PID) | 0xE0;
-    data[x++] = LOBYTE(VIDEO_PID);
+    data[x++] = VIDEO_PID >> 8 | 0xE0;
+    data[x++] = VIDEO_PID & 0xFF;
     data[x++] = 0xF0;
     data[x++] = 3;
     data[x++] = 0x52; // ストリーム識別記述子
     data[x++] = 1;
     data[x++] = 0x00; // 部分受信階層の場合を考慮すると厳密ではない
     data[x++] = ADTS_TRANSPORT;
-    data[x++] = HIBYTE(AUDIO1_PID) | 0xE0;
-    data[x++] = LOBYTE(AUDIO1_PID);
+    data[x++] = AUDIO1_PID >> 8 | 0xE0;
+    data[x++] = AUDIO1_PID & 0xFF;
     data[x++] = 0xF0;
     data[x++] = 3;
     data[x++] = 0x52; // ストリーム識別記述子
@@ -1379,8 +1391,8 @@ size_t CReadOnlyMpeg4File::CreatePmt2ndLoop(BYTE *data, bool fHevc, bool fAudio2
     data[x++] = 0x10;
     if (fAudio2) {
         data[x++] = ADTS_TRANSPORT;
-        data[x++] = HIBYTE(AUDIO1_PID + 1) | 0xE0;
-        data[x++] = LOBYTE(AUDIO1_PID + 1);
+        data[x++] = ((AUDIO1_PID + 1) >> 8 & 0xFF) | 0xE0;
+        data[x++] = (AUDIO1_PID + 1) & 0xFF;
         data[x++] = 0xF0;
         data[x++] = 3;
         data[x++] = 0x52; // ストリーム識別記述子
@@ -1389,47 +1401,52 @@ size_t CReadOnlyMpeg4File::CreatePmt2ndLoop(BYTE *data, bool fHevc, bool fAudio2
     }
     if (fCaption) {
         data[x++] = PES_PRIVATE_DATA;
-        data[x++] = HIBYTE(CAPTION_PID) | 0xE0;
-        data[x++] = LOBYTE(CAPTION_PID);
+        data[x++] = CAPTION_PID >> 8 | 0xE0;
+        data[x++] = CAPTION_PID & 0xFF;
         data[x++] = 0xF0;
-        data[x++] = 3;
+        data[x++] = 8;
         data[x++] = 0x52; // ストリーム識別記述子
         data[x++] = 1;
         data[x++] = 0x30;
+        data[x++] = 0xFD; // データ符号化方式記述子
+        data[x++] = 3;
+        data[x++] = 0x00;
+        data[x++] = 0x08;
+        data[x++] = 0x3D;
     }
     return x;
 }
 
-size_t CReadOnlyMpeg4File::CreateHeader(BYTE *data, BYTE unitStart, BYTE adaptation, BYTE counter, WORD pid)
+size_t CReadOnlyMpeg4File::CreateHeader(uint8_t *data, uint8_t unitStart, uint8_t adaptation, uint8_t counter, uint16_t pid)
 {
     data[0] = 0x47;
-    data[1] = (unitStart << 6 | HIBYTE(pid)) & 0xFF;
-    data[2] = LOBYTE(pid);
-    data[3] = (adaptation << 4 | counter & 0x0F) & 0xFF;
+    data[1] = (unitStart << 6 | pid >> 8) & 0xFF;
+    data[2] = pid & 0xFF;
+    data[3] = (adaptation << 4 | (counter & 0x0F)) & 0xFF;
     return 4;
 }
 
-size_t CReadOnlyMpeg4File::CreatePcrAdaptation(BYTE *data, DWORD pcr45khz)
+size_t CReadOnlyMpeg4File::CreatePcrAdaptation(uint8_t *data, uint32_t pcr45khz)
 {
     data[0] = 183;
     data[1] = 0x10;
-    data[2] = HIBYTE(HIWORD(pcr45khz));
-    data[3] = LOBYTE(HIWORD(pcr45khz));
-    data[4] = HIBYTE(pcr45khz);
-    data[5] = LOBYTE(pcr45khz);
+    data[2] = pcr45khz >> 24;
+    data[3] = pcr45khz >> 16 & 0xFF;
+    data[4] = pcr45khz >> 8 & 0xFF;
+    data[5] = pcr45khz & 0xFF;
     data[6] = 0x7E;
     data[7] = 0;
     return 8;
 }
 
-size_t CReadOnlyMpeg4File::CreatePesHeader(BYTE *data, BYTE streamID, bool fDataAlignment, WORD packetLength, DWORD pts45khz, BYTE stuffingSize)
+size_t CReadOnlyMpeg4File::CreatePesHeader(uint8_t *data, uint8_t streamID, bool fDataAlignment, uint16_t packetLength, uint32_t pts45khz, uint8_t stuffingSize)
 {
     data[0] = 0;
     data[1] = 0;
     data[2] = 1;
     data[3] = streamID;
-    data[4] = HIBYTE(packetLength);
-    data[5] = LOBYTE(packetLength);
+    data[4] = packetLength >> 8;
+    data[5] = packetLength & 0xFF;
     data[6] = fDataAlignment ? 0x84 : 0x80;
     data[7] = 0x80;
     data[8] = (5 + stuffingSize) & 0xFF;
@@ -1441,7 +1458,7 @@ size_t CReadOnlyMpeg4File::CreatePesHeader(BYTE *data, BYTE streamID, bool fData
     return 14;
 }
 
-size_t CReadOnlyMpeg4File::CreateAdtsHeader(BYTE *data, int profile, int freq, int ch, int bufferSize)
+size_t CReadOnlyMpeg4File::CreateAdtsHeader(uint8_t *data, int profile, int freq, int ch, int bufferSize)
 {
     data[0] = 0xFF;
     data[1] = 0xF9;
@@ -1453,12 +1470,12 @@ size_t CReadOnlyMpeg4File::CreateAdtsHeader(BYTE *data, int profile, int freq, i
     return 7;
 }
 
-size_t CReadOnlyMpeg4File::NalFileToByte(std::vector<BYTE> &data, bool &fIdr, bool fHevc)
+size_t CReadOnlyMpeg4File::NalFileToByte(std::vector<uint8_t> &data, bool &fIdr, bool fHevc)
 {
     fIdr = false;
     size_t firstAudTail = 0;
     for (size_t i = 0; i + 3 < data.size(); ) {
-        DWORD len = ArrayToDWORD(&data[i]);
+        uint32_t len = ArrayToDWORD(&data[i]);
         data[i++] = 0;
         data[i++] = 0;
         data[i++] = 0;
@@ -1480,10 +1497,10 @@ size_t CReadOnlyMpeg4File::NalFileToByte(std::vector<BYTE> &data, bool &fIdr, bo
     return firstAudTail;
 }
 
-DWORD CReadOnlyMpeg4File::CalcCrc32(const BYTE *data, size_t len, DWORD crc)
+uint32_t CReadOnlyMpeg4File::CalcCrc32(const uint8_t *data, size_t len, uint32_t crc)
 {
     for (size_t i = 0; i < len; ++i) {
-        DWORD c = ((crc >> 24) ^ data[i]) << 24;
+        uint32_t c = ((crc >> 24) ^ data[i]) << 24;
         for (int j = 0; j < 8; ++j) {
             c = (c << 1) ^ (c & 0x80000000 ? 0x04C11DB7 : 0);
         }
