@@ -95,6 +95,7 @@ private:
     TCHAR m_metaName[MAX_PATH];
     TCHAR m_vttExtension[16];
     TCHAR m_psiDataExtension[16];
+    bool m_fCheckFileAttributes;
     TCHAR m_iniBroadcastID[15];
     TCHAR m_iniTime[20];
     uint16_t m_nid, m_tsid, m_sid;

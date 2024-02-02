@@ -124,6 +124,7 @@ bool CReadOnlyMpeg4File::LoadSettings()
     GetBufferedProfileString(buf.data(), TEXT("Meta"), TEXT("metadata.ini"), m_metaName, _countof(m_metaName));
     GetBufferedProfileString(buf.data(), TEXT("VttExtension"), TEXT(".vtt"), m_vttExtension, _countof(m_vttExtension));
     GetBufferedProfileString(buf.data(), TEXT("PsiDataExtension"), TEXT(".psc"), m_psiDataExtension, _countof(m_psiDataExtension));
+    m_fCheckFileAttributes = GetBufferedProfileInt(buf.data(), TEXT("CheckFileAttributes"), 1) != 0;
     GetBufferedProfileString(buf.data(), TEXT("BroadcastID"), TEXT("0x000100020003"), m_iniBroadcastID, _countof(m_iniBroadcastID));
     GetBufferedProfileString(buf.data(), TEXT("Time"), TEXT(""), m_iniTime, _countof(m_iniTime));
     if (!buf[0]) {
@@ -131,6 +132,7 @@ bool CReadOnlyMpeg4File::LoadSettings()
         ::WritePrivateProfileString(TEXT("MP4"), TEXT("Meta"), m_metaName, iniPath);
         ::WritePrivateProfileString(TEXT("MP4"), TEXT("VttExtension"), m_vttExtension, iniPath);
         ::WritePrivateProfileString(TEXT("MP4"), TEXT("PsiDataExtension"), m_psiDataExtension, iniPath);
+        WritePrivateProfileInt(TEXT("MP4"), TEXT("CheckFileAttributes"), m_fCheckFileAttributes, iniPath);
         ::WritePrivateProfileString(TEXT("MP4"), TEXT("BroadcastID"), m_iniBroadcastID, iniPath);
         ::WritePrivateProfileString(TEXT("MP4"), TEXT("Time"), TEXT(""), iniPath);
     }
@@ -201,6 +203,16 @@ void CReadOnlyMpeg4File::LoadCaption(LPCTSTR path)
     if (!::PathRenameExtension(vttPath, m_vttExtension)) {
         return;
     }
+    if (m_fCheckFileAttributes) {
+        // 従ファイルにある隠し属性が主ファイルにも必要
+        DWORD hiddenAttr = ::GetFileAttributes(vttPath) & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+        if (hiddenAttr) {
+            DWORD attr = ::GetFileAttributes(path);
+            if (attr == INVALID_FILE_ATTRIBUTES || (hiddenAttr & ~attr)) {
+                return;
+            }
+        }
+    }
     LoadWebVttB24Caption(vttPath, m_captionList);
 }
 
@@ -213,6 +225,16 @@ void CReadOnlyMpeg4File::OpenPsiData(LPCTSTR path)
     _tcscpy_s(psiDataPath, path);
     if (!::PathRenameExtension(psiDataPath, m_psiDataExtension)) {
         return;
+    }
+    if (m_fCheckFileAttributes) {
+        // 従ファイルにある隠し属性が主ファイルにも必要
+        DWORD hiddenAttr = ::GetFileAttributes(psiDataPath) & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+        if (hiddenAttr) {
+            DWORD attr = ::GetFileAttributes(path);
+            if (attr == INVALID_FILE_ATTRIBUTES || (hiddenAttr & ~attr)) {
+                return;
+            }
+        }
     }
     m_psiDataReader.Open(psiDataPath);
 }
