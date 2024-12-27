@@ -43,7 +43,7 @@ static const int INFO_VERSION = 25;
 #define WM_SATISFIED_POS_GT (WM_APP + 5)
 
 // TvtPlayから他プラグインに情報提供するメッセージ
-#define TVTP_CURRENT_MSGVER 1
+#define TVTP_CURRENT_MSGVER 2
 #define WM_TVTP_GET_MSGVER      (WM_APP + 50)
 #define WM_TVTP_IS_OPEN         (WM_APP + 51)
 #define WM_TVTP_GET_POSITION    (WM_APP + 52)
@@ -56,6 +56,7 @@ static const int INFO_VERSION = 25;
 #define WM_TVTP_GET_PATH        (WM_APP + 59)
 #define WM_TVTP_SEEK            (WM_APP + 60)
 #define WM_TVTP_SEEK_ABSOLUTE   (WM_APP + 61)
+#define WM_TVTP_GET_TOT_UNIX    (WM_APP + 62)
 
 #define WM_TS_SET_UDP       (WM_APP + 1)
 #define WM_TS_SET_PIPE      (WM_APP + 2)
@@ -178,6 +179,7 @@ CTvtPlay::CTvtPlay()
     , m_infoTot(-1)
     , m_infoExtMode(0)
     , m_infoSpeed(100)
+    , m_infoTotUnix(0)
     , m_fInfoPaused(false)
     , m_fHalt(false)
     , m_fAllRepeat(false)
@@ -2584,6 +2586,8 @@ LRESULT CALLBACK CTvtPlay::FrameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
     case WM_TVTP_SEEK_ABSOLUTE:
         pThis->SeekAbsolute(static_cast<int>(lParam));
         return TRUE;
+    case WM_TVTP_GET_TOT_UNIX:
+        return pThis->GetTotUnixTime();
     case WM_APPCOMMAND:
         // メディアキー対策(オーナーウィンドウには自分で送る必要がある)
         ::SendMessage(::GetParent(hwnd), uMsg, wParam, lParam);
@@ -2600,6 +2604,7 @@ void CTvtPlay::UpdateInfos()
         m_infoPos = m_tsSender.GetPosition();
         m_infoDur = m_tsSender.GetDuration();
         m_infoTot = m_tsSender.GetBroadcastTime();
+        m_infoTotUnix = m_tsSender.GetBroadcastUnixTime();
         m_infoExtMode = m_tsSender.IsFixed(&fSpecialExt) ? 0 : fSpecialExt ? 2 : 1;
         m_fInfoPaused = m_tsSender.IsPaused();
         // m_infoSpeedはm_tsSenderのもつ値と必ずしも一致しない
@@ -2607,6 +2612,7 @@ void CTvtPlay::UpdateInfos()
     else {
         m_infoPos = m_infoDur = m_infoExtMode = 0;
         m_infoTot = -1;
+        m_infoTotUnix = 0;
         m_infoSpeed = 100;
         m_fInfoPaused = false;
     }

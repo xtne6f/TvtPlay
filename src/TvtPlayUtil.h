@@ -42,6 +42,7 @@ public:
     virtual int GetApparentPosition()=0;
     virtual int GetDuration()=0;
     virtual int GetTotTime()=0;
+    virtual DWORD GetTotUnixTime()=0;
     virtual int IsExtending()=0;
     virtual bool IsPaused()=0;
     virtual CChapterMap& GetChapter()=0;

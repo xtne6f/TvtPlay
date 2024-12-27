@@ -166,7 +166,7 @@ CTsSender::CTsSender()
     , m_pcrPidsLen(0)
     , m_fileSize(0)
     , m_duration(0)
-    , m_totBase(0)
+    , m_totBaseUnixTime(0)
     , m_totBasePcr(0)
     , m_hash(-1)
     , m_oldHash(-1)
@@ -258,7 +258,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     m_pcrPidsLen = 0;
 
     // TOT-PCR対応情報をクリア
-    m_totBase = -1;
+    m_totBaseUnixTime = -1;
 
     // QueryPerformanceCounterによるTickカウント補正をするかどうか
     m_adjFreq = fUseQpc ? -1 : 0;
@@ -761,11 +761,23 @@ int CTsSender::GetPosition() const
 // 取得失敗時は負を返す
 int CTsSender::GetBroadcastTime() const
 {
-    if (m_totBase < 0) return -1;
+    if (m_totBaseUnixTime < 0) return -1;
 
-    int totInit = m_totBase - (int)(DiffPcr(m_totBasePcr, m_initPcr) / PCR_PER_MSEC);
+    int totInit = (int)((m_totBaseUnixTime + 9 * 3600) % (24 * 3600)) * 1000 - (int)(DiffPcr(m_totBasePcr, m_initPcr) / PCR_PER_MSEC);
     if (totInit < 0) totInit += 24 * 3600000; // 1日足す
     return totInit;
+}
+
+
+// TOT時刻から逆算した動画の放送時刻(UNIX時間)を取得する
+// 取得失敗時は0を返す
+DWORD CTsSender::GetBroadcastUnixTime() const
+{
+    if (m_totBaseUnixTime < 0) return 0;
+
+    LONGLONG totInit = m_totBaseUnixTime * 1000 - (int)(DiffPcr(m_totBasePcr, m_initPcr) / PCR_PER_MSEC);
+    if (totInit < 0) return 0;
+    return (DWORD)(totInit / 1000);
 }
 
 
@@ -885,10 +897,12 @@ bool CTsSender::ReadToPcr(bool fSend, bool fSyncRead)
             int pointerField = m_curr[4];
             BYTE *pTable = m_curr + 5 + pointerField;
             if (pTable + 7 < m_curr + 188 && (pTable[0] == 0x73 || pTable[0] == 0x70)) {
-                // BCD解析(ARIB STD-B10)
-                m_totBase = ((pTable[5]>>4)*10 + (pTable[5]&0x0f)) * 3600000 +
-                            ((pTable[6]>>4)*10 + (pTable[6]&0x0f)) * 60000 +
-                            ((pTable[7]>>4)*10 + (pTable[7]&0x0f)) * 1000;
+                // MJD+BCD解析(ARIB STD-B10)
+                int mjd = pTable[3] << 8 | pTable[4];
+                m_totBaseUnixTime = (LONGLONG)((mjd + (mjd <= 40587 ? 65536 : 0) - 40587) * 24 - 9) * 3600 +
+                                    ((pTable[5] >> 4) * 10 + (pTable[5] & 0x0f)) * 3600 +
+                                    ((pTable[6] >> 4) * 10 + (pTable[6] & 0x0f)) * 60 +
+                                    ((pTable[7] >> 4) * 10 + (pTable[7] & 0x0f));
                 m_totBasePcr = m_pcr;
             }
         }

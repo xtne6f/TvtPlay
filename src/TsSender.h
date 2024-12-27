@@ -65,6 +65,7 @@ public:
     int GetDuration() const;
     int GetPosition() const;
     int GetBroadcastTime() const;
+    DWORD GetBroadcastUnixTime() const;
     int GetRate() const;
 private:
     DWORD GetAdjTickCount();
@@ -106,7 +107,7 @@ private:
     int m_pcrPidsLen;
     __int64 m_fileSize;
     int m_duration;
-    int m_totBase;
+    LONGLONG m_totBaseUnixTime;
     DWORD m_totBasePcr;
     LONGLONG m_hash;
     LONGLONG m_oldHash;
