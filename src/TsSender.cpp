@@ -157,8 +157,8 @@ CTsSender::CTsSender()
     , m_prevPcr(0)
     , m_lastSentPcr(0)
     , m_rateCtrlMsec(0)
+    , m_fileState(FILE_ST_FIXED)
     , m_fEnPcr(false)
-    , m_fFixed(false)
     , m_fPause(false)
     , m_fPurged(false)
     , m_fForceSyncRead(false)
@@ -166,14 +166,13 @@ CTsSender::CTsSender()
     , m_pcrPidsLen(0)
     , m_fileSize(0)
     , m_duration(0)
-    , m_totBase(0)
+    , m_totBaseUnixTime(0)
     , m_totBasePcr(0)
     , m_hash(-1)
     , m_oldHash(-1)
     , m_speedNum(100)
     , m_speedDen(100)
     , m_initStore(INITIAL_STORE_MSEC)
-    , m_fSpecialExtending(false)
     , m_specialExtendInitRate(0)
     , m_adjBaseTick(0)
     , m_adjFreq(0)
@@ -196,24 +195,23 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     bool fMpeg4 = !_tcsicmp(::PathFindExtension(path), TEXT(".mp4"));
     if (fMpeg4) {
         m_file.reset(new CReadOnlyMpeg4File());
-        m_fFixed = true;
+        m_fileState = FILE_ST_FIXED;
         if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL, errorMessage)) {
             m_file.reset();
             return false;
         }
         // 動画の長さなどは既知
         m_unitSize = 188;
-        m_fSpecialExtending = false;
         m_duration = static_cast<CReadOnlyMpeg4File*>(m_file.get())->GetPositionMsecFromBytes(m_file->GetSize());
     }
     else {
         // まず読み込み共有で開いてみる
         m_file.reset(new CReadOnlyLocalFile());
-        m_fFixed = true;
+        m_fileState = FILE_ST_FIXED;
         if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL, errorMessage)) {
             errorMessage = nullptr;
             // 録画中かもしれない。書き込み共有で開く
-            m_fFixed = false;
+            m_fileState = FILE_ST_MAYBE_EXTENDING;
             if (!m_file->Open(path, IReadOnlyFile::OPEN_FLAG_NORMAL | IReadOnlyFile::OPEN_FLAG_SHARE_WRITE, errorMessage)) {
                 m_file.reset();
                 return false;
@@ -260,7 +258,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
     m_pcrPidsLen = 0;
 
     // TOT-PCR対応情報をクリア
-    m_totBase = -1;
+    m_totBaseUnixTime = -1;
 
     // QueryPerformanceCounterによるTickカウント補正をするかどうか
     m_adjFreq = fUseQpc ? -1 : 0;
@@ -282,25 +280,24 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
 
     if (!fMpeg4) {
         // 動画の長さを取得
-        m_fSpecialExtending = false;
         m_duration = 0;
         // 最大で標準的なTSの末尾8秒間を調べる
         for (int sec = 1; sec <= 8; sec *= 2) {
             if (Seek(-TS_SUPPOSED_RATE * sec, IReadOnlyFile::MOVE_METHOD_END)) {
                 // ファイル末尾が正常である場合
-                if (m_file->IsShareWrite()) {
-                    // 概算で補う
-                    m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) + 1000 * sec;
-                    m_duration = (int)(DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC) +
-                                 (int)((long long)TS_SUPPOSED_RATE * 1000 * sec / GetRate());
-                }
-                else {
+                __int64 startPos = m_reader.GetFilePosition();
+                if (startPos >= 0) {
                     // 終端まで読む
                     while (ReadToPcr(false, true)) {
                         m_duration = DiffPcr(m_pcr, m_initPcr) / PCR_PER_MSEC;
+                         __int64 filePos = m_reader.GetFilePosition();
+                         if (filePos < startPos || filePos > startPos + TS_SUPPOSED_RATE * sec) {
+                             // 追記された等。想定以上は読まない
+                             break;
+                         }
                     }
+                    break;
                 }
-                break;
             }
         }
         if (m_duration <= 0 && m_file->IsShareWrite() &&
@@ -315,7 +312,7 @@ bool CTsSender::Open(LPCTSTR path, DWORD salt, int bufSize, bool fConvTo188, boo
                     // ファイルサイズからレートを計算できないため
                     m_specialExtendInitRate = filePos < 0 || m_duration <= 0 ? TS_SUPPOSED_RATE :
                                               static_cast<int>((filePos + TS_SUPPOSED_RATE * sec) * 1000 / m_duration);
-                    m_fSpecialExtending = true;
+                    m_fileState = FILE_ST_SPECIAL_EXTENDING;
                     break;
                 }
             }
@@ -452,33 +449,35 @@ int CTsSender::Send()
         if (tick - m_renewSizeTick >= RENEW_SIZE_INTERVAL) {
             __int64 fileSize = m_reader.GetFileSize();
             if (fileSize >= 0) {
-                if (m_fSpecialExtending && fileSize < m_fileSize) {
+                if (m_fileState == FILE_ST_SPECIAL_EXTENDING && fileSize < m_fileSize) {
                     // 容量確保領域が録画終了によって削除されたと仮定する
-                    m_fFixed = true;
-                    m_fSpecialExtending = false;
+                    m_fileState = FILE_ST_FIXED;
                 }
-                else if (!m_fSpecialExtending && fileSize == m_fileSize) {
+                else if (m_fileState != FILE_ST_SPECIAL_EXTENDING && fileSize == m_fileSize) {
                     // 伸ばしすぎた分を戻す
-                    if (!m_fFixed) m_duration -= RENEW_SIZE_INTERVAL;
-                    m_fFixed = true;
+                    if (m_fileState == FILE_ST_EXTENDING) m_duration -= RENEW_SIZE_INTERVAL;
+                    m_fileState = FILE_ST_FIXED;
                 }
-                else {
-                    m_fFixed = false;
+                else if (m_fileState != FILE_ST_SPECIAL_EXTENDING) {
+                    m_fileState = FILE_ST_EXTENDING;
                 }
                 m_fileSize = fileSize;
             }
             m_renewSizeTick = tick;
         }
-        if (!m_fFixed) m_duration += tick - m_renewDurTick;
-        m_renewDurTick = tick;
+        // 実際に変化したかどうかを最初に確認するまで加算を保留する
+        if (m_fileState != FILE_ST_MAYBE_EXTENDING) {
+            if (m_fileState != FILE_ST_FIXED) m_duration += tick - m_renewDurTick;
+            m_renewDurTick = tick;
+        }
 
         // ファイルを強制的に同期読み込みさせるかどうか判断する
         // (追っかけ時のファイル末尾はデータの有無が不安定なため)
         if (tick - m_renewFsrTick >= RENEW_FSR_INTERVAL) {
-            if (!m_fFixed) {
+            if (m_fileState != FILE_ST_FIXED) {
                 int bufSize = m_reader.GetBufferSize();
                 int rate = GetRate();
-                if (!m_fSpecialExtending) {
+                if (m_fileState != FILE_ST_SPECIAL_EXTENDING) {
                     // 追っかけ時の末尾付近では先読みしない
                     __int64 fileRemain = m_reader.GetFileSize() - m_reader.GetFilePosition();
                     if (!m_fForceSyncRead && fileRemain < bufSize + rate*3) {
@@ -591,7 +590,7 @@ bool CTsSender::SeekToBegin()
 // ファイルの末尾から約2秒前にシークする
 bool CTsSender::SeekToEnd()
 {
-    if (m_fSpecialExtending) return false;
+    if (m_fileState == FILE_ST_SPECIAL_EXTENDING) return false;
 
     // 受信側のストアをパージ
     if (!m_fPause) TransactMessage(TEXT("PURGE"));
@@ -762,11 +761,23 @@ int CTsSender::GetPosition() const
 // 取得失敗時は負を返す
 int CTsSender::GetBroadcastTime() const
 {
-    if (m_totBase < 0) return -1;
+    if (m_totBaseUnixTime < 0) return -1;
 
-    int totInit = m_totBase - (int)(DiffPcr(m_totBasePcr, m_initPcr) / PCR_PER_MSEC);
+    int totInit = (int)((m_totBaseUnixTime + 9 * 3600) % (24 * 3600)) * 1000 - (int)(DiffPcr(m_totBasePcr, m_initPcr) / PCR_PER_MSEC);
     if (totInit < 0) totInit += 24 * 3600000; // 1日足す
     return totInit;
+}
+
+
+// TOT時刻から逆算した動画の放送時刻(UNIX時間)を取得する
+// 取得失敗時は0を返す
+DWORD CTsSender::GetBroadcastUnixTime() const
+{
+    if (m_totBaseUnixTime < 0) return 0;
+
+    LONGLONG totInit = m_totBaseUnixTime * 1000 - (int)(DiffPcr(m_totBasePcr, m_initPcr) / PCR_PER_MSEC);
+    if (totInit < 0) return 0;
+    return (DWORD)(totInit / 1000);
 }
 
 
@@ -776,7 +787,7 @@ int CTsSender::GetBroadcastTime() const
 int CTsSender::GetRate() const
 {
     int rate;
-    if (m_fSpecialExtending) {
+    if (m_fileState == FILE_ST_SPECIAL_EXTENDING) {
         rate = m_specialExtendInitRate;
     }
     else {
@@ -886,10 +897,12 @@ bool CTsSender::ReadToPcr(bool fSend, bool fSyncRead)
             int pointerField = m_curr[4];
             BYTE *pTable = m_curr + 5 + pointerField;
             if (pTable + 7 < m_curr + 188 && (pTable[0] == 0x73 || pTable[0] == 0x70)) {
-                // BCD解析(ARIB STD-B10)
-                m_totBase = ((pTable[5]>>4)*10 + (pTable[5]&0x0f)) * 3600000 +
-                            ((pTable[6]>>4)*10 + (pTable[6]&0x0f)) * 60000 +
-                            ((pTable[7]>>4)*10 + (pTable[7]&0x0f)) * 1000;
+                // MJD+BCD解析(ARIB STD-B10)
+                int mjd = pTable[3] << 8 | pTable[4];
+                m_totBaseUnixTime = (LONGLONG)((mjd + (mjd <= 40587 ? 65536 : 0) - 40587) * 24 - 9) * 3600 +
+                                    ((pTable[5] >> 4) * 10 + (pTable[5] & 0x0f)) * 3600 +
+                                    ((pTable[6] >> 4) * 10 + (pTable[6] & 0x0f)) * 60 +
+                                    ((pTable[7] >> 4) * 10 + (pTable[7] & 0x0f));
                 m_totBasePcr = m_pcr;
             }
         }

@@ -6,6 +6,19 @@ bool CReadOnlyLocalFile::Open(LPCTSTR path, int flags, const char *&errorMessage
     Close();
     if (flags & OPEN_FLAG_NORMAL) {
         m_fShareWrite = !!(flags & OPEN_FLAG_SHARE_WRITE);
+        if (!m_fShareWrite) {
+            // リモートのファイルは書き込み中でも共有フラグなしでCreateFile()が成功してしまうため
+            if (path[0] == TEXT('\\') && path[1] == TEXT('\\')) {
+                // UNC
+                return false;
+            }
+            if (path[0] && path[1] == TEXT(':') && path[2] == TEXT('\\')) {
+                TCHAR szDrive[] = {path[0], path[1], path[2], TEXT('\0')};
+                if (GetDriveType(szDrive) == DRIVE_REMOTE) {
+                    return false;
+                }
+            }
+        }
         m_hFile = ::CreateFile(path, GENERIC_READ,
                                FILE_SHARE_READ | FILE_SHARE_DELETE | (m_fShareWrite ? FILE_SHARE_WRITE : 0),
                                nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);

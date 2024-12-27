@@ -25,6 +25,7 @@ public:
     int GetApparentPosition() { return m_apparentPos>=0 ? m_apparentPos : GetPosition(); }
     int GetDuration() { lock_recursive_mutex lock(m_tsInfoLock); return m_infoDur; }
     int GetTotTime() { lock_recursive_mutex lock(m_tsInfoLock); return m_infoTot; }
+    DWORD GetTotUnixTime() { lock_recursive_mutex lock(m_tsInfoLock); return m_infoTotUnix; }
     int IsExtending() { lock_recursive_mutex lock(m_tsInfoLock); return m_infoExtMode; }
     bool IsPaused() { lock_recursive_mutex lock(m_tsInfoLock); return m_fInfoPaused; }
     CChapterMap& GetChapter() { return m_chapter; }
@@ -132,6 +133,7 @@ private:
     CTsSender m_tsSender;
     recursive_mutex_ m_tsInfoLock;
     int m_infoPos, m_infoDur, m_infoTot, m_infoExtMode, m_infoSpeed;
+    DWORD m_infoTotUnix;
     bool m_fInfoPaused;
     bool m_fHalt, m_fAllRepeat, m_fSingleRepeat;
     bool m_fRepeatChapter, m_fSkipXChapter;

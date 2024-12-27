@@ -58,13 +58,14 @@ public:
     void SetSpeed(int num, int den);
     bool IsOpen() const { return m_file != nullptr; }
     bool IsPaused() const { return m_fPause; }
-    bool IsFixed(bool *pfSpecialExt = nullptr) const { if (pfSpecialExt) *pfSpecialExt=m_fSpecialExtending; return m_fFixed; }
+    bool IsFixed(bool *pfSpecialExt = nullptr) const { if (pfSpecialExt) *pfSpecialExt=m_fileState==FILE_ST_SPECIAL_EXTENDING; return m_fileState==FILE_ST_FIXED; }
     void GetSpeed(int *pNum, int *pDen) const { *pNum=m_speedNum; *pDen=m_speedDen; }
     __int64 GetFileHash() const { return m_hash; }
     __int64 GetOldFileHash() const { return m_oldHash; }
     int GetDuration() const;
     int GetPosition() const;
     int GetBroadcastTime() const;
+    DWORD GetBroadcastUnixTime() const;
     int GetRate() const;
 private:
     DWORD GetAdjTickCount();
@@ -97,7 +98,8 @@ private:
     DWORD m_baseTick, m_renewSizeTick, m_renewDurTick, m_renewFsrTick;
     DWORD m_pcr, m_basePcr, m_initPcr, m_prevPcr, m_lastSentPcr;
     int m_rateCtrlMsec;
-    bool m_fEnPcr, m_fFixed, m_fPause;
+    enum {FILE_ST_FIXED, FILE_ST_MAYBE_EXTENDING, FILE_ST_EXTENDING, FILE_ST_SPECIAL_EXTENDING} m_fileState;
+    bool m_fEnPcr, m_fPause;
     bool m_fPurged;
     bool m_fForceSyncRead;
     int m_pcrPid, m_pcrPids[PCR_PIDS_MAX];
@@ -105,13 +107,12 @@ private:
     int m_pcrPidsLen;
     __int64 m_fileSize;
     int m_duration;
-    int m_totBase;
+    LONGLONG m_totBaseUnixTime;
     DWORD m_totBasePcr;
     LONGLONG m_hash;
     LONGLONG m_oldHash;
     int m_speedNum, m_speedDen;
     DWORD m_initStore;
-    bool m_fSpecialExtending;
     int m_specialExtendInitRate;
 
     DWORD m_adjBaseTick;

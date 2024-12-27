@@ -1,4 +1,4 @@
-﻿TVTest TvtPlay Plugin ver.3.2 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
+﻿TVTest TvtPlay Plugin ver.3.3 + BonDriver_Pipe.dll + TvtAudioStretchFilter.ax
 
 ■概要
 TVTest付属のBonDriver_UDPまたは添付のBonDriver_Pipeを使ってローカルTSファイルを
@@ -137,6 +137,12 @@ AddFilter={0F40E1E5-4F79-4988-B1A9-CC98794E6B55}
   はGraphEditを使うか、レジストリキーHKEY_CLASSES_ROOT\CLSID内部をフィルタ名(
   FriendlyName)で検索すれば取得できます。
   フィルタをどのように追加するかは、GraphEditで観察するとよく分かると思います。
+
+■Samba(Unix系OSの共有ファイルサーバ)上のファイルの追っかけ再生について
+SambaではOplockと呼ばれる最適化機能が既定で有効です。この最適化によりTvtPlayは録
+画などリアルタイムで追記されるようなファイルの情報を適切に更新できないことがあり
+ます。Samba上のファイルを追っかけ再生したい場合はSambaの設定ファイルを調整(
+"oplocks=no" や "veto oplock files=/*.ts/" など)してOplockを無効にしてください。
 
 ■容量確保録画中の追っかけ再生について
 ファイル末尾(2秒ぐらい)に有効なTSデータがないとき、そのファイルはEpgDataCap_Bon

@@ -19,6 +19,9 @@
 #define WM_TVTP_GET_PATH        (WM_APP + 59)
 #define WM_TVTP_SEEK            (WM_APP + 60)
 #define WM_TVTP_SEEK_ABSOLUTE   (WM_APP + 61)
+#if TVTP_CURRENT_MSGVER >= 2
+#define WM_TVTP_GET_TOT_UNIX    (WM_APP + 62)
+#endif
 
 #if 1 // TvtPlayのウィンドウを探す関数(コピペして使う)
 static BOOL CALLBACK FindTvtPlayFrameEnumProc(HWND hwnd, LPARAM lParam)
@@ -85,9 +88,21 @@ int _tmain(int argc, TCHAR *argv[])
     int stretchID = (signed short)LOWORD(dwStretch);
     // 現在の倍速再生速度(パーセント)
     int stretchSpeed = HIWORD(dwStretch);
+#if TVTP_CURRENT_MSGVER >= 2
+    // TSファイル先頭における放送時刻(UNIX時間)。不明のとき0
+    DWORD totUnixTime = (DWORD)MySendMessage(hwnd, WM_TVTP_GET_TOT_UNIX);
+#endif
 
-    _tprintf(TEXT("MsgVer: %u\nIsOpen: %d\nPos: %dmsec\nDur: %dmsec\nTotTime: %dmsec\nIsExtending: %d\nIsPaused: %d\nPlayFlags: %u%u%u%u\nStretchID: %d\nStretchSpeed: %d\n"),
-             msgVer, (int)fOpen, position, duration, totTime, (int)fExtending, (int)fPaused,
+    _tprintf(TEXT("MsgVer: %u\nIsOpen: %d\nPos: %dmsec\nDur: %dmsec\nTotTime: %dmsec\n")
+#if TVTP_CURRENT_MSGVER >= 2
+             TEXT("TotUnixTime: %usec\n")
+#endif
+             TEXT("IsExtending: %d\nIsPaused: %d\nPlayFlags: %u%u%u%u\nStretchID: %d\nStretchSpeed: %d\n"),
+             msgVer, (int)fOpen, position, duration, totTime,
+#if TVTP_CURRENT_MSGVER >= 2
+             totUnixTime,
+#endif
+             (int)fExtending, (int)fPaused,
              dwPlayFlags>>3&1,dwPlayFlags>>2&1, dwPlayFlags>>1&1, dwPlayFlags&1, stretchID, stretchSpeed);
 
     // 開いているTSファイルの絶対パス名をワイド文字列で取得する。同一プロセス内専用
